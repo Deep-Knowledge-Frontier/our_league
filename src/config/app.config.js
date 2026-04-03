@@ -2,7 +2,7 @@
 export const APP_CONFIG = {
   clubName: '한강FC',
   appTitle: '우리들의 리그',
-  logoText: '우리 LEAGUE',
+  logoText: '우리들의 리그',
 
   // 경기장 프리셋
   locationPresets: [

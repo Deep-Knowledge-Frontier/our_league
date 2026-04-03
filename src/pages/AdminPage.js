@@ -74,6 +74,11 @@ export default function AdminPage() {
   const [permName, setPermName] = useState('');
   const [permRole, setPermRole] = useState('verified');
 
+  // 권한 수정 다이얼로그
+  const [editPermDialog, setEditPermDialog] = useState(false);
+  const [editPermUser, setEditPermUser] = useState(null);
+  const [editPermRole, setEditPermRole] = useState('');
+
   // 리그 관리
   const [leagues, setLeagues] = useState([]);
   const [leagueDialog, setLeagueDialog] = useState(false);
@@ -258,6 +263,39 @@ export default function AdminPage() {
     if (!window.confirm(`${u.name} (${u.role})을 삭제하시겠습니까?`)) return;
     await remove(ref(db, `AllowedUsers/${u.role}/${u.emailKey}`));
     await loadAllowedUsers();
+  };
+
+  // 권한 등급 수정 가능 여부
+  const ROLE_RANK = { admin: 3, moderator: 2, verified: 1 };
+  const canEditRole = (targetRole) => {
+    if (isMaster) return true; // 마스터: 전부 수정 가능
+    if (isAdmin) return ROLE_RANK[targetRole] < ROLE_RANK['admin']; // 관리자: 자기보다 낮은 등급만
+    return false;
+  };
+
+  const openEditPerm = (u) => {
+    setEditPermUser(u);
+    setEditPermRole(u.role);
+    setEditPermDialog(true);
+  };
+
+  const saveEditPerm = async () => {
+    if (!editPermUser || editPermRole === editPermUser.role) {
+      setEditPermDialog(false);
+      return;
+    }
+    try {
+      // 기존 역할 삭제 → 새 역할에 추가
+      await remove(ref(db, `AllowedUsers/${editPermUser.role}/${editPermUser.emailKey}`));
+      await set(ref(db, `AllowedUsers/${editPermRole}/${editPermUser.emailKey}`), {
+        name: editPermUser.name,
+        email: editPermUser.email,
+      });
+      setEditPermDialog(false);
+      await loadAllowedUsers();
+    } catch (e) {
+      alert('권한 변경 실패: ' + e.message);
+    }
   };
 
   const addPlayer = async () => {
@@ -1507,11 +1545,18 @@ export default function AdminPage() {
                     <Chip label={roleLabel[u.role]} size="small"
                       sx={{ fontSize: '0.7rem', height: 22, bgcolor: roleColor[u.role], color: 'white', fontWeight: 'bold' }} />
                   </Box>
-                  {(isAdmin || isMaster) && (
-                    <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => removePermission(u)}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  )}
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    {canEditRole(u.role) && (
+                      <IconButton size="small" sx={{ color: '#90A4AE' }} onClick={() => openEditPerm(u)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                    {(isAdmin || isMaster) && (
+                      <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => removePermission(u)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Box>
                 </Box>
               ))}
               {allowedUsers.length > 3 && (
@@ -1670,6 +1715,31 @@ export default function AdminPage() {
         <DialogActions>
           <Button onClick={() => setPermDialog(false)}>취소</Button>
           <Button variant="contained" onClick={addPermission} disabled={!permName.trim()}>추가</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 권한 등급 변경 다이얼로그 */}
+      <Dialog open={editPermDialog} onClose={() => setEditPermDialog(false)} fullWidth maxWidth="xs">
+        <DialogTitle>권한 등급 변경</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <Typography sx={{ fontSize: '0.95rem', fontWeight: 600 }}>{editPermUser?.name}</Typography>
+            <Chip label={roleLabel[editPermUser?.role]} size="small"
+              sx={{ fontSize: '0.7rem', height: 22, bgcolor: roleColor[editPermUser?.role], color: 'white', fontWeight: 'bold' }} />
+          </Box>
+          <FormControl size="small" fullWidth>
+            <InputLabel>변경할 등급</InputLabel>
+            <Select label="변경할 등급" value={editPermRole} onChange={e => setEditPermRole(e.target.value)}>
+              {isMaster && <MenuItem value="admin">관리자</MenuItem>}
+              <MenuItem value="moderator">운영진</MenuItem>
+              <MenuItem value="verified">인증</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditPermDialog(false)}>취소</Button>
+          <Button variant="contained" onClick={saveEditPerm}
+            disabled={editPermRole === editPermUser?.role}>변경</Button>
         </DialogActions>
       </Dialog>
 
