@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "football-92492"
+  },
+  "targets": {
+    "football-92492": {
+      "hosting": {
+        "uri-league": ["uri-league"]
+      }
+    }
+  }
+}
