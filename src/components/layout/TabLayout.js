@@ -1,4 +1,5 @@
 import React from 'react';
+import HomePage from '../../pages/HomePage';
 import VotePage from '../../pages/VotePage';
 import ResultsPage from '../../pages/ResultsPage';
 import MyPage from '../../pages/MyPage';
@@ -11,6 +12,7 @@ export default function TabLayout({ currentPath }) {
 
   return (
     <>
+      <div style={show('/home')}><HomePage /></div>
       <div style={show('/vote')}><VotePage /></div>
       <div style={show('/results')}><ResultsPage /></div>
       <div style={show('/mypage')}><MyPage /></div>

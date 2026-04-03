@@ -206,7 +206,7 @@ function LoginPage() {
           const emailKey = getSafeEmailKey(u.email);
           const snapshot = await get(child(ref(db), `Users/${emailKey}`));
           if (snapshot.exists() && snapshot.val()?.consentGiven && snapshot.val()?.club) {
-            setTargetPath('/vote');
+            setTargetPath('/home');
           } else {
             // 클럽 미선택 또는 미등록 유저 → 회원가입
             setTargetPath('/register');
@@ -261,8 +261,11 @@ function LoginPage() {
         {showLoginForm && (
           <Container maxWidth="xs" style={{ textAlign: 'center' }}>
             <Paper elevation={3} style={{ padding: '40px' }}>
-              <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#474E93', mb: '20px' }}>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#474E93', mb: '10px' }}>
                 우리들의 리그
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#999', mb: '20px' }}>
+                투표부터 MVP까지, 우리 팀의 모든 것
               </Typography>
               <Box mb={4} sx={{ fontSize: '50px' }}>⚽</Box>
               <Typography variant="body1" sx={{ color: '#474E93', mb: '30px' }}>

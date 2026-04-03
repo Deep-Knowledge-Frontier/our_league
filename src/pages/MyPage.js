@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../config/firebase';
 import { ref, get } from 'firebase/database';
 import {
-  Container, Box, Typography, CircularProgress, Paper, Button,
+  Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
   Avatar, Divider, Chip, FormControl, InputLabel, Select, MenuItem
 } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
@@ -312,9 +312,12 @@ export default function MyPage() {
   const MIN_GAMES = 5;
 
   useEffect(() => {
-    if (graphContainerRef.current) {
-      setGraphWidth(graphContainerRef.current.offsetWidth);
-    }
+    const measure = () => {
+      if (graphContainerRef.current) setGraphWidth(graphContainerRef.current.offsetWidth);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
   }, [networkGraph]);
 
   const graphData = useMemo(() => {
@@ -327,8 +330,6 @@ export default function MyPage() {
     });
 
     const MIN_NODE_GAMES = 12;
-
-    // 12경기 초과 선수만 포함
     const eligibleSet = new Set(
       [...playerSet].filter(n => (allPlayerStats?.[n]?.totalGames || 0) > MIN_NODE_GAMES)
     );
@@ -337,7 +338,6 @@ export default function MyPage() {
     const maxG = Math.max(...allGames, 1);
     const minG = Math.min(...allGames, maxG);
 
-    // 링크 먼저 계산 (연결된 선수만 노드로 포함하기 위해)
     const drawn = new Set();
     const links = [];
     const connectedNames = new Set();
@@ -353,23 +353,21 @@ export default function MyPage() {
         drawn.add(key);
         connectedNames.add(a);
         connectedNames.add(b);
-        links.push({ source: a, target: b, games: data.games, winRate: data.winRate, maxEdgeGames });
+        const dist = 200 - (data.winRate || 50) * 1.7;
+        links.push({ source: a, target: b, games: data.games, winRate: data.winRate, maxEdgeGames, distance: Math.max(dist, 30) });
       });
     });
 
-    // 연결선이 1개 이상인 선수만 노드로 포함
     const nodes = [...connectedNames].map(name => {
       const s = allPlayerStats?.[name];
       const g = s?.totalGames || 0;
       const wr = s?.winRate ?? 50;
-      // 크기 = 승률 기반 (드라마틱한 차이)
-      const size = 1 + Math.pow(wr / 100, 2.5) * 30;
-      // 색상용 출전수 정규화 (0~1)
+      const size = 3 + Math.pow(wr / 100, 3) * 57;
       const gNorm = (g - minG) / (maxG - minG || 1);
       return { id: name, totalGames: g, winRate: wr, size, gNorm, isMe: name === userName };
     });
 
-    return { nodes, links };
+    return nodes.length > 0 ? { nodes, links } : null;
   }, [networkGraph, allPlayerStats, userName]);
 
   if (loading) {
@@ -447,27 +445,27 @@ export default function MyPage() {
 
   return (
     <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 10 }}>
-      {/* -- 헤더 -- */}
-      <Box sx={{
-        background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 100%)',
-        pt: 4, pb: 5, px: 2, textAlign: 'center',
-      }}>
-        <Avatar sx={{ width: 70, height: 70, mx: 'auto', mb: 1.5, bgcolor: 'rgba(255,255,255,0.2)' }}>
-          <PersonIcon sx={{ fontSize: 40 }} />
-        </Avatar>
-        <Typography variant="h5" sx={{ color: 'white', fontWeight: 'bold' }}>
-          {userName}
-        </Typography>
-        <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', mt: 0.5 }}>
-          {clubName}
-        </Typography>
-        {memberInfo?.no && (
-          <Chip label={`#${memberInfo.no}`} size="small"
-            sx={{ mt: 1, bgcolor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 'bold' }} />
-        )}
-      </Box>
+      <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
 
-      <Container maxWidth="sm" sx={{ mt: -3, px: 2 }}>
+        {/* -- 헤더 카드 -- */}
+        <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
+          background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)' }}>
+          <CardContent sx={{ py: 3, textAlign: 'center' }}>
+            <Avatar sx={{ width: 60, height: 60, mx: 'auto', mb: 1, bgcolor: 'rgba(255,255,255,0.2)' }}>
+              <PersonIcon sx={{ fontSize: 35 }} />
+            </Avatar>
+            <Typography variant="h5" sx={{ color: 'white', fontWeight: 900 }}>
+              {userName}
+            </Typography>
+            <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', mt: 0.3 }}>
+              {clubName}
+            </Typography>
+            {memberInfo?.no && (
+              <Chip label={`#${memberInfo.no}`} size="small"
+                sx={{ mt: 1, bgcolor: 'rgba(255,255,255,0.15)', color: 'white', fontWeight: 'bold' }} />
+            )}
+          </CardContent>
+        </Card>
 
         {/* -- 기본 정보 (컴팩트 그리드) -- */}
         <Paper sx={{ borderRadius: 3, p: 2, mb: 2, boxShadow: 2 }}>
@@ -496,8 +494,8 @@ export default function MyPage() {
                     textAlign: 'center', py: 1, px: 0.5,
                     borderRadius: 2, bgcolor: '#F5F7FA',
                   }}>
-                    <Typography sx={{ fontSize: '0.7rem', color: '#999', mb: 0.3 }}>{item.label}</Typography>
-                    <Typography sx={{ fontSize: '0.9rem', fontWeight: 'bold', color: item.color || '#333' }}>
+                    <Typography sx={{ fontSize: '0.8rem', color: '#999', mb: 0.3 }}>{item.label}</Typography>
+                    <Typography sx={{ fontSize: '1.15rem', fontWeight: 'bold', color: item.color || '#333' }}>
                       {item.value}
                     </Typography>
                   </Box>
@@ -748,24 +746,18 @@ export default function MyPage() {
                   backgroundColor="#ffffff"
                   nodeVal={node => node.size}
                   nodeCanvasObject={(node, ctx, globalScale) => {
-                    const r = Math.sqrt(node.size) * 2.2;
-                    // 출전수 많을수록 진한 파란색 (연->진: hsl 210, 80%, 75%->30%)
+                    const r = Math.sqrt(node.size) * 2.5;
                     const lightness = Math.round(72 - node.gNorm * 42);
-                    const nodeColor = node.isMe ? '#E53935' : `hsl(210,75%,${lightness}%)`;
+                    const nodeColor = `hsl(210,75%,${lightness}%)`;
                     ctx.beginPath();
                     ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
                     ctx.fillStyle = nodeColor;
                     ctx.fill();
-                    if (node.isMe) {
-                      ctx.strokeStyle = '#333';
-                      ctx.lineWidth = 1.5 / globalScale;
-                      ctx.stroke();
-                    }
-                    const fontSize = Math.max(10 / globalScale, 3);
+                    const fontSize = Math.max(11 / globalScale, 3);
                     ctx.font = `${node.isMe ? 'bold ' : ''}${fontSize}px sans-serif`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
-                    ctx.fillStyle = '#222';
+                    ctx.fillStyle = node.isMe ? '#D4A017' : '#222';
                     ctx.fillText(node.id, node.x, node.y - r - 2 / globalScale);
                   }}
                   nodeCanvasObjectMode={() => 'replace'}
@@ -774,7 +766,10 @@ export default function MyPage() {
                     const hue = Math.min(link.winRate * 1.2, 120);
                     return `hsla(${hue},60%,48%,0.35)`;
                   }}
-                  cooldownTicks={120}
+                  d3VelocityDecay={0.3}
+                  d3AlphaDecay={0.02}
+                  linkDistance={link => link.distance || 100}
+                  cooldownTicks={200}
                   onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
                 />
               )}
@@ -783,13 +778,13 @@ export default function MyPage() {
               {[
                 { color: 'hsl(210,75%,72%)', label: '출전 적음' },
                 { color: 'hsl(210,75%,30%)', label: '출전 많음' },
-                { color: '#E53935', label: '나' },
               ].map(l => (
                 <Box key={l.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: l.color }} />
                   <Typography sx={{ fontSize: '0.7rem', color: '#666' }}>{l.label}</Typography>
                 </Box>
               ))}
+              <Typography sx={{ fontSize: '0.7rem', color: '#D4A017', fontWeight: 'bold' }}>노란 이름 = 나</Typography>
               <Typography sx={{ fontSize: '0.7rem', color: '#999' }}>버블 크기 = 승률</Typography>
             </Box>
           </Paper>

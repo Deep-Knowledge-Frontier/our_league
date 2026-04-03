@@ -10,7 +10,7 @@ import PlayerSelectPage from './pages/PlayerSelectPage';
 import ScoreRecordPage from './pages/ScoreRecordPage';
 import TabLayout from './components/layout/TabLayout';
 
-const TAB_PATHS = ['/vote', '/results', '/mypage', '/admin'];
+const TAB_PATHS = ['/home', '/vote', '/results', '/mypage', '/admin'];
 
 function AppContent() {
   const location = useLocation();

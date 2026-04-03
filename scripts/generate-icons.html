@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head><title>Icon Generator</title></head>
+<body>
+<h2>아이콘 생성기 - 각 이미지를 우클릭 → "이미지를 다른 이름으로 저장"</h2>
+
+<h3>1. OG Image (1200x630) → og-image.png</h3>
+<canvas id="og" width="1200" height="630"></canvas>
+
+<h3>2. Logo 512x512 → logo512.png</h3>
+<canvas id="c512" width="512" height="512"></canvas>
+
+<h3>3. Logo 192x192 → logo192.png</h3>
+<canvas id="c192" width="192" height="192"></canvas>
+
+<script>
+function drawIcon(canvas, size) {
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, size, size);
+  grad.addColorStop(0, '#2D336B');
+  grad.addColorStop(1, '#1A1D4E');
+  ctx.fillStyle = grad;
+  // Rounded rect
+  const r = size * 0.2;
+  ctx.beginPath();
+  ctx.moveTo(r, 0); ctx.lineTo(size-r, 0); ctx.quadraticCurveTo(size, 0, size, r);
+  ctx.lineTo(size, size-r); ctx.quadraticCurveTo(size, size, size-r, size);
+  ctx.lineTo(r, size); ctx.quadraticCurveTo(0, size, 0, size-r);
+  ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.fill();
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'white';
+  ctx.font = `${size*0.3}px sans-serif`;
+  ctx.fillText('⚽', size/2, size*0.42);
+  ctx.font = `bold ${size*0.11}px sans-serif`;
+  ctx.fillText('우리들의', size/2, size*0.65);
+  ctx.fillStyle = '#FF6B6B';
+  ctx.font = `900 ${size*0.13}px sans-serif`;
+  ctx.fillText('LEAGUE', size/2, size*0.8);
+}
+
+function drawOG(canvas) {
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 1200, 630);
+  grad.addColorStop(0, '#2D336B');
+  grad.addColorStop(1, '#1A1D4E');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1200, 630);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'white';
+  ctx.font = '100px sans-serif';
+  ctx.fillText('⚽', 600, 240);
+  ctx.font = 'bold 72px sans-serif';
+  ctx.fillText('우리들의 리그', 600, 370);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.font = '30px sans-serif';
+  ctx.fillText('투표부터 MVP까지, 우리 팀의 모든 것', 600, 430);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.font = '24px sans-serif';
+  ctx.fillText('uri-league.web.app', 600, 580);
+}
+
+drawOG(document.getElementById('og'));
+drawIcon(document.getElementById('c512'), 512);
+drawIcon(document.getElementById('c192'), 192);
+
+// Auto download
+['og','c512','c192'].forEach(id => {
+  const c = document.getElementById(id);
+  const names = {og:'og-image.png', c512:'logo512.png', c192:'logo192.png'};
+  const img = new Image();
+  img.src = c.toDataURL('image/png');
+  img.style.maxWidth = '400px';
+  img.style.border = '1px solid #ccc';
+  img.style.margin = '10px';
+  c.parentNode.insertBefore(img, c.nextSibling);
+  c.style.display = 'none';
+});
+</script>
+</body>
+</html>

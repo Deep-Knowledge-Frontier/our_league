@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../config/firebase';
 import { ref, get, set, push, remove, update } from 'firebase/database';
 import {
-  Container, Box, Typography, CircularProgress, Paper, Button,
+  Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
   TextField, IconButton, Dialog, DialogTitle, DialogContent,
   DialogActions, Chip, Select, MenuItem, FormControl, InputLabel,
   Divider, Alert
@@ -22,13 +22,14 @@ import HistoryIcon from '@mui/icons-material/History';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
+import HomeIcon from '@mui/icons-material/Home';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_CONFIG } from '../config/app.config';
 
 export default function AdminPage() {
   const navigate = useNavigate();
-  const { clubName, isAdmin, isMaster, user, emailKey, loading: authLoading, authReady } = useAuth();
-  const canAccess = isAdmin || isMaster;
+  const { clubName, isAdmin, isModerator, isMaster, user, emailKey, loading: authLoading, authReady } = useAuth();
+  const canAccess = isAdmin || isModerator || isMaster;
 
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState('');
@@ -37,6 +38,17 @@ export default function AdminPage() {
   const [clubsList, setClubsList] = useState([]);
   const [newClubName, setNewClubName] = useState('');
   const [clubsExpanded, setClubsExpanded] = useState(false);
+  const [clubAdminDialog, setClubAdminDialog] = useState(false);
+  const [selectedClubForAdmin, setSelectedClubForAdmin] = useState(null);
+  const [clubAdminName, setClubAdminName] = useState('');
+  const [clubAdminRole, setClubAdminRole] = useState('admin');
+  const [clubAdmins, setClubAdmins] = useState([]);
+
+  // 배너 관리
+  const [bannerList, setBannerList] = useState([]);
+  const [bannerDialog, setBannerDialog] = useState(false);
+  const [bannerForm, setBannerForm] = useState({ title: '', imageUrl: '', link: '', order: 0 });
+  const [bannersExpanded, setBannersExpanded] = useState(false);
 
   // 경기일 관리
   const [matchDates, setMatchDates] = useState([]);
@@ -91,14 +103,19 @@ export default function AdminPage() {
     const snap = await get(ref(db, 'AllowedUsers'));
     if (!snap.exists()) { setAllowedUsers([]); return; }
     const data = snap.val();
+    // Users에서 이름 조회용
+    const usersSnap = await get(ref(db, 'Users'));
+    const usersData = usersSnap.exists() ? usersSnap.val() : {};
     const arr = [];
     for (const role of ['admin', 'moderator', 'verified']) {
       if (!data[role]) continue;
       Object.entries(data[role]).forEach(([ek, val]) => {
+        const userName = (val && typeof val === 'object') ? val.name : null;
+        const userEmail = (val && typeof val === 'object') ? val.email : null;
         arr.push({
           emailKey: ek,
-          name: val.name || ek.replace(/,/g, '.'),
-          email: val.email || ek.replace(/,/g, '.'),
+          name: userName || usersData[ek]?.name || ek.replace(/,/g, '.'),
+          email: userEmail || ek.replace(/,/g, '.'),
           role,
         });
       });
@@ -149,6 +166,13 @@ export default function AdminPage() {
           }
         }
 
+        // 배너 로드
+        const bannerSnap = await get(ref(db, 'banners'));
+        if (bannerSnap.exists()) {
+          const data = bannerSnap.val();
+          setBannerList(Object.entries(data).map(([key, val]) => ({ key, ...val })).sort((a, b) => (a.order || 0) - (b.order || 0)));
+        }
+
         // 관리자: 팀 데이터 로드
         if (isAdmin || isMaster) {
           await Promise.all([loadMatchDates(), loadAllowedUsers(), loadPlayers(), loadLeagues()]);
@@ -159,7 +183,7 @@ export default function AdminPage() {
       setLoading(false);
     };
     loadData();
-  }, [authReady, user, canAccess, isAdmin, isMaster, emailKey, navigate, loadMatchDates, loadAllowedUsers, loadPlayers, loadLeagues]);
+  }, [authReady, user, canAccess, isAdmin, isModerator, isMaster, emailKey, navigate, loadMatchDates, loadAllowedUsers, loadPlayers, loadLeagues]);
 
   /* ── 경기일 저장 ── */
   const saveMatchDate = async () => {
@@ -1062,25 +1086,104 @@ export default function AdminPage() {
     }
   };
 
-  const roleColor = { admin: '#D32F2F', moderator: '#F57C00', verified: '#388E3C' };
-  const roleLabel = { admin: '관리자', moderator: '운영진', verified: '인증' };
+  // 팀별 관리자 보기
+  const openClubAdminDialog = async (club) => {
+    setSelectedClubForAdmin(club);
+    setClubAdminName('');
+    setClubAdminRole('admin');
+    // 해당 팀 소속 관리자 로드
+    const admins = [];
+    const snap = await get(ref(db, 'AllowedUsers'));
+    if (snap.exists()) {
+      const data = snap.val();
+      const usersSnap = await get(ref(db, 'Users'));
+      const usersData = usersSnap.exists() ? usersSnap.val() : {};
+      for (const role of ['admin', 'moderator', 'verified']) {
+        if (!data[role]) continue;
+        Object.entries(data[role]).forEach(([ek, val]) => {
+          const userClub = usersData[ek]?.club;
+          if (userClub === club.name) {
+            admins.push({
+              emailKey: ek,
+              name: val.name || usersData[ek]?.name || ek.replace(/,/g, '.'),
+              role,
+            });
+          }
+        });
+      }
+    }
+    setClubAdmins(admins);
+    setClubAdminDialog(true);
+  };
+
+  const addClubAdmin = async () => {
+    if (!clubAdminName.trim() || !selectedClubForAdmin) return;
+    const usersSnap = await get(ref(db, 'Users'));
+    if (!usersSnap.exists()) { alert('사용자를 찾을 수 없습니다.'); return; }
+    let foundKey = null, foundEmail = null, foundClub = null;
+    usersSnap.forEach(child => {
+      if (child.val().name === clubAdminName.trim()) {
+        foundKey = child.key;
+        foundEmail = child.key.replace(/,/g, '.');
+        foundClub = child.val().club;
+      }
+    });
+    if (!foundKey) { alert('해당 이름의 사용자를 찾을 수 없습니다.'); return; }
+    if (foundClub !== selectedClubForAdmin.name) {
+      if (!window.confirm(`${clubAdminName.trim()}님은 "${foundClub}" 소속입니다.\n"${selectedClubForAdmin.name}" 관리자로 추가하시겠습니까?`)) return;
+    }
+    await set(ref(db, `AllowedUsers/${clubAdminRole}/${foundKey}`), { name: clubAdminName.trim(), email: foundEmail });
+    setClubAdminName('');
+    // 리스트 갱신
+    setClubAdmins(prev => [...prev, { emailKey: foundKey, name: clubAdminName.trim(), role: clubAdminRole }]);
+    await loadAllowedUsers();
+  };
+
+  const removeClubAdmin = async (admin) => {
+    if (!window.confirm(`${admin.name}의 ${admin.role} 권한을 삭제하시겠습니까?`)) return;
+    await remove(ref(db, `AllowedUsers/${admin.role}/${admin.emailKey}`));
+    setClubAdmins(prev => prev.filter(a => !(a.emailKey === admin.emailKey && a.role === admin.role)));
+    await loadAllowedUsers();
+  };
+
+  // 배너 관리 함수
+  const saveBanner = async () => {
+    if (!bannerForm.title.trim()) { alert('배너 제목을 입력해주세요.'); return; }
+    try {
+      const newRef = push(ref(db, 'banners'));
+      await set(newRef, { ...bannerForm, active: true, createdAt: new Date().toISOString().slice(0, 10) });
+      setBannerList(prev => [...prev, { key: newRef.key, ...bannerForm, active: true }]);
+      setBannerDialog(false);
+      setBannerForm({ title: '', imageUrl: '', link: '', order: 0 });
+    } catch (e) { alert('배너 저장 실패: ' + e.message); }
+  };
+
+  const removeBanner = async (key) => {
+    if (!window.confirm('이 배너를 삭제하시겠습니까?')) return;
+    await remove(ref(db, `banners/${key}`));
+    setBannerList(prev => prev.filter(b => b.key !== key));
+  };
+
+  const roleColor = { admin: '#D32F2F', moderator: '#F57C00', verified: '#388E3C', master: '#7B1FA2' };
+  const roleLabel = { admin: '관리자', moderator: '운영진', verified: '인증', master: '마스터' };
+  const roleBg = { admin: '#FFEBEE', moderator: '#FFF3E0', verified: '#E8F5E9', master: '#F3E5F5' };
 
   return (
     <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 10 }}>
-      {/* ── 헤더 ── */}
-      <Box sx={{
-        background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
-        pt: 4, pb: 4, px: 2,
-      }}>
-        <Typography variant="h5" sx={{ color: 'white', fontWeight: 'bold' }}>
-          {clubName}
-        </Typography>
-        <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem', mt: 0.5 }}>
-          설정 / 관리
-        </Typography>
-      </Box>
+      <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
 
-      <Container maxWidth="sm" sx={{ mt: -2, px: 2 }}>
+        {/* ── 헤더 카드 ── */}
+        <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
+          background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)' }}>
+          <CardContent sx={{ py: 3, textAlign: 'center' }}>
+            <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', letterSpacing: 2 }}>
+              설정 / 관리
+            </Typography>
+            <Typography variant="h4" sx={{ color: 'white', fontWeight: 900, mt: 0.5 }}>
+              {clubName}
+            </Typography>
+          </CardContent>
+        </Card>
 
         {/* 0. 마스터 전용: 팀 관리 */}
         {isMaster && (
@@ -1117,12 +1220,18 @@ export default function AdminPage() {
                     <Box>
                       <Typography sx={{ fontWeight: 600, fontSize: '0.95rem' }}>{club.name}</Typography>
                       <Typography sx={{ fontSize: '0.75rem', color: '#999' }}>
-                        {club.createdAt || ''} | {club.createdBy || ''}
+                        {club.createdAt || ''}
                       </Typography>
                     </Box>
-                    <IconButton size="small" onClick={() => handleDeleteClub(club.key)} sx={{ color: '#D32F2F' }}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <Button size="small" variant="outlined" onClick={() => openClubAdminDialog(club)}
+                        sx={{ fontSize: '0.7rem', minWidth: 'auto', px: 1, borderColor: '#7B1FA2', color: '#7B1FA2' }}>
+                        <SecurityIcon sx={{ fontSize: 14, mr: 0.3 }} />관리자
+                      </Button>
+                      <IconButton size="small" onClick={() => handleDeleteClub(club.key)} sx={{ color: '#D32F2F' }}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
                   </Box>
                 ))}
 
@@ -1134,7 +1243,57 @@ export default function AdminPage() {
           </Paper>
         )}
 
-        {/* 1. 기록 백업 (최상단) */}
+        {/* 배너 관리 (마스터 전용) */}
+        {isMaster && (
+        <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
+          <Box onClick={() => setBannersExpanded(!bannersExpanded)}
+            sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}>
+            <HomeIcon sx={{ color: '#F57C00', fontSize: 20 }} />
+            <Typography sx={{ fontWeight: 'bold', color: '#F57C00', fontSize: '1rem', flex: 1 }}>
+              배너 관리
+            </Typography>
+            <Chip label={`${bannerList.length}개`} size="small" sx={{ bgcolor: '#FFF3E0', color: '#F57C00', fontWeight: 'bold', fontSize: '0.7rem', height: 20 }} />
+            {bannersExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+          </Box>
+
+          {bannersExpanded && (
+            <Box sx={{ mt: 2 }}>
+              <Button variant="outlined" fullWidth startIcon={<AddIcon />}
+                onClick={() => setBannerDialog(true)}
+                sx={{ mb: 1.5, borderColor: '#F57C00', color: '#F57C00' }}>
+                배너 추가
+              </Button>
+
+              {bannerList.map(b => (
+                <Box key={b.key} sx={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  py: 1, px: 1.5, mb: 0.5, bgcolor: '#FFF8E1', borderRadius: 2,
+                  borderLeft: '4px solid #F57C00',
+                }}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 600, fontSize: '0.9rem' }}>{b.title}</Typography>
+                    <Typography sx={{ fontSize: '0.7rem', color: '#999', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {b.imageUrl || '텍스트 배너'} {b.link && `→ ${b.link}`}
+                    </Typography>
+                  </Box>
+                  <IconButton size="small" onClick={() => removeBanner(b.key)} sx={{ color: '#D32F2F' }}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              ))}
+
+              {bannerList.length === 0 && (
+                <Typography color="textSecondary" align="center" sx={{ py: 2, fontSize: '0.85rem' }}>
+                  등록된 배너가 없습니다. 배너를 추가하면 홈 화면 상단에 표시됩니다.
+                </Typography>
+              )}
+            </Box>
+          )}
+        </Paper>
+        )}
+
+        {/* 1. 기록 백업 (관리자+마스터) */}
+        {(isAdmin || isMaster) && (
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
             <BackupIcon sx={{ color: '#D32F2F', fontSize: 20 }} />
@@ -1168,8 +1327,9 @@ export default function AdminPage() {
             </Box>
           )}
         </Paper>
+        )}
 
-        {/* 2. 경기일 관리 */}
+        {/* 2. 경기일 관리 (운영진 이상) */}
         {(() => {
           const today = new Date().toISOString().slice(0, 10);
           const upcoming = matchDates.filter(m => m.dateKey >= today).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
@@ -1318,7 +1478,8 @@ export default function AdminPage() {
           )}
         </Paper>
 
-        {/* 4. 권한 관리 (3개 미리보기) */}
+        {/* 4. 권한 관리 (관리자+마스터) */}
+        {(isAdmin || isMaster) && (
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1327,7 +1488,7 @@ export default function AdminPage() {
               {allowedUsers.length > 0 && <Chip label={`${allowedUsers.length}명`} size="small"
                 sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#E3F2FD', color: '#1565C0' }} />}
             </Box>
-            <Button size="small" startIcon={<AddIcon />} onClick={() => setPermDialog(true)}>추가</Button>
+            {(isAdmin || isMaster) && <Button size="small" startIcon={<AddIcon />} onClick={() => setPermDialog(true)}>추가</Button>}
           </Box>
 
           {allowedUsers.length === 0 ? (
@@ -1337,16 +1498,20 @@ export default function AdminPage() {
               {(expandPerms ? allowedUsers : allowedUsers.slice(0, 3)).map((u) => (
                 <Box key={`${u.role}-${u.emailKey}`} sx={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  py: 0.8, px: 1, borderRadius: 2, mb: 0.5, bgcolor: '#F5F7FA',
+                  py: 0.8, px: 1.5, borderRadius: 2, mb: 0.5,
+                  bgcolor: roleBg[u.role] || '#F5F7FA',
+                  borderLeft: `4px solid ${roleColor[u.role]}`,
                 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography sx={{ fontSize: '0.9rem' }}>{u.name}</Typography>
+                    <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: '#333' }}>{u.name}</Typography>
                     <Chip label={roleLabel[u.role]} size="small"
-                      sx={{ fontSize: '0.7rem', height: 22, bgcolor: `${roleColor[u.role]}15`, color: roleColor[u.role], fontWeight: 'bold' }} />
+                      sx={{ fontSize: '0.7rem', height: 22, bgcolor: roleColor[u.role], color: 'white', fontWeight: 'bold' }} />
                   </Box>
-                  <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => removePermission(u)}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
+                  {(isAdmin || isMaster) && (
+                    <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => removePermission(u)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  )}
                 </Box>
               ))}
               {allowedUsers.length > 3 && (
@@ -1358,8 +1523,9 @@ export default function AdminPage() {
             </>
           )}
         </Paper>
+        )}
 
-        {/* 5. 선수 관리 (3줄 미리보기) */}
+        {/* 5. 선수 관리 (운영진 이상) */}
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1462,6 +1628,27 @@ export default function AdminPage() {
         </DialogActions>
       </Dialog>
 
+      {/* 배너 추가 다이얼로그 */}
+      <Dialog open={bannerDialog} onClose={() => setBannerDialog(false)} fullWidth maxWidth="xs">
+        <DialogTitle>배너 추가</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+          <TextField label="제목 (필수)" size="small" fullWidth value={bannerForm.title}
+            onChange={e => setBannerForm(f => ({ ...f, title: e.target.value }))} />
+          <TextField label="이미지 URL (선택)" size="small" fullWidth value={bannerForm.imageUrl}
+            onChange={e => setBannerForm(f => ({ ...f, imageUrl: e.target.value }))}
+            helperText="비워두면 제목만 표시되는 텍스트 배너" />
+          <TextField label="클릭 시 이동 URL (선택)" size="small" fullWidth value={bannerForm.link}
+            onChange={e => setBannerForm(f => ({ ...f, link: e.target.value }))} />
+          <TextField label="순서 (숫자)" size="small" type="number" fullWidth value={bannerForm.order}
+            onChange={e => setBannerForm(f => ({ ...f, order: parseInt(e.target.value) || 0 }))} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBannerDialog(false)}>취소</Button>
+          <Button variant="contained" onClick={saveBanner} disabled={!bannerForm.title.trim()}
+            sx={{ bgcolor: '#F57C00' }}>추가</Button>
+        </DialogActions>
+      </Dialog>
+
       {/* 권한 추가 다이얼로그 */}
       <Dialog open={permDialog} onClose={() => setPermDialog(false)} fullWidth maxWidth="xs">
         <DialogTitle>권한 추가</DialogTitle>
@@ -1520,6 +1707,59 @@ export default function AdminPage() {
             disabled={!leagueForm.startDate || !leagueForm.endDate}>
             {editingLeague ? '수정' : '만들기'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 마스터: 팀별 관리자 설정 다이얼로그 */}
+      <Dialog open={clubAdminDialog} onClose={() => setClubAdminDialog(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontWeight: 'bold', textAlign: 'center' }}>
+          <Typography variant="h6" fontWeight="bold" sx={{ color: '#7B1FA2' }}>
+            {selectedClubForAdmin?.name} 관리자
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          {/* 관리자 추가 */}
+          <Box sx={{ display: 'flex', gap: 1, mb: 2, mt: 1 }}>
+            <TextField size="small" fullWidth label="이름" value={clubAdminName}
+              onChange={e => setClubAdminName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addClubAdmin()} />
+            <FormControl size="small" sx={{ minWidth: 90 }}>
+              <Select value={clubAdminRole} onChange={e => setClubAdminRole(e.target.value)}>
+                <MenuItem value="admin">관리자</MenuItem>
+                <MenuItem value="moderator">운영진</MenuItem>
+                <MenuItem value="verified">인증</MenuItem>
+              </Select>
+            </FormControl>
+            <Button variant="contained" onClick={addClubAdmin} startIcon={<AddIcon />}
+              sx={{ whiteSpace: 'nowrap', bgcolor: '#7B1FA2', minWidth: 'auto' }}>추가</Button>
+          </Box>
+
+          <Divider sx={{ mb: 1.5 }}>현재 관리자</Divider>
+
+          {clubAdmins.length === 0 ? (
+            <Typography color="textSecondary" align="center" sx={{ py: 2 }}>등록된 관리자가 없습니다.</Typography>
+          ) : (
+            clubAdmins.map((a, idx) => (
+              <Box key={`${a.role}-${a.emailKey}-${idx}`} sx={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                py: 0.8, px: 1.5, mb: 0.5, borderRadius: 2,
+                bgcolor: roleBg[a.role] || '#F5F7FA',
+                borderLeft: `4px solid ${roleColor[a.role]}`,
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={{ fontSize: '0.95rem', fontWeight: 600 }}>{a.name}</Typography>
+                  <Chip label={roleLabel[a.role]} size="small"
+                    sx={{ fontSize: '0.7rem', height: 22, bgcolor: roleColor[a.role], color: 'white', fontWeight: 'bold' }} />
+                </Box>
+                <IconButton size="small" onClick={() => removeClubAdmin(a)} sx={{ color: '#bbb' }}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            ))
+          )}
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', pb: 2 }}>
+          <Button onClick={() => setClubAdminDialog(false)} variant="outlined">닫기</Button>
         </DialogActions>
       </Dialog>
 

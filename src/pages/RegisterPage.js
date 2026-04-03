@@ -65,7 +65,7 @@ function RegisterPage() {
         consentGiven: true,
       });
       alert('등록 완료!');
-      navigate('/vote');
+      navigate('/home');
     } catch (error) {
       console.error('등록 실패:', error);
       alert('등록 실패: ' + error.message);

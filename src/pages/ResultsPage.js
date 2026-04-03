@@ -465,16 +465,18 @@ function ResultsPage() {
 
   return (
     <div style={{ backgroundColor: '#F0F2F5', minHeight: '100vh', paddingBottom: '80px' }}>
-      <Box sx={{ background: '#1565C0', p: isMobile ? 1.5 : 2, mb: 2, display: 'flex', alignItems: 'center' }}>
-        <Button onClick={() => navigate(-1)} sx={{ color: 'white', minWidth: 'auto', mr: 1 }}>
-          <ArrowBackIcon />
-        </Button>
-        <Typography variant="h4" sx={{ color: 'white', fontWeight: 'bold', fontSize: titleFont, letterSpacing: '-0.03em', flex: 1, textAlign: 'center', mr: 5 }}>
-          {clubName} 경기결과
-        </Typography>
-      </Box>
-
-      <Container maxWidth="xs" sx={{ px: isMobile ? 0 : 2 }}>
+      <Container maxWidth="xs" sx={{ pt: 2, px: isMobile ? 1 : 2 }}>
+        <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
+          background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)' }}>
+          <CardContent sx={{ py: 3, textAlign: 'center' }}>
+            <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', letterSpacing: 2 }}>
+              경기결과
+            </Typography>
+            <Typography variant="h4" sx={{ color: 'white', fontWeight: 900, mt: 0.5 }}>
+              {clubName}
+            </Typography>
+          </CardContent>
+        </Card>
         <Paper square sx={{ mb: 2 }}>
           <Tabs value={tabIndex} onChange={(e, n) => setTabIndex(n)} variant="fullWidth">
             <Tab label="경기결과" sx={{ letterSpacing: '-0.03em', fontSize: '0.95rem', fontWeight: 'bold' }} />

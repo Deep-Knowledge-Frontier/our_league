@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 전체 배경 (둥근 사각형) -->
+  <rect x="16" y="16" width="480" height="390" rx="32" ry="32" fill="#394050"/>
+
+  <!-- 초록 필드 배경 -->
+  <rect x="48" y="48" width="416" height="326" rx="4" ry="4" fill="#43C06D"/>
+
+  <!-- 좌측 골대 영역 (진한 세로 바) -->
+  <rect x="48" y="120" width="16" height="172" rx="2" fill="#394050"/>
+
+  <!-- 우측 골대 영역 -->
+  <rect x="448" y="120" width="16" height="172" rx="2" fill="#394050"/>
+
+  <!-- 센터 라인 -->
+  <rect x="250" y="48" width="12" height="326" fill="#394050"/>
+
+  <!-- 센터 서클 -->
+  <circle cx="256" cy="211" r="56" fill="none" stroke="#394050" stroke-width="12"/>
+  <!-- 센터 점 -->
+  <circle cx="256" cy="211" r="6" fill="#394050"/>
+
+  <!-- 좌측 페널티 에어리어 -->
+  <path d="M 48 130 L 148 130 L 148 292 L 48 292" fill="none" stroke="#394050" stroke-width="12" stroke-linejoin="round"/>
+
+  <!-- 좌측 골 에어리어 -->
+  <path d="M 48 168 L 98 168 L 98 254 L 48 254" fill="none" stroke="#394050" stroke-width="12" stroke-linejoin="round"/>
+
+  <!-- 좌측 페널티 아크 (D) -->
+  <path d="M 148 175 A 48 48 0 0 1 148 247" fill="none" stroke="#394050" stroke-width="12"/>
+
+  <!-- 우측 페널티 에어리어 -->
+  <path d="M 464 130 L 364 130 L 364 292 L 464 292" fill="none" stroke="#394050" stroke-width="12" stroke-linejoin="round"/>
+
+  <!-- 우측 골 에어리어 -->
+  <path d="M 464 168 L 414 168 L 414 254 L 464 254" fill="none" stroke="#394050" stroke-width="12" stroke-linejoin="round"/>
+
+  <!-- 우측 페널티 아크 (D) -->
+  <path d="M 364 175 A 48 48 0 0 0 364 247" fill="none" stroke="#394050" stroke-width="12"/>
+
+  <!-- 코너 아크 좌상 -->
+  <path d="M 60 48 A 12 12 0 0 1 48 60" fill="none" stroke="#394050" stroke-width="8"/>
+  <!-- 코너 아크 우상 -->
+  <path d="M 452 48 A 12 12 0 0 0 464 60" fill="none" stroke="#394050" stroke-width="8"/>
+  <!-- 코너 아크 좌하 -->
+  <path d="M 48 362 A 12 12 0 0 1 60 374" fill="none" stroke="#394050" stroke-width="8"/>
+  <!-- 코너 아크 우하 -->
+  <path d="M 464 362 A 12 12 0 0 0 452 374" fill="none" stroke="#394050" stroke-width="8"/>
+
+  <!-- 하단 네비게이션 인디케이터 -->
+  <rect x="76" y="438" width="108" height="24" rx="12" fill="#394050"/>
+  <rect x="222" y="438" width="68" height="24" rx="12" fill="#394050"/>
+  <rect x="328" y="438" width="108" height="24" rx="12" fill="#394050"/>
+</svg>

@@ -1,8 +1,8 @@
 // 클럽 설정 - 이 파일만 수정하면 다른 클럽도 사용 가능
 export const APP_CONFIG = {
   clubName: '한강FC',
-  appTitle: '한강FC',
-  logoText: 'HAN GANG FC',
+  appTitle: '우리들의 리그',
+  logoText: '우리 LEAGUE',
 
   // 경기장 프리셋
   locationPresets: [
