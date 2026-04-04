@@ -80,30 +80,25 @@ export default function MyPage() {
     setAllPlayerStats(null);
     setMemberInfo(null);
     setLoading(true);
-    let cancelled = false;
 
     const loadData = async () => {
       try {
         // 유저 기본 정보
         const userSnap = await get(ref(db, `Users/${emailKey}`));
-        if (cancelled) return;
         if (userSnap.exists()) {
           setUserInfo(userSnap.val());
         }
 
         // 회원 상세 정보
         const memberSnap = await get(ref(db, `MemberInfo/${clubName}/${userName}`));
-        if (cancelled) return;
         if (memberSnap.exists()) setMemberInfo(memberSnap.val());
 
         // 선수 통계 (백업)
         const statsSnap = await get(ref(db, `PlayerStatsBackup_6m/${clubName}/${userName}`));
-        if (cancelled) return;
         if (statsSnap.exists()) setPlayerStats(statsSnap.val());
 
         // 주별 순위 이력 (전체 standings)
         const standingsSnap = await get(ref(db, `PlayerWeeklyStandings/${clubName}`));
-        if (cancelled) return;
         if (standingsSnap.exists()) setWeeklyStandings(standingsSnap.val());
 
         // 전체 선수 관계도 + 전체 선수 개인 통계
@@ -111,13 +106,11 @@ export default function MyPage() {
           get(ref(db, `PlayerNetworkGraph/${clubName}`)),
           get(ref(db, `PlayerDetailStats/${clubName}`)),
         ]);
-        if (cancelled) return;
         if (netSnap.exists()) setNetworkGraph(netSnap.val());
         if (allStatsSnap.exists()) setAllPlayerStats(allStatsSnap.val());
 
         // 개인별 상세 통계: 백업 데이터 우선, 없으면 실시간 계산
         const detailSnap = await get(ref(db, `PlayerDetailStats/${clubName}/${userName}`));
-        if (cancelled) return;
         if (detailSnap.exists()) {
           const d = detailSnap.val();
           setMatchStats({
@@ -148,11 +141,10 @@ export default function MyPage() {
       } catch (e) {
         console.error('MyPage load error:', e);
       }
-      if (!cancelled) setLoading(false);
+      setLoading(false);
     };
 
     loadData();
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate, emailKey, clubName, userName]);
 

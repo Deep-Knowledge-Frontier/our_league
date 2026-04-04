@@ -1,53 +1,59 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- 전체 배경 (둥근 사각형) -->
-  <rect x="16" y="16" width="480" height="390" rx="32" ry="32" fill="#394050"/>
+  <defs>
+    <linearGradient id="shieldGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3A3F7A"/>
+      <stop offset="100%" stop-color="#1A1D4E"/>
+    </linearGradient>
+    <linearGradient id="fieldGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2E8B57"/>
+      <stop offset="100%" stop-color="#1B6B3A"/>
+    </linearGradient>
+  </defs>
 
-  <!-- 초록 필드 배경 -->
-  <rect x="48" y="48" width="416" height="326" rx="4" ry="4" fill="#43C06D"/>
+  <!-- 배경 원 -->
+  <circle cx="256" cy="256" r="248" fill="url(#shieldGrad)"/>
+  <circle cx="256" cy="256" r="232" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4"/>
 
-  <!-- 좌측 골대 영역 (진한 세로 바) -->
-  <rect x="48" y="120" width="16" height="172" rx="2" fill="#394050"/>
+  <!-- 방패 형태 -->
+  <path d="M 256 56 L 420 120 L 420 280 Q 420 400 256 460 Q 92 400 92 280 L 92 120 Z" fill="url(#shieldGrad)" stroke="rgba(255,255,255,0.3)" stroke-width="3"/>
 
-  <!-- 우측 골대 영역 -->
-  <rect x="448" y="120" width="16" height="172" rx="2" fill="#394050"/>
+  <!-- 방패 내부 필드 -->
+  <path d="M 256 80 L 396 138 L 396 272 Q 396 380 256 436 Q 116 380 116 272 L 116 138 Z" fill="url(#fieldGrad)"/>
 
-  <!-- 센터 라인 -->
-  <rect x="250" y="48" width="12" height="326" fill="#394050"/>
+  <!-- 필드 라인 - 가로 -->
+  <line x1="116" y1="270" x2="396" y2="270" stroke="rgba(255,255,255,0.35)" stroke-width="2.5"/>
 
   <!-- 센터 서클 -->
-  <circle cx="256" cy="211" r="56" fill="none" stroke="#394050" stroke-width="12"/>
-  <!-- 센터 점 -->
-  <circle cx="256" cy="211" r="6" fill="#394050"/>
+  <circle cx="256" cy="270" r="45" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="2.5"/>
+  <circle cx="256" cy="270" r="4" fill="rgba(255,255,255,0.5)"/>
 
-  <!-- 좌측 페널티 에어리어 -->
-  <path d="M 48 130 L 148 130 L 148 292 L 48 292" fill="none" stroke="#394050" stroke-width="12" stroke-linejoin="round"/>
+  <!-- 축구공 -->
+  <circle cx="256" cy="210" r="52" fill="white"/>
+  <circle cx="256" cy="210" r="52" fill="none" stroke="#333" stroke-width="2"/>
+  <!-- 오각형 패턴 -->
+  <path d="M 256 170 L 270 182 L 265 198 L 247 198 L 242 182 Z" fill="#2D336B"/>
+  <path d="M 282 200 L 296 212 L 291 228 L 273 228 L 268 212 Z" fill="#2D336B"/>
+  <path d="M 230 200 L 244 212 L 239 228 L 221 228 L 216 212 Z" fill="#2D336B"/>
+  <path d="M 256 236 L 270 248 L 265 264 L 247 264 L 242 248 Z" fill="#2D336B"/>
+  <!-- 축구공 선 -->
+  <line x1="256" y1="170" x2="256" y2="158" stroke="#333" stroke-width="1.5"/>
+  <line x1="242" y1="182" x2="228" y2="174" stroke="#333" stroke-width="1.5"/>
+  <line x1="270" y1="182" x2="284" y2="174" stroke="#333" stroke-width="1.5"/>
+  <line x1="268" y1="212" x2="282" y2="200" stroke="#333" stroke-width="1.5"/>
+  <line x1="244" y1="212" x2="230" y2="200" stroke="#333" stroke-width="1.5"/>
+  <line x1="296" y1="212" x2="308" y2="210" stroke="#333" stroke-width="1.5"/>
+  <line x1="216" y1="212" x2="204" y2="210" stroke="#333" stroke-width="1.5"/>
+  <line x1="291" y1="228" x2="296" y2="242" stroke="#333" stroke-width="1.5"/>
+  <line x1="221" y1="228" x2="216" y2="242" stroke="#333" stroke-width="1.5"/>
+  <line x1="273" y1="228" x2="270" y2="248" stroke="#333" stroke-width="1.5"/>
+  <line x1="239" y1="228" x2="242" y2="248" stroke="#333" stroke-width="1.5"/>
+  <line x1="265" y1="264" x2="270" y2="262" stroke="#333" stroke-width="1.5"/>
+  <line x1="247" y1="264" x2="242" y2="262" stroke="#333" stroke-width="1.5"/>
 
-  <!-- 좌측 골 에어리어 -->
-  <path d="M 48 168 L 98 168 L 98 254 L 48 254" fill="none" stroke="#394050" stroke-width="12" stroke-linejoin="round"/>
+  <!-- 상단 별 -->
+  <polygon points="256,72 262,88 280,88 266,98 271,114 256,104 241,114 246,98 232,88 250,88" fill="#FFD700"/>
 
-  <!-- 좌측 페널티 아크 (D) -->
-  <path d="M 148 175 A 48 48 0 0 1 148 247" fill="none" stroke="#394050" stroke-width="12"/>
-
-  <!-- 우측 페널티 에어리어 -->
-  <path d="M 464 130 L 364 130 L 364 292 L 464 292" fill="none" stroke="#394050" stroke-width="12" stroke-linejoin="round"/>
-
-  <!-- 우측 골 에어리어 -->
-  <path d="M 464 168 L 414 168 L 414 254 L 464 254" fill="none" stroke="#394050" stroke-width="12" stroke-linejoin="round"/>
-
-  <!-- 우측 페널티 아크 (D) -->
-  <path d="M 364 175 A 48 48 0 0 0 364 247" fill="none" stroke="#394050" stroke-width="12"/>
-
-  <!-- 코너 아크 좌상 -->
-  <path d="M 60 48 A 12 12 0 0 1 48 60" fill="none" stroke="#394050" stroke-width="8"/>
-  <!-- 코너 아크 우상 -->
-  <path d="M 452 48 A 12 12 0 0 0 464 60" fill="none" stroke="#394050" stroke-width="8"/>
-  <!-- 코너 아크 좌하 -->
-  <path d="M 48 362 A 12 12 0 0 1 60 374" fill="none" stroke="#394050" stroke-width="8"/>
-  <!-- 코너 아크 우하 -->
-  <path d="M 464 362 A 12 12 0 0 0 452 374" fill="none" stroke="#394050" stroke-width="8"/>
-
-  <!-- 하단 네비게이션 인디케이터 -->
-  <rect x="76" y="438" width="108" height="24" rx="12" fill="#394050"/>
-  <rect x="222" y="438" width="68" height="24" rx="12" fill="#394050"/>
-  <rect x="328" y="438" width="108" height="24" rx="12" fill="#394050"/>
+  <!-- 하단 텍스트: 우리들의 리그 -->
+  <text x="256" y="365" text-anchor="middle" font-family="'Noto Sans KR', sans-serif" font-weight="900" font-size="36" fill="white" letter-spacing="2">우리들의</text>
+  <text x="256" y="410" text-anchor="middle" font-family="'Noto Sans KR', sans-serif" font-weight="900" font-size="44" fill="#FFD700" letter-spacing="4">LEAGUE</text>
 </svg>

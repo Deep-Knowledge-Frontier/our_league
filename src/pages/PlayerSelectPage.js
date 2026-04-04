@@ -144,9 +144,6 @@ export default function PlayerSelectPage() {
   const [movingPlayer, setMovingPlayer] = useState(null);
   const [showResult, setShowResult] = useState(false);
   const saveTimerRef = useRef(null);
-  const selectedPlayersRef = useRef(selectedPlayers);
-  const teamsRef = useRef(teams);
-  const teamFormationsRef = useRef(teamFormations);
   const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
   const [editingTeamName, setEditingTeamName] = useState(null); // 'A' | 'B' | 'C' | null
   const [teamCaptains, setTeamCaptains] = useState({ A: '', B: '', C: '' });
@@ -159,11 +156,6 @@ export default function PlayerSelectPage() {
   const [teamFormations, setTeamFormations] = useState({});  // { A: { formationId, players }, B: ... }
   const [selectedPos, setSelectedPos] = useState(null);
   const [expandFormation, setExpandFormation] = useState(null); // 'A' | 'B' | 'C' | null
-
-  // ref 동기화
-  useEffect(() => { selectedPlayersRef.current = selectedPlayers; }, [selectedPlayers]);
-  useEffect(() => { teamsRef.current = teams; }, [teams]);
-  useEffect(() => { teamFormationsRef.current = teamFormations; }, [teamFormations]);
 
   useEffect(() => {
     return onValue(ref(db, `registeredPlayers/${clubName}`), snap => {
@@ -291,23 +283,20 @@ export default function PlayerSelectPage() {
       const next = { ...prev, [name]: !prev[name] };
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        // ref에서 최신 상태를 읽어 항상 정확한 전체 목록을 저장
-        const latest = selectedPlayersRef.current;
-        const all = Object.entries(latest).filter(([, v]) => v).map(([k]) => k);
+        const all = Object.entries(next).filter(([, v]) => v).map(([k]) => k);
         set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer/all`), all);
       }, 350);
       return next;
     });
   }, [canEdit, clubName, dateParam]);
 
-  // 참석선수 변동 시 팀 자동 조정 (ref로 읽어 무한루프 방지)
+  // 참석선수 변동 시 팀 자동 조정
   useEffect(() => {
     if (!hasSavedTeams || editMode) return;
     const currentSelected = new Set(Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k));
     if (currentSelected.size === 0) return;
 
-    const curTeams = teamsRef.current;
-    const allTeamMembers = [...curTeams.A, ...curTeams.B, ...curTeams.C];
+    const allTeamMembers = [...teams.A, ...teams.B, ...teams.C];
     if (allTeamMembers.length === 0) return;
 
     const removed = allTeamMembers.filter(n => !currentSelected.has(n));
@@ -317,7 +306,7 @@ export default function PlayerSelectPage() {
     const codes = teamCount === 3 ? ['A', 'B', 'C'] : ['A', 'B'];
     const newTeams = {};
     codes.forEach(code => {
-      newTeams[code] = curTeams[code].filter(n => currentSelected.has(n));
+      newTeams[code] = teams[code].filter(n => currentSelected.has(n));
     });
     added.forEach(name => {
       const minCode = codes.reduce((a, b) => (newTeams[a].length <= newTeams[b].length ? a : b));
@@ -327,13 +316,12 @@ export default function PlayerSelectPage() {
 
     setTeams(newTeams);
     // 포메이션도 재배치
-    const curTf = teamFormationsRef.current;
     const fmId = clubFormation || getDefaultFormation(clubType);
     const fmDef = getFormations(clubType)[fmId];
     if (fmDef) {
       const newTf = {};
       codes.forEach(code => {
-        const existing = curTf[code];
+        const existing = teamFormations[code];
         const useFmId = existing?.formationId || fmId;
         const useFmDef = getFormations(clubType)[useFmId] || fmDef;
         if (newTeams[code].length > 0) {
@@ -349,7 +337,7 @@ export default function PlayerSelectPage() {
     updates[`${base}/B`] = newTeams.B;
     updates[`${base}/C`] = teamCount === 3 ? newTeams.C : null;
     update(ref(db), updates);
-  }, [selectedPlayers, hasSavedTeams, editMode, teamCount, clubName, dateParam, clubFormation, clubType, statsMap]);
+  }, [selectedPlayers, hasSavedTeams, editMode, teams, teamCount, clubName, dateParam, clubFormation, clubType, teamFormations, statsMap]);
 
   const generateDefaultMatchOrder = useCallback((tc) => {
     const codes = tc === 3 ? ['A', 'B', 'C'] : ['A', 'B'];
