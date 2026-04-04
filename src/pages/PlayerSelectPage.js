@@ -346,12 +346,6 @@ export default function PlayerSelectPage() {
             ))}
           </Box>
 
-          <Divider sx={{ my: 1.5 }} />
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-            <Typography sx={{ fontWeight: 700, fontSize: '0.9rem' }}>키수령자:</Typography>
-            <Chip label={`1. ${keyPop[0] || '(없음)'}`} size="small" sx={{ fontWeight: 700, bgcolor: '#F3F4F6' }} />
-            <Chip label={`2. ${keyPop[1] || '(없음)'}`} size="small" sx={{ fontWeight: 700, bgcolor: '#F3F4F6' }} />
-          </Box>
 
           {canEdit && !editMode && (
             <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>

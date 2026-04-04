@@ -260,20 +260,6 @@ export default function TeamViewPage() {
         </Box>
 
         <Box sx={{ my: 2.2, height: 1, bgcolor: "rgba(0,0,0,0.12)" }} />
-
-        <Box sx={{ textAlign: "center" }}>
-          <Typography sx={{ fontWeight: 900, mb: 1.2 }}>키수령자</Typography>
-          <Stack direction="row" spacing={1} justifyContent="center" flexWrap="wrap">
-            <Chip
-              label={`1. ${keyPop[0] || "(없음)"}`}
-              sx={{ bgcolor: "#F3F4F6", fontWeight: 800, borderRadius: "16px" }}
-            />
-            <Chip
-              label={`2. ${keyPop[1] || "(없음)"}`}
-              sx={{ bgcolor: "#F3F4F6", fontWeight: 800, borderRadius: "16px" }}
-            />
-          </Stack>
-        </Box>
       </Paper>
 
       <Box sx={{ mt: 3, display: "flex", justifyContent: "center" }}>

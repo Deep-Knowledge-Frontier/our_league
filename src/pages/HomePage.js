@@ -242,14 +242,14 @@ function HomePage() {
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 1.5, color: '#666' }}>
                 {nextMatch.time && (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                    <AccessTimeIcon sx={{ fontSize: 16 }} />
-                    <Typography sx={{ fontSize: '0.85rem' }}>{nextMatch.time}</Typography>
+                    <AccessTimeIcon sx={{ fontSize: 17 }} />
+                    <Typography sx={{ fontSize: '0.92rem' }}>{nextMatch.time}</Typography>
                   </Box>
                 )}
                 {nextMatch.location && (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                    <PlaceIcon sx={{ fontSize: 16 }} />
-                    <Typography sx={{ fontSize: '0.85rem' }}>{nextMatch.location}</Typography>
+                    <PlaceIcon sx={{ fontSize: 17 }} />
+                    <Typography sx={{ fontSize: '0.92rem' }}>{nextMatch.location}</Typography>
                   </Box>
                 )}
               </Box>
@@ -274,7 +274,7 @@ function HomePage() {
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <SportsSoccerIcon sx={{ color: '#333', fontSize: 20 }} />
-                  <Typography sx={{ fontWeight: 'bold', fontSize: '1rem' }}>최근 경기</Typography>
+                  <Typography sx={{ fontWeight: 'bold', fontSize: '1.08rem' }}>최근 경기</Typography>
                 </Box>
                 <Button size="small" onClick={() => navigate('/results')} endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
                   sx={{ fontSize: '0.8rem', color: '#999' }}>전체보기</Button>
@@ -282,17 +282,17 @@ function HomePage() {
               {recentResults.map((r, ri) => (
                 <Box key={r.date}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.8 }}>
-                    <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#333' }}>
+                    <Typography sx={{ fontSize: '0.9rem', fontWeight: 700, color: '#333' }}>
                       {formatDateWithDay(r.date)}
                     </Typography>
                     {r.winner && (
                       <Chip label={`우승 ${r.winner}`} size="small"
-                        sx={{ fontSize: '0.7rem', height: 22, bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 'bold' }} />
+                        sx={{ fontSize: '0.78rem', height: 24, bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 'bold' }} />
                     )}
                     {r.dailyMvp !== '없음' && (
                       <Chip icon={<EmojiEventsIcon sx={{ fontSize: '14px !important', color: '#F57C00 !important' }} />}
                         label={r.dailyMvp} size="small"
-                        sx={{ fontSize: '0.72rem', height: 22, bgcolor: '#FFF3E0', color: '#E65100', fontWeight: 'bold' }} />
+                        sx={{ fontSize: '0.78rem', height: 24, bgcolor: '#FFF3E0', color: '#E65100', fontWeight: 'bold' }} />
                     )}
                   </Box>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1.2 }}>
@@ -305,9 +305,9 @@ function HomePage() {
                           bgcolor: '#FAFAFA', borderRadius: 1.5, px: 1, py: 0.4,
                           border: '1px solid #EEEEEE',
                         }}>
-                          <Typography sx={{ fontSize: '0.72rem', fontWeight: isTeam1Win ? 800 : 400, color: isTeam1Win ? '#1565C0' : '#999' }}>{m.team1}</Typography>
-                          <Typography sx={{ fontSize: '0.8rem', fontWeight: 800, color: '#333' }}>{m.score1}:{m.score2}</Typography>
-                          <Typography sx={{ fontSize: '0.72rem', fontWeight: isTeam2Win ? 800 : 400, color: isTeam2Win ? '#1565C0' : '#999' }}>{m.team2}</Typography>
+                          <Typography sx={{ fontSize: '0.82rem', fontWeight: isTeam1Win ? 800 : 400, color: isTeam1Win ? '#1565C0' : '#999' }}>{m.team1}</Typography>
+                          <Typography sx={{ fontSize: '0.9rem', fontWeight: 800, color: '#333' }}>{m.score1}:{m.score2}</Typography>
+                          <Typography sx={{ fontSize: '0.82rem', fontWeight: isTeam2Win ? 800 : 400, color: isTeam2Win ? '#1565C0' : '#999' }}>{m.team2}</Typography>
                         </Box>
                       );
                     })}
@@ -326,8 +326,8 @@ function HomePage() {
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <EmojiEventsIcon sx={{ color: '#F57C00', fontSize: 20 }} />
-                  <Typography sx={{ fontWeight: 'bold', fontSize: '1rem' }}>선수순위</Typography>
-                  <Chip label="6개월" size="small" sx={{ fontSize: '0.65rem', height: 18, bgcolor: '#FFF3E0', color: '#F57C00' }} />
+                  <Typography sx={{ fontWeight: 'bold', fontSize: '1.08rem' }}>선수순위</Typography>
+                  <Chip label="6개월" size="small" sx={{ fontSize: '0.72rem', height: 20, bgcolor: '#FFF3E0', color: '#F57C00' }} />
                 </Box>
                 <Button size="small" onClick={() => navigate('/results')} endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
                   sx={{ fontSize: '0.8rem', color: '#999' }}>전체보기</Button>
@@ -335,12 +335,12 @@ function HomePage() {
 
               {/* 헤더 */}
               <Box sx={{ display: 'flex', alignItems: 'center', px: 1, py: 0.5, mb: 0.5 }}>
-                <Typography sx={{ width: 30, fontSize: '0.7rem', color: '#999', textAlign: 'center' }}>#</Typography>
-                <Typography sx={{ flex: 1, fontSize: '0.7rem', color: '#999' }}>선수</Typography>
-                <Typography sx={{ width: 45, fontSize: '0.7rem', color: '#999', textAlign: 'center' }}>능력치</Typography>
-                <Typography sx={{ width: 35, fontSize: '0.7rem', color: '#999', textAlign: 'center' }}>골</Typography>
-                <Typography sx={{ width: 35, fontSize: '0.7rem', color: '#999', textAlign: 'center' }}>도움</Typography>
-                <Typography sx={{ width: 40, fontSize: '0.7rem', color: '#999', textAlign: 'center' }}>승률</Typography>
+                <Typography sx={{ width: 30, fontSize: '0.78rem', color: '#999', textAlign: 'center' }}>#</Typography>
+                <Typography sx={{ flex: 1, fontSize: '0.78rem', color: '#999' }}>선수</Typography>
+                <Typography sx={{ width: 48, fontSize: '0.78rem', color: '#999', textAlign: 'center' }}>능력치</Typography>
+                <Typography sx={{ width: 38, fontSize: '0.78rem', color: '#999', textAlign: 'center' }}>골</Typography>
+                <Typography sx={{ width: 38, fontSize: '0.78rem', color: '#999', textAlign: 'center' }}>도움</Typography>
+                <Typography sx={{ width: 44, fontSize: '0.78rem', color: '#999', textAlign: 'center' }}>승률</Typography>
               </Box>
 
               {leaderboard.map((p, i) => (
@@ -350,25 +350,25 @@ function HomePage() {
                   bgcolor: i === 0 ? '#FFFDE7' : i === 1 ? '#FAFAFA' : i === 2 ? '#FFF8E1' : 'transparent',
                   borderLeft: i < 3 ? `3px solid ${['#FFD700', '#C0C0C0', '#CD7F32'][i]}` : '3px solid transparent',
                 }}>
-                  <Typography sx={{ width: 30, fontSize: i < 3 ? '1.1rem' : '0.85rem', textAlign: 'center' }}>
+                  <Typography sx={{ width: 30, fontSize: i < 3 ? '1.15rem' : '0.92rem', textAlign: 'center' }}>
                     {medalLabels[i]}
                   </Typography>
                   <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontWeight: 700, fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <Typography sx={{ fontWeight: 700, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {p.name}
                     </Typography>
-                    <Typography sx={{ fontSize: '0.65rem', color: '#999' }}>{p.matches}경기</Typography>
+                    <Typography sx={{ fontSize: '0.72rem', color: '#999' }}>{p.matches}경기</Typography>
                   </Box>
-                  <Typography sx={{ width: 45, textAlign: 'center', fontWeight: 800, fontSize: '0.85rem', color: '#2D336B' }}>
+                  <Typography sx={{ width: 48, textAlign: 'center', fontWeight: 800, fontSize: '0.92rem', color: '#2D336B' }}>
                     {p.abilityScore.toFixed(0)}
                   </Typography>
-                  <Typography sx={{ width: 35, textAlign: 'center', fontWeight: 600, fontSize: '0.82rem', color: '#1565C0' }}>
+                  <Typography sx={{ width: 38, textAlign: 'center', fontWeight: 600, fontSize: '0.9rem', color: '#1565C0' }}>
                     {p.goals}
                   </Typography>
-                  <Typography sx={{ width: 35, textAlign: 'center', fontWeight: 600, fontSize: '0.82rem', color: '#388E3C' }}>
+                  <Typography sx={{ width: 38, textAlign: 'center', fontWeight: 600, fontSize: '0.9rem', color: '#388E3C' }}>
                     {p.assists}
                   </Typography>
-                  <Typography sx={{ width: 40, textAlign: 'center', fontWeight: 600, fontSize: '0.82rem', color: '#F57C00' }}>
+                  <Typography sx={{ width: 44, textAlign: 'center', fontWeight: 600, fontSize: '0.9rem', color: '#F57C00' }}>
                     {p.pointRate.toFixed(0)}%
                   </Typography>
                 </Box>
@@ -382,24 +382,24 @@ function HomePage() {
           <Box sx={{ background: 'linear-gradient(135deg, #388E3C 0%, #2E7D32 100%)', px: 2.5, py: 1.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <PeopleIcon sx={{ color: 'white', fontSize: 20 }} />
-              <Typography sx={{ fontWeight: 'bold', fontSize: '1rem', color: 'white' }}>팀 현황</Typography>
+              <Typography sx={{ fontWeight: 'bold', fontSize: '1.08rem', color: 'white' }}>팀 현황</Typography>
             </Box>
           </Box>
           <CardContent sx={{ pb: '16px !important' }}>
             <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center' }}>
               <Box sx={{ textAlign: 'center', flex: 1, py: 1.5, bgcolor: '#E8F5E9', borderRadius: 2 }}>
                 <Typography sx={{ fontWeight: 900, fontSize: '1.8rem', color: '#2E7D32' }}>{teamStats.totalPlayers}</Typography>
-                <Typography sx={{ fontSize: '0.75rem', color: '#666', fontWeight: 500 }}>등록 선수</Typography>
+                <Typography sx={{ fontSize: '0.82rem', color: '#666', fontWeight: 500 }}>등록 선수</Typography>
               </Box>
               <Box sx={{ textAlign: 'center', flex: 1, py: 1.5, bgcolor: '#E3F2FD', borderRadius: 2 }}>
                 <Typography sx={{ fontWeight: 900, fontSize: '1.8rem', color: '#1565C0' }}>{teamStats.avgAttend}%</Typography>
-                <Typography sx={{ fontSize: '0.75rem', color: '#666', fontWeight: 500 }}>평균 참석율</Typography>
+                <Typography sx={{ fontSize: '0.82rem', color: '#666', fontWeight: 500 }}>평균 참석율</Typography>
               </Box>
               <Box sx={{ textAlign: 'center', flex: 1, py: 1.5, bgcolor: '#FFF3E0', borderRadius: 2 }}>
                 <Typography sx={{ fontWeight: 900, fontSize: '1.8rem', color: '#E65100' }}>
                   {recentResults.length > 0 ? recentResults[0].matches.length : 0}
                 </Typography>
-                <Typography sx={{ fontSize: '0.75rem', color: '#666', fontWeight: 500 }}>최근 경기수</Typography>
+                <Typography sx={{ fontSize: '0.82rem', color: '#666', fontWeight: 500 }}>최근 경기수</Typography>
               </Box>
             </Box>
           </CardContent>
