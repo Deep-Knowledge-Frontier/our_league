@@ -38,16 +38,27 @@ function HomePage() {
 
   useEffect(() => {
     if (!authReady || !user || !clubName) return;
+    // 클럽 전환 시 기존 데이터 초기화
+    setNextMatch(null);
+    setNextMatchAttend(0);
+    setRecentResults([]);
+    setLeaderboard([]);
+    setTeamStats({ totalPlayers: 0, avgAttend: 0 });
+    setLoading(true);
+    let cancelled = false;
+
     const loadData = async () => {
       try {
         // 1. 배너
         const bannerSnap = await get(ref(db, 'banners'));
+        if (cancelled) return;
         if (bannerSnap.exists()) {
           setBanners(Object.values(bannerSnap.val()).filter(b => b.active !== false).sort((a, b) => (a.order || 0) - (b.order || 0)));
         }
 
         // 2. 다음 경기
         const matchSnap = await get(ref(db, `MatchDates/${clubName}`));
+        if (cancelled) return;
         if (matchSnap.exists()) {
           const data = matchSnap.val();
           const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -64,8 +75,10 @@ function HomePage() {
           }
         }
 
+        if (cancelled) return;
         // 3. 최근 경기 결과 + 우승팀 계산
         const dailySnap = await get(ref(db, `DailyResultsBackup/${clubName}`));
+        if (cancelled) return;
         if (dailySnap.exists()) {
           const data = dailySnap.val();
           setRecentResults(Object.keys(data).sort().reverse().slice(0, 3).map(dk => {
@@ -84,8 +97,10 @@ function HomePage() {
           }));
         }
 
+        if (cancelled) return;
         // 4. 선수순위 리더보드 (abilityScore 기준 TOP 5)
         const statsSnap = await get(ref(db, `PlayerStatsBackup_6m/${clubName}`));
+        if (cancelled) return;
         if (statsSnap.exists()) {
           const data = statsSnap.val();
           setLeaderboard(
@@ -105,8 +120,10 @@ function HomePage() {
           );
         }
 
+        if (cancelled) return;
         // 5. 팀 현황 — registeredPlayers 기준
         const regSnap = await get(ref(db, `registeredPlayers/${clubName}`));
+        if (cancelled) return;
         let regNames = [];
         if (regSnap.exists()) {
           regNames = Object.values(regSnap.val()).map(p => p.name).filter(Boolean);
@@ -126,9 +143,10 @@ function HomePage() {
       } catch (e) {
         console.error('HomePage load error:', e);
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     };
     loadData();
+    return () => { cancelled = true; };
   }, [authReady, user, clubName]);
 
 

@@ -55,11 +55,18 @@ export default function ScoreRecordPage() {
   const [selectedMvp, setSelectedMvp] = useState(null);
   const [endDialog, setEndDialog] = useState(false);
   const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
+  const [customMatchOrder, setCustomMatchOrder] = useState(null);
 
   useEffect(() => {
     return onValue(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamNames`), snap => {
       const v = snap.val() || {};
       setTeamNames({ A: v.A || '', B: v.B || '', C: v.C || '' });
+    });
+  }, [clubName, dateParam]);
+
+  useEffect(() => {
+    return onValue(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/MatchOrder`), snap => {
+      if (snap.exists()) setCustomMatchOrder(snap.val());
     });
   }, [clubName, dateParam]);
 
@@ -114,12 +121,16 @@ export default function ScoreRecordPage() {
   const getTeamLabel = useCallback((code) => teamNames[code] || `팀 ${code}`, [teamNames]);
 
   const matches = useMemo(() => {
+    if (customMatchOrder && customMatchOrder.length > 0) return customMatchOrder;
     const tn = Object.keys(teamSelections).filter(k => k !== 'all');
     return tn.length < 2 ? [['A', 'B']] : generateMatches(tn);
-  }, [teamSelections]);
+  }, [teamSelections, customMatchOrder]);
 
-  const currentMatch = useMemo(() => matches[(gameNumber - 1) % matches.length] || ['A', 'B'], [matches, gameNumber]);
-  const endMatch = useMemo(() => teamCountParam === 2 ? 6 : teamCountParam === 3 ? 9 : matches.length, [teamCountParam, matches]);
+  const currentMatch = useMemo(() => {
+    if (gameNumber <= matches.length) return matches[gameNumber - 1] || ['A', 'B'];
+    return matches[(gameNumber - 1) % matches.length] || ['A', 'B'];
+  }, [matches, gameNumber]);
+  const endMatch = useMemo(() => customMatchOrder ? customMatchOrder.length : (teamCountParam === 2 ? 6 : teamCountParam === 3 ? 9 : matches.length), [teamCountParam, matches, customMatchOrder]);
 
   const team1Options = useMemo(() => {
     const tp = teamSelections[currentMatch[0]] || [];

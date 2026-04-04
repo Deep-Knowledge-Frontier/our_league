@@ -67,6 +67,52 @@ function snakeDraft(players, teamCount, statsMap) {
   return teams;
 }
 
+// 포지션 ID → 역할 점수 (공격 vs 수비 가중치)
+function getPositionScore(posId, stats) {
+  const atk = stats?.finalAttack || 50;
+  const def = stats?.finalDefense || 50;
+  const bal = stats?.finalBalance || 50;
+  const stm = stats?.finalStamina || 50;
+  const id = posId.toUpperCase();
+  if (id === 'GK') return def * 0.5 + stm * 0.3 + bal * 0.2;
+  if (['CB', 'CB1', 'CB2', 'CB3', 'DF', 'LB', 'RB'].includes(id)) return def * 0.5 + bal * 0.3 + stm * 0.2;
+  if (['CDM', 'CDM1', 'CDM2', 'DM'].includes(id)) return def * 0.4 + bal * 0.3 + atk * 0.3;
+  if (['CM', 'CM1', 'CM2', 'CM3', 'MF', 'LM', 'RM'].includes(id)) return bal * 0.3 + atk * 0.35 + def * 0.35;
+  if (['AM', 'LWB', 'RWB'].includes(id)) return atk * 0.4 + bal * 0.3 + def * 0.3;
+  if (['FW', 'ST', 'ST1', 'ST2', 'LW', 'RW', 'LF', 'RF'].includes(id)) return atk * 0.6 + bal * 0.2 + stm * 0.2;
+  return bal;
+}
+
+function autoAssignPlayers(positions, teamPlayers, statsMap) {
+  const players = {};
+  const available = [...teamPlayers];
+  // 포지션별로 가장 적합한 선수 매칭 (탐욕 알고리즘)
+  const posOrder = [...positions].sort((a, b) => {
+    // GK 최우선, 그 다음 수비→미드→공격 순으로 배치
+    const priority = (id) => {
+      const u = id.toUpperCase();
+      if (u === 'GK') return 0;
+      if (['CB', 'CB1', 'CB2', 'CB3', 'DF', 'LB', 'RB'].includes(u)) return 1;
+      if (['CDM', 'CDM1', 'CDM2', 'DM', 'CM', 'CM1', 'CM2', 'CM3', 'MF', 'LM', 'RM'].includes(u)) return 2;
+      return 3;
+    };
+    return priority(a.id) - priority(b.id);
+  });
+
+  for (const pos of posOrder) {
+    if (available.length === 0) break;
+    let bestIdx = 0;
+    let bestScore = -1;
+    available.forEach((name, idx) => {
+      const score = getPositionScore(pos.id, statsMap[name]);
+      if (score > bestScore) { bestScore = score; bestIdx = idx; }
+    });
+    players[pos.id] = available[bestIdx];
+    available.splice(bestIdx, 1);
+  }
+  return players;
+}
+
 function pickTwoRandom(names) {
   const src = [...new Set(names.filter(Boolean))];
   if (src.length < 2) return src;
@@ -98,9 +144,14 @@ export default function PlayerSelectPage() {
   const [movingPlayer, setMovingPlayer] = useState(null);
   const [showResult, setShowResult] = useState(false);
   const saveTimerRef = useRef(null);
+  const selectedPlayersRef = useRef(selectedPlayers);
+  const teamsRef = useRef(teams);
+  const teamFormationsRef = useRef(teamFormations);
   const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
   const [editingTeamName, setEditingTeamName] = useState(null); // 'A' | 'B' | 'C' | null
   const [teamCaptains, setTeamCaptains] = useState({ A: '', B: '', C: '' });
+  const [matchOrder, setMatchOrder] = useState([]);  // [['A','B'], ['A','C'], ['B','C']]
+  const [swapMatch, setSwapMatch] = useState(null);  // index of match being swapped
 
   // 포메이션 관리
   const [clubType, setClubType] = useState('futsal');
@@ -108,6 +159,11 @@ export default function PlayerSelectPage() {
   const [teamFormations, setTeamFormations] = useState({});  // { A: { formationId, players }, B: ... }
   const [selectedPos, setSelectedPos] = useState(null);
   const [expandFormation, setExpandFormation] = useState(null); // 'A' | 'B' | 'C' | null
+
+  // ref 동기화
+  useEffect(() => { selectedPlayersRef.current = selectedPlayers; }, [selectedPlayers]);
+  useEffect(() => { teamsRef.current = teams; }, [teams]);
+  useEffect(() => { teamFormationsRef.current = teamFormations; }, [teamFormations]);
 
   useEffect(() => {
     return onValue(ref(db, `registeredPlayers/${clubName}`), snap => {
@@ -126,6 +182,11 @@ export default function PlayerSelectPage() {
           attendanceRate: data.attendanceRate || 0,
           pointRate: data.pointRate || 0,
           abilityScore: data.abilityScore || 0,
+          finalAttack: data.finalAttack || 50,
+          finalDefense: data.finalDefense || 50,
+          finalStamina: data.finalStamina || 50,
+          finalBalance: data.finalBalance || 50,
+          finalContribution: data.finalContribution || 50,
         };
       });
       setStatsMap(map);
@@ -150,6 +211,10 @@ export default function PlayerSelectPage() {
       const c = Array.isArray(v.C) ? v.C.filter(Boolean) : [];
       setTeams({ A: a, B: b, C: c });
       setHasSavedTeams(a.length > 0 || b.length > 0 || c.length > 0);
+      // 저장된 팀 구성에서 팀수 복원 (C팀 유무로 판단)
+      if (a.length > 0 || b.length > 0) {
+        setTeamCount(c.length > 0 ? 3 : 2);
+      }
     });
     const off3 = onValue(ref(db, `${base}/keyPop`), snap => {
       const v = snap.val();
@@ -169,7 +234,10 @@ export default function PlayerSelectPage() {
       const v = snap.val() || {};
       setTeamCaptains({ A: v.A || '', B: v.B || '', C: v.C || '' });
     });
-    return () => { off1(); off2(); off3(); off4(); off5(); off6(); };
+    const off7 = onValue(ref(db, `${base}/MatchOrder`), snap => {
+      if (snap.exists()) setMatchOrder(snap.val());
+    });
+    return () => { off1(); off2(); off3(); off4(); off5(); off6(); off7(); };
   }, [clubName, dateParam]);
 
   // 클럽 종목/포메이션 + 경기별 포메이션 로드
@@ -187,6 +255,27 @@ export default function PlayerSelectPage() {
     })();
   }, [clubName, dateParam]);
 
+  // 팀이 있는데 포메이션이 비어있으면 자동 배치
+  useEffect(() => {
+    if (!hasSavedTeams || Object.keys(teamFormations).length > 0) return;
+    if (!clubType || teams.A.length === 0) return;
+    const fmId = clubFormation || getDefaultFormation(clubType);
+    const fmDef = getFormations(clubType)[fmId];
+    if (!fmDef) return;
+    const codes = teams.C.length > 0 ? ['A', 'B', 'C'] : ['A', 'B'];
+    const newTf = {};
+    codes.forEach(code => {
+      const teamPlayers = teams[code] || [];
+      if (teamPlayers.length > 0) {
+        newTf[code] = { formationId: fmId, players: autoAssignPlayers(fmDef.positions, teamPlayers, statsMap) };
+      }
+    });
+    if (Object.keys(newTf).length > 0) {
+      setTeamFormations(newTf);
+      set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`), newTf);
+    }
+  }, [hasSavedTeams, teamFormations, teams, clubType, clubFormation, statsMap, clubName, dateParam]);
+
   const playerList = useMemo(() => {
     const regSet = new Set(registeredPlayers);
     const extras = Object.keys(statsMap).filter(n => !regSet.has(n)).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -202,12 +291,78 @@ export default function PlayerSelectPage() {
       const next = { ...prev, [name]: !prev[name] };
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        const all = Object.entries(next).filter(([, v]) => v).map(([k]) => k);
+        // ref에서 최신 상태를 읽어 항상 정확한 전체 목록을 저장
+        const latest = selectedPlayersRef.current;
+        const all = Object.entries(latest).filter(([, v]) => v).map(([k]) => k);
         set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer/all`), all);
       }, 350);
       return next;
     });
   }, [canEdit, clubName, dateParam]);
+
+  // 참석선수 변동 시 팀 자동 조정 (ref로 읽어 무한루프 방지)
+  useEffect(() => {
+    if (!hasSavedTeams || editMode) return;
+    const currentSelected = new Set(Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k));
+    if (currentSelected.size === 0) return;
+
+    const curTeams = teamsRef.current;
+    const allTeamMembers = [...curTeams.A, ...curTeams.B, ...curTeams.C];
+    if (allTeamMembers.length === 0) return;
+
+    const removed = allTeamMembers.filter(n => !currentSelected.has(n));
+    const added = [...currentSelected].filter(n => !allTeamMembers.includes(n));
+    if (removed.length === 0 && added.length === 0) return;
+
+    const codes = teamCount === 3 ? ['A', 'B', 'C'] : ['A', 'B'];
+    const newTeams = {};
+    codes.forEach(code => {
+      newTeams[code] = curTeams[code].filter(n => currentSelected.has(n));
+    });
+    added.forEach(name => {
+      const minCode = codes.reduce((a, b) => (newTeams[a].length <= newTeams[b].length ? a : b));
+      newTeams[minCode].push(name);
+    });
+    if (teamCount === 2) newTeams.C = [];
+
+    setTeams(newTeams);
+    // 포메이션도 재배치
+    const curTf = teamFormationsRef.current;
+    const fmId = clubFormation || getDefaultFormation(clubType);
+    const fmDef = getFormations(clubType)[fmId];
+    if (fmDef) {
+      const newTf = {};
+      codes.forEach(code => {
+        const existing = curTf[code];
+        const useFmId = existing?.formationId || fmId;
+        const useFmDef = getFormations(clubType)[useFmId] || fmDef;
+        if (newTeams[code].length > 0) {
+          newTf[code] = { formationId: useFmId, players: autoAssignPlayers(useFmDef.positions, newTeams[code], statsMap) };
+        }
+      });
+      setTeamFormations(newTf);
+      update(ref(db), { [`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`]: newTf });
+    }
+    const base = `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`;
+    const updates = {};
+    updates[`${base}/A`] = newTeams.A;
+    updates[`${base}/B`] = newTeams.B;
+    updates[`${base}/C`] = teamCount === 3 ? newTeams.C : null;
+    update(ref(db), updates);
+  }, [selectedPlayers, hasSavedTeams, editMode, teamCount, clubName, dateParam, clubFormation, clubType, statsMap]);
+
+  const generateDefaultMatchOrder = useCallback((tc) => {
+    const codes = tc === 3 ? ['A', 'B', 'C'] : ['A', 'B'];
+    const order = [];
+    for (let i = 0; i < codes.length - 1; i++)
+      for (let j = i + 1; j < codes.length; j++)
+        order.push([codes[i], codes[j]]);
+    // 3팀: AvB, AvC, BvC → 3라운드 반복 = 9경기
+    const rounds = tc === 2 ? 6 : 3;
+    const full = [];
+    for (let r = 0; r < rounds; r++) full.push(...order);
+    return full;
+  }, []);
 
   const runDraft = useCallback(() => {
     const picked = Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k);
@@ -216,8 +371,26 @@ export default function PlayerSelectPage() {
     const newTeams = { A: result[0] || [], B: result[1] || [], C: teamCount === 3 ? (result[2] || []) : [] };
     setTeams(newTeams);
     setKeyPop(pickTwoRandom(picked));
+    if (matchOrder.length === 0) {
+      const order = generateDefaultMatchOrder(teamCount);
+      setMatchOrder(order);
+    }
+    // 팀별 포메이션 자동 배치
+    const fmId = clubFormation || getDefaultFormation(clubType);
+    const fmDef = getFormations(clubType)[fmId];
+    if (fmDef) {
+      const newTf = {};
+      ['A', 'B', ...(teamCount === 3 ? ['C'] : [])].forEach(code => {
+        const teamPlayers = newTeams[code] || [];
+        if (teamPlayers.length > 0) {
+          newTf[code] = { formationId: fmId, players: autoAssignPlayers(fmDef.positions, teamPlayers, statsMap) };
+        }
+      });
+      setTeamFormations(newTf);
+      set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`), newTf);
+    }
     setShowResult(true);
-  }, [selectedPlayers, teamCount, statsMap]);
+  }, [selectedPlayers, teamCount, statsMap, matchOrder, generateDefaultMatchOrder, clubFormation, clubType, clubName, dateParam]);
 
   const saveTeams = useCallback(async (teamsToSave, keyPopToSave, cb) => {
     const base = `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`;
@@ -226,9 +399,10 @@ export default function PlayerSelectPage() {
     updates[`${base}/B`] = teamsToSave.B;
     updates[`${base}/C`] = teamCount === 3 ? teamsToSave.C : null;
     updates[`PlayerSelectionByDate/${clubName}/${dateParam}/keyPop`] = keyPopToSave.slice(0, 2);
+    if (matchOrder.length > 0) updates[`PlayerSelectionByDate/${clubName}/${dateParam}/MatchOrder`] = matchOrder;
     try { await update(ref(db), updates); setHasSavedTeams(true); cb?.(); }
     catch (e) { alert('저장 실패: ' + e.message); }
-  }, [clubName, dateParam, teamCount]);
+  }, [clubName, dateParam, teamCount, matchOrder]);
 
   const goToScoreRecord = useCallback(() => {
     saveTeams(teams, keyPop, () => {
@@ -275,6 +449,7 @@ export default function PlayerSelectPage() {
 
   const displayTeams = editMode ? editTeams : teams;
   const getTeamLabel = (code) => teamNames[code] || `팀 ${code}`;
+  const getTeamShortLabel = (code) => teamNames[code] || code;
   const theme = {
     A: { bg: '#1E66D0', light: '#EAF2FF', border: '#BBD3FF' },
     B: { bg: '#1F7A2E', light: '#EAF7EE', border: '#BFE8C7' },
@@ -430,12 +605,57 @@ export default function PlayerSelectPage() {
           </Box>
 
 
-          {canEdit && !editMode && (
-            <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-              <Button variant="outlined" fullWidth startIcon={<SaveIcon />} onClick={() => saveTeams(teams, keyPop)}
-                sx={{ borderRadius: 2, fontWeight: 'bold' }}>저장만 하기</Button>
-              <Button variant="contained" fullWidth startIcon={<PlayArrowIcon />} onClick={goToScoreRecord}
-                sx={{ borderRadius: 2, fontWeight: 'bold', bgcolor: '#1565C0' }}>게임 진행</Button>
+          {/* 경기 순서 */}
+          {!editMode && matchOrder.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Divider sx={{ mb: 1.5 }} />
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#333', flex: 1 }}>
+                  경기 순서
+                </Typography>
+                {canEdit && (
+                  <Chip label="초기화" size="small" onClick={() => {
+                    const order = generateDefaultMatchOrder(teamCount);
+                    setMatchOrder(order);
+                    setSwapMatch(null);
+                    set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/MatchOrder`), order);
+                  }} sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600 }} />
+                )}
+              </Box>
+              {canEdit && swapMatch !== null && (
+                <Typography sx={{ fontSize: '0.73rem', color: '#FF9800', fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
+                  {swapMatch + 1}경기를 교체할 경기를 터치하세요
+                </Typography>
+              )}
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {matchOrder.map((match, idx) => {
+                  const isSelected = swapMatch === idx;
+                  return (
+                    <Chip key={idx}
+                      label={`${idx + 1}. ${getTeamShortLabel(match[0])} vs ${getTeamShortLabel(match[1])}`}
+                      size="small"
+                      onClick={() => {
+                        if (!canEdit) return;
+                        if (swapMatch === null) { setSwapMatch(idx); return; }
+                        if (swapMatch === idx) { setSwapMatch(null); return; }
+                        // swap
+                        const newOrder = [...matchOrder];
+                        [newOrder[swapMatch], newOrder[idx]] = [newOrder[idx], newOrder[swapMatch]];
+                        setMatchOrder(newOrder);
+                        setSwapMatch(null);
+                        set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/MatchOrder`), newOrder);
+                      }}
+                      sx={{
+                        fontSize: '0.75rem', fontWeight: 600,
+                        bgcolor: isSelected ? '#FFD600' : '#F5F5F5',
+                        color: isSelected ? '#333' : '#555',
+                        border: isSelected ? '2px solid #FF9800' : '1px solid #E0E0E0',
+                        cursor: canEdit ? 'pointer' : 'default',
+                      }}
+                    />
+                  );
+                })}
+              </Box>
             </Box>
           )}
 
@@ -497,10 +717,12 @@ export default function PlayerSelectPage() {
                             {Object.entries(getFormations(clubType)).map(([key, fm]) => (
                               <Chip key={key} label={fm.name} size="small"
                                 onClick={async () => {
-                                  const newTf = { ...teamFormations, [code]: { formationId: key, players: {} } };
+                                  const newFmDef = getFormations(clubType)[key];
+                                  const autoPlayers = newFmDef ? autoAssignPlayers(newFmDef.positions, teamPlayers, statsMap) : {};
+                                  const newTf = { ...teamFormations, [code]: { formationId: key, players: autoPlayers } };
                                   setTeamFormations(newTf);
                                   setSelectedPos(null);
-                                  await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), { formationId: key, players: {} });
+                                  await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), { formationId: key, players: autoPlayers });
                                 }}
                                 sx={{ fontSize: '0.72rem', fontWeight: 600, bgcolor: fmId === key ? '#2E7D32' : '#F0F2F5',
                                   color: fmId === key ? 'white' : '#555', cursor: 'pointer' }} />
@@ -574,6 +796,15 @@ export default function PlayerSelectPage() {
                   </Box>
                 );
               })}
+            </Box>
+          )}
+
+          {canEdit && !editMode && (
+            <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+              <Button variant="outlined" fullWidth startIcon={<SaveIcon />} onClick={() => saveTeams(teams, keyPop)}
+                sx={{ borderRadius: 2, fontWeight: 'bold' }}>저장만 하기</Button>
+              <Button variant="contained" fullWidth startIcon={<PlayArrowIcon />} onClick={goToScoreRecord}
+                sx={{ borderRadius: 2, fontWeight: 'bold', bgcolor: '#1565C0' }}>게임 진행</Button>
             </Box>
           )}
         </Paper>

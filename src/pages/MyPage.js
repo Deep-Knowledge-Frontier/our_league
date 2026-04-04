@@ -42,9 +42,10 @@ function extractTeamRoster(rosterData, teamName, fallbackKey) {
 
 export default function MyPage() {
   const navigate = useNavigate();
-  const { clubName, userName, emailKey, user } = useAuth();
+  const { clubName, userName, emailKey, user, isMaster, viewingClub, setViewingClub, realClubName } = useAuth();
 
   const [loading, setLoading] = useState(true);
+  const [clubList, setClubList] = useState([]);
   const [userInfo, setUserInfo] = useState(null);
   const [memberInfo, setMemberInfo] = useState(null);
   const [playerStats, setPlayerStats] = useState(null);
@@ -56,28 +57,53 @@ export default function MyPage() {
   const [allPlayerStats, setAllPlayerStats] = useState(null);
   const [showMoreTeammates, setShowMoreTeammates] = useState({ best: false, worst: false, mostPlayed: false });
 
+  // 마스터: 클럽 목록 로드
+  useEffect(() => {
+    if (!isMaster) return;
+    (async () => {
+      const snap = await get(ref(db, 'clubs'));
+      if (snap.exists()) {
+        setClubList(Object.keys(snap.val()));
+      }
+    })();
+  }, [isMaster]);
+
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
     if (!clubName) return;
+    // 클럽 전환 시 기존 데이터 초기화
+    setPlayerStats(null);
+    setMatchStats(null);
+    setTeammates(null);
+    setWeeklyStandings(null);
+    setNetworkGraph(null);
+    setAllPlayerStats(null);
+    setMemberInfo(null);
+    setLoading(true);
+    let cancelled = false;
 
     const loadData = async () => {
       try {
         // 유저 기본 정보
         const userSnap = await get(ref(db, `Users/${emailKey}`));
+        if (cancelled) return;
         if (userSnap.exists()) {
           setUserInfo(userSnap.val());
         }
 
         // 회원 상세 정보
         const memberSnap = await get(ref(db, `MemberInfo/${clubName}/${userName}`));
+        if (cancelled) return;
         if (memberSnap.exists()) setMemberInfo(memberSnap.val());
 
         // 선수 통계 (백업)
         const statsSnap = await get(ref(db, `PlayerStatsBackup_6m/${clubName}/${userName}`));
+        if (cancelled) return;
         if (statsSnap.exists()) setPlayerStats(statsSnap.val());
 
         // 주별 순위 이력 (전체 standings)
         const standingsSnap = await get(ref(db, `PlayerWeeklyStandings/${clubName}`));
+        if (cancelled) return;
         if (standingsSnap.exists()) setWeeklyStandings(standingsSnap.val());
 
         // 전체 선수 관계도 + 전체 선수 개인 통계
@@ -85,11 +111,13 @@ export default function MyPage() {
           get(ref(db, `PlayerNetworkGraph/${clubName}`)),
           get(ref(db, `PlayerDetailStats/${clubName}`)),
         ]);
+        if (cancelled) return;
         if (netSnap.exists()) setNetworkGraph(netSnap.val());
         if (allStatsSnap.exists()) setAllPlayerStats(allStatsSnap.val());
 
         // 개인별 상세 통계: 백업 데이터 우선, 없으면 실시간 계산
         const detailSnap = await get(ref(db, `PlayerDetailStats/${clubName}/${userName}`));
+        if (cancelled) return;
         if (detailSnap.exists()) {
           const d = detailSnap.val();
           setMatchStats({
@@ -120,10 +148,11 @@ export default function MyPage() {
       } catch (e) {
         console.error('MyPage load error:', e);
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     };
 
     loadData();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate, emailKey, clubName, userName]);
 
@@ -472,6 +501,40 @@ export default function MyPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* -- 마스터 관리자: 클럽 전환 -- */}
+        {isMaster && clubList.length > 0 && (
+          <Paper sx={{ borderRadius: 3, p: 2, mb: 2, boxShadow: 2, bgcolor: '#FFF8E1', border: '1px solid #FFE082' }}>
+            <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: '#F57F17', mb: 1 }}>
+              🔑 마스터 관리자
+            </Typography>
+            <FormControl fullWidth size="small">
+              <InputLabel>클럽 조회</InputLabel>
+              <Select
+                value={viewingClub || realClubName}
+                label="클럽 조회"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setViewingClub(val === realClubName ? '' : val);
+                }}
+                sx={{ bgcolor: 'white', fontWeight: 700 }}
+              >
+                {clubList.map(c => (
+                  <MenuItem key={c} value={c}>
+                    {c}{c === realClubName ? ' (내 클럽)' : ''}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {viewingClub && viewingClub !== realClubName && (
+              <Chip
+                label={`${viewingClub} 조회 중`}
+                onDelete={() => setViewingClub('')}
+                sx={{ mt: 1, bgcolor: '#FF9800', color: 'white', fontWeight: 700 }}
+              />
+            )}
+          </Paper>
+        )}
 
         {/* -- 기본 정보 (컴팩트 그리드) -- */}
         <Paper sx={{ borderRadius: 3, p: 2, mb: 2, boxShadow: 2 }}>

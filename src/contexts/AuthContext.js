@@ -61,8 +61,12 @@ export function AuthProvider({ children }) {
   }, []);
 
   const userName = userData?.name || user?.displayName || user?.email?.split('@')[0] || '';
-  const clubName = userData?.club || '';
+  const realClubName = userData?.club || '';
   const isMaster = !!(user?.email && APP_CONFIG.masterEmails?.includes(user.email));
+
+  // 마스터 전용: 다른 클럽 조회
+  const [viewingClub, setViewingClub] = useState('');
+  const clubName = (isMaster && viewingClub) ? viewingClub : realClubName;
 
   const value = {
     user,
@@ -70,11 +74,14 @@ export function AuthProvider({ children }) {
     emailKey,
     userName,
     clubName,
+    realClubName,
     isAdmin,
     isModerator,
     isMaster,
     authReady,
     loading,
+    viewingClub,
+    setViewingClub,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
