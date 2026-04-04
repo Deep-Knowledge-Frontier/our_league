@@ -151,7 +151,7 @@ function VotePage() {
 
   // 데이터 리스너
   useEffect(() => {
-    if (!authReady || !user) return;
+    if (!authReady || !user || !clubName) return;
     setLoading(true);
 
     const matchesRef = ref(db, `MatchDates/${clubName}`);

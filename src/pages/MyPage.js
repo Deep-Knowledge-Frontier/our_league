@@ -58,6 +58,7 @@ export default function MyPage() {
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
+    if (!clubName) return;
 
     const loadData = async () => {
       try {
@@ -358,11 +359,16 @@ export default function MyPage() {
       });
     });
 
+    const wrList = [...connectedNames].map(name => allPlayerStats?.[name]?.winRate ?? 50);
+    const avgWr = wrList.length > 0 ? wrList.reduce((a, b) => a + b, 0) / wrList.length : 50;
+
     const nodes = [...connectedNames].map(name => {
       const s = allPlayerStats?.[name];
       const g = s?.totalGames || 0;
       const wr = s?.winRate ?? 50;
-      const size = 3 + Math.pow(wr / 100, 3) * 57;
+      const baseSize = 3 + Math.pow(wr / 100, 3) * 57;
+      const scale = wr >= avgWr ? 1.2 : 0.8;
+      const size = baseSize * scale;
       const gNorm = (g - minG) / (maxG - minG || 1);
       return { id: name, totalGames: g, winRate: wr, size, gNorm, isMe: name === userName };
     });

@@ -32,12 +32,12 @@ function HomePage() {
   // 배너 자동 슬라이드
   useEffect(() => {
     if (banners.length <= 1) return;
-    const timer = setInterval(() => setBannerIndex(prev => (prev + 1) % banners.length), 4000);
+    const timer = setInterval(() => setBannerIndex(prev => (prev + 1) % banners.length), 15000);
     return () => clearInterval(timer);
   }, [banners.length]);
 
   useEffect(() => {
-    if (!authReady || !user) return;
+    if (!authReady || !user || !clubName) return;
     const loadData = async () => {
       try {
         // 1. 배너
@@ -179,11 +179,24 @@ function HomePage() {
                   sx={{ width: '100%', height: 180, objectFit: 'cover' }} />
               ) : (
                 <Box sx={{
-                  width: '100%', height: 180, display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', px: 3,
+                  width: '100%', height: 180,
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  overflow: 'hidden', position: 'relative',
                 }}>
-                  <Typography sx={{ color: 'white', fontWeight: 'bold', fontSize: '1.2rem', textAlign: 'center' }}>
+                  <Typography
+                    key={bannerIndex}
+                    sx={{
+                      position: 'absolute', top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'white', fontWeight: 'bold', fontSize: '1.2rem',
+                      whiteSpace: 'nowrap',
+                      animation: 'marquee 14s linear infinite',
+                      '@keyframes marquee': {
+                        '0%': { left: '100%' },
+                        '100%': { left: '-250%' },
+                      },
+                    }}
+                  >
                     {banners[bannerIndex]?.title || '공지사항'}
                   </Typography>
                 </Box>

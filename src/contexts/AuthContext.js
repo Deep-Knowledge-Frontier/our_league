@@ -61,7 +61,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const userName = userData?.name || user?.displayName || user?.email?.split('@')[0] || '';
-  const clubName = userData?.club || APP_CONFIG.clubName;
+  const clubName = userData?.club || '';
   const isMaster = !!(user?.email && APP_CONFIG.masterEmails?.includes(user.email));
 
   const value = {

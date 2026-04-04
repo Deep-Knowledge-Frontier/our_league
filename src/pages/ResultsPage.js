@@ -130,6 +130,7 @@ function ResultsPage() {
   // =========================
   const loadRegisteredSet = useCallback(async () => {
     if (registeredSetRef.current) return registeredSetRef.current;
+    if (!clubName) return new Set();
 
     const regSnap = await get(ref(db, `registeredPlayers/${clubName}`));
     const set = new Set();
@@ -145,6 +146,7 @@ function ResultsPage() {
 
   const loadStats = useCallback(async () => {
     if (statsRef.current) return statsRef.current;
+    if (!clubName) return null;
 
     const snapshot = await get(ref(db, `PlayerStatsBackup_6m/${clubName}`));
     const stats = snapshot.exists() ? (snapshot.val() || {}) : null;
@@ -153,6 +155,7 @@ function ResultsPage() {
   }, [clubName]);
 
   const loadBackupData = useCallback(async () => {
+    if (!clubName) return [];
     const snapshot = await get(ref(db, `DailyResultsBackup/${clubName}`));
     if (!snapshot.exists()) return [];
 
@@ -465,7 +468,7 @@ function ResultsPage() {
 
   return (
     <div style={{ backgroundColor: '#F0F2F5', minHeight: '100vh', paddingBottom: '80px' }}>
-      <Container maxWidth="xs" sx={{ pt: 2, px: isMobile ? 1 : 2 }}>
+      <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
         <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
           background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)' }}>
           <CardContent sx={{ py: 3, textAlign: 'center' }}>

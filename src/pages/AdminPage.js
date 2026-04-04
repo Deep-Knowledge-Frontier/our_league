@@ -23,6 +23,9 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
 import HomeIcon from '@mui/icons-material/Home';
+import SearchIcon from '@mui/icons-material/Search';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_CONFIG } from '../config/app.config';
 
@@ -56,6 +59,7 @@ export default function AdminPage() {
   const [editingMatch, setEditingMatch] = useState(null);
   const [matchForm, setMatchForm] = useState({ date: '', time: '', location: '', address: '' });
   const [locationPreset, setLocationPreset] = useState('custom');
+  const [locationPresets, setLocationPresets] = useState([]);
   const [showPast, setShowPast] = useState(false);
   const [showAllPast, setShowAllPast] = useState(false);
   const [expandPerms, setExpandPerms] = useState(false);
@@ -89,6 +93,18 @@ export default function AdminPage() {
   const [backupRunning, setBackupRunning] = useState(false);
   const [backupResults, setBackupResults] = useState([]);
 
+  /* ── 장소 프리셋 로드 ── */
+  const loadLocationPresets = useCallback(async () => {
+    if (!clubName) return;
+    const snap = await get(ref(db, `LocationPresets/${clubName}`));
+    if (snap.exists()) {
+      const data = snap.val();
+      setLocationPresets(Object.values(data).sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+    } else {
+      setLocationPresets([]);
+    }
+  }, [clubName]);
+
   /* ── 경기일 로드 ── */
   const loadMatchDates = useCallback(async () => {
     const snap = await get(ref(db, `MatchDates/${clubName}`));
@@ -108,7 +124,7 @@ export default function AdminPage() {
     const snap = await get(ref(db, 'AllowedUsers'));
     if (!snap.exists()) { setAllowedUsers([]); return; }
     const data = snap.val();
-    // Users에서 이름 조회용
+    // Users에서 이름/클럽 조회용
     const usersSnap = await get(ref(db, 'Users'));
     const usersData = usersSnap.exists() ? usersSnap.val() : {};
     const arr = [];
@@ -117,11 +133,13 @@ export default function AdminPage() {
       Object.entries(data[role]).forEach(([ek, val]) => {
         const userName = (val && typeof val === 'object') ? val.name : null;
         const userEmail = (val && typeof val === 'object') ? val.email : null;
+        const userClub = usersData[ek]?.club || '';
         arr.push({
           emailKey: ek,
           name: userName || usersData[ek]?.name || ek.replace(/,/g, '.'),
           email: userEmail || ek.replace(/,/g, '.'),
           role,
+          club: userClub,
         });
       });
     }
@@ -180,7 +198,7 @@ export default function AdminPage() {
 
         // 관리자: 팀 데이터 로드
         if (isAdmin || isMaster) {
-          await Promise.all([loadMatchDates(), loadAllowedUsers(), loadPlayers(), loadLeagues()]);
+          await Promise.all([loadMatchDates(), loadAllowedUsers(), loadPlayers(), loadLeagues(), loadLocationPresets()]);
         }
       } catch (e) {
         console.error('AdminPage load error:', e);
@@ -188,7 +206,7 @@ export default function AdminPage() {
       setLoading(false);
     };
     loadData();
-  }, [authReady, user, canAccess, isAdmin, isModerator, isMaster, emailKey, navigate, loadMatchDates, loadAllowedUsers, loadPlayers, loadLeagues]);
+  }, [authReady, user, canAccess, isAdmin, isModerator, isMaster, emailKey, navigate, loadMatchDates, loadAllowedUsers, loadPlayers, loadLeagues, loadLocationPresets]);
 
   /* ── 경기일 저장 ── */
   const saveMatchDate = async () => {
@@ -205,6 +223,16 @@ export default function AdminPage() {
       await remove(ref(db, `MatchDates/${clubName}/${editingMatch.dateKey}`));
     }
     await set(ref(db, `MatchDates/${clubName}/${matchForm.date}`), data);
+
+    // 새 장소면 팀별 프리셋에 자동 저장
+    if (matchForm.location.trim() && !locationPresets.some(p => p.name === matchForm.location.trim())) {
+      await push(ref(db, `LocationPresets/${clubName}`), {
+        name: matchForm.location.trim(),
+        address: matchForm.address || matchForm.location,
+      });
+      await loadLocationPresets();
+    }
+
     setMatchDialog(false);
     setEditingMatch(null);
     await loadMatchDates();
@@ -224,7 +252,7 @@ export default function AdminPage() {
       location: item.location,
       address: item.address,
     });
-    const preset = APP_CONFIG.locationPresets.find(p => p.name === item.location);
+    const preset = locationPresets.find(p => p.name === item.location);
     setLocationPreset(preset ? item.location : 'custom');
     setMatchDialog(true);
   };
@@ -1330,6 +1358,86 @@ export default function AdminPage() {
         </Paper>
         )}
 
+        {/* 0. 시작 가이드 (리그 또는 경기일 미설정 시) */}
+        {(isAdmin || isMaster) && (leagues.length === 0 || matchDates.length === 0) && (
+        <Paper sx={{
+          borderRadius: 3, p: 2.5, mb: 2, boxShadow: 3,
+          background: 'linear-gradient(135deg, #E8EAF6 0%, #C5CAE9 100%)',
+          border: '1px solid #9FA8DA',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <SportsSoccerIcon sx={{ color: '#2D336B', fontSize: 22 }} />
+            <Typography sx={{ fontWeight: 'bold', color: '#2D336B', fontSize: '1.05rem' }}>
+              시작 가이드
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: '0.82rem', color: '#444', mb: 2 }}>
+            팀 운영을 위해 아래 순서대로 설정해주세요.
+          </Typography>
+
+          {/* Step 1: 리그 만들기 */}
+          <Box sx={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            bgcolor: 'rgba(255,255,255,0.85)', borderRadius: 2, px: 2, py: 1.5, mb: 1,
+            border: leagues.length > 0 ? '1px solid #81C784' : '1px solid #90CAF9',
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{
+                width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                bgcolor: leagues.length > 0 ? '#388E3C' : '#1565C0', color: 'white', fontWeight: 'bold', fontSize: '0.85rem',
+              }}>
+                {leagues.length > 0 ? '✓' : '1'}
+              </Box>
+              <Box>
+                <Typography sx={{ fontWeight: 600, fontSize: '0.9rem', color: leagues.length > 0 ? '#388E3C' : '#333' }}>
+                  리그 만들기
+                </Typography>
+                <Typography sx={{ fontSize: '0.75rem', color: '#777' }}>
+                  리그 기간을 설정하세요
+                </Typography>
+              </Box>
+            </Box>
+            {leagues.length === 0 && (
+              <Button size="small" variant="contained" onClick={openLeagueAdd}
+                sx={{ borderRadius: 2, fontSize: '0.8rem', bgcolor: '#1565C0', minWidth: 60 }}>
+                설정
+              </Button>
+            )}
+          </Box>
+
+          {/* Step 2: 경기일 추가 */}
+          <Box sx={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            bgcolor: 'rgba(255,255,255,0.85)', borderRadius: 2, px: 2, py: 1.5,
+            border: matchDates.length > 0 ? '1px solid #81C784' : '1px solid #90CAF9',
+            opacity: leagues.length === 0 ? 0.5 : 1,
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{
+                width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                bgcolor: matchDates.length > 0 ? '#388E3C' : '#1565C0', color: 'white', fontWeight: 'bold', fontSize: '0.85rem',
+              }}>
+                {matchDates.length > 0 ? '✓' : '2'}
+              </Box>
+              <Box>
+                <Typography sx={{ fontWeight: 600, fontSize: '0.9rem', color: matchDates.length > 0 ? '#388E3C' : '#333' }}>
+                  경기일 추가
+                </Typography>
+                <Typography sx={{ fontSize: '0.75rem', color: '#777' }}>
+                  첫 경기 일정을 등록하세요
+                </Typography>
+              </Box>
+            </Box>
+            {matchDates.length === 0 && leagues.length > 0 && (
+              <Button size="small" variant="contained" onClick={openMatchAdd}
+                sx={{ borderRadius: 2, fontSize: '0.8rem', bgcolor: '#1565C0', minWidth: 60 }}>
+                설정
+              </Button>
+            )}
+          </Box>
+        </Paper>
+        )}
+
         {/* 1. 기록 백업 (관리자+마스터) */}
         {(isAdmin || isMaster) && (
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
@@ -1517,23 +1625,25 @@ export default function AdminPage() {
         </Paper>
 
         {/* 4. 권한 관리 (관리자+마스터) */}
-        {(isAdmin || isMaster) && (
+        {(isAdmin || isMaster) && (() => {
+          const filteredUsers = allowedUsers.filter(u => u.club === clubName);
+          return (
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <SecurityIcon sx={{ color: '#1565C0', fontSize: 20 }} />
               <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '1rem' }}>권한 관리</Typography>
-              {allowedUsers.length > 0 && <Chip label={`${allowedUsers.length}명`} size="small"
+              {filteredUsers.length > 0 && <Chip label={`${filteredUsers.length}명`} size="small"
                 sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#E3F2FD', color: '#1565C0' }} />}
             </Box>
             {(isAdmin || isMaster) && <Button size="small" startIcon={<AddIcon />} onClick={() => setPermDialog(true)}>추가</Button>}
           </Box>
 
-          {allowedUsers.length === 0 ? (
+          {filteredUsers.length === 0 ? (
             <Typography sx={{ color: '#999', textAlign: 'center', py: 2, fontSize: '0.85rem' }}>등록된 사용자가 없습니다.</Typography>
           ) : (
             <>
-              {(expandPerms ? allowedUsers : allowedUsers.slice(0, 3)).map((u) => (
+              {(expandPerms ? filteredUsers : filteredUsers.slice(0, 3)).map((u) => (
                 <Box key={`${u.role}-${u.emailKey}`} sx={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   py: 0.8, px: 1.5, borderRadius: 2, mb: 0.5,
@@ -1559,16 +1669,17 @@ export default function AdminPage() {
                   </Box>
                 </Box>
               ))}
-              {allowedUsers.length > 3 && (
+              {filteredUsers.length > 3 && (
                 <Button size="small" fullWidth onClick={() => setExpandPerms(p => !p)}
                   sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
-                  {expandPerms ? '접기' : `나머지 ${allowedUsers.length - 3}명 더보기`}
+                  {expandPerms ? '접기' : `나머지 ${filteredUsers.length - 3}명 더보기`}
                 </Button>
               )}
             </>
           )}
         </Paper>
-        )}
+          );
+        })()}
 
         {/* 5. 선수 관리 (운영진 이상) */}
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
@@ -1614,60 +1725,117 @@ export default function AdminPage() {
       </Container>
 
       {/* 경기일 추가/수정 다이얼로그 */}
-      <Dialog open={matchDialog} onClose={() => setMatchDialog(false)} fullWidth maxWidth="xs">
-        <DialogTitle>{editingMatch ? '경기일 수정' : '경기일 추가'}</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <TextField
-            label="날짜 (필수)" type="date" size="small" fullWidth
-            value={matchForm.date}
-            onChange={e => setMatchForm(f => ({ ...f, date: e.target.value }))}
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-          <TextField
-            label="시간" type="time" size="small" fullWidth
-            value={matchForm.time}
-            onChange={e => setMatchForm(f => ({ ...f, time: e.target.value }))}
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-          <FormControl size="small" fullWidth>
-            <InputLabel>장소 선택</InputLabel>
-            <Select
-              label="장소 선택"
-              value={locationPreset}
-              onChange={e => {
-                const val = e.target.value;
-                setLocationPreset(val);
-                if (val === 'custom') {
-                  setMatchForm(f => ({ ...f, location: '', address: '' }));
-                } else {
-                  const p = APP_CONFIG.locationPresets.find(p => p.name === val);
-                  if (p) setMatchForm(f => ({ ...f, location: p.name, address: p.address }));
-                }
-              }}
-            >
-              {APP_CONFIG.locationPresets.map(p => (
-                <MenuItem key={p.name} value={p.name}>{p.name}</MenuItem>
+      <Dialog open={matchDialog} onClose={() => setMatchDialog(false)} fullWidth maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+        <Box sx={{
+          background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
+          py: 2.5, px: 3, display: 'flex', alignItems: 'center', gap: 1.5,
+        }}>
+          <EventIcon sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 24 }} />
+          <Typography sx={{ color: 'white', fontWeight: 'bold', fontSize: '1.1rem' }}>
+            {editingMatch ? '경기일 수정' : '경기일 추가'}
+          </Typography>
+        </Box>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 0, pt: '20px !important', px: 3, pb: 1 }}>
+
+          {/* 날짜 & 시간 */}
+          <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>
+            일정
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1.5, mb: 2.5 }}>
+            <TextField
+              label="날짜" type="date" size="small" fullWidth required
+              value={matchForm.date}
+              onChange={e => setMatchForm(f => ({ ...f, date: e.target.value }))}
+              slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <CalendarTodayIcon sx={{ color: '#2D336B', mr: 0.5, fontSize: 18 }} /> } }}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+            <TextField
+              label="시간" type="time" size="small" fullWidth
+              value={matchForm.time}
+              onChange={e => setMatchForm(f => ({ ...f, time: e.target.value }))}
+              slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <AccessTimeIcon sx={{ color: '#2D336B', mr: 0.5, fontSize: 18 }} /> } }}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+          </Box>
+
+          {/* 장소 */}
+          <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>
+            장소
+          </Typography>
+          {locationPresets.length > 0 && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8, mb: 1.5 }}>
+              {locationPresets.map(p => (
+                <Chip
+                  key={p.name} label={p.name} size="small"
+                  onClick={() => { setLocationPreset(p.name); setMatchForm(f => ({ ...f, location: p.name, address: p.address })); }}
+                  sx={{
+                    borderRadius: 2, fontWeight: 600, fontSize: '0.82rem',
+                    bgcolor: locationPreset === p.name ? '#2D336B' : '#F0F2F5',
+                    color: locationPreset === p.name ? 'white' : '#555',
+                    '&:hover': { bgcolor: locationPreset === p.name ? '#1A1D4E' : '#E0E0E0' },
+                  }}
+                />
               ))}
-              <MenuItem value="custom">직접 입력</MenuItem>
-            </Select>
-          </FormControl>
-          {locationPreset === 'custom' && (
+              <Chip
+                label="직접 입력" size="small"
+                onClick={() => { setLocationPreset('custom'); setMatchForm(f => ({ ...f, location: '', address: '' })); }}
+                sx={{
+                  borderRadius: 2, fontWeight: 600, fontSize: '0.82rem',
+                  bgcolor: locationPreset === 'custom' ? '#2D336B' : '#F0F2F5',
+                  color: locationPreset === 'custom' ? 'white' : '#555',
+                  '&:hover': { bgcolor: locationPreset === 'custom' ? '#1A1D4E' : '#E0E0E0' },
+                }}
+              />
+            </Box>
+          )}
+          {(locationPreset === 'custom' || locationPresets.length === 0) && (
             <TextField
               label="장소 이름" size="small" fullWidth
               value={matchForm.location}
               onChange={e => setMatchForm(f => ({ ...f, location: e.target.value }))}
+              sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              slotProps={{ input: { startAdornment: <PlaceIcon sx={{ color: '#2D336B', mr: 0.5, fontSize: 18 }} /> } }}
             />
           )}
-          <TextField
-            label="주소 (지도 검색용)" size="small" fullWidth
-            value={matchForm.address}
-            onChange={e => setMatchForm(f => ({ ...f, address: e.target.value }))}
-            slotProps={{ input: { startAdornment: <PlaceIcon sx={{ color: '#999', mr: 0.5, fontSize: 18 }} /> } }}
-          />
+
+          {/* 주소 검색 */}
+          <Box sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
+            <TextField
+              label="주소" size="small" fullWidth
+              value={matchForm.address}
+              onChange={e => setMatchForm(f => ({ ...f, address: e.target.value }))}
+              placeholder="주소 검색 버튼을 눌러 검색하세요"
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              slotProps={{ input: { startAdornment: <PlaceIcon sx={{ color: '#999', mr: 0.5, fontSize: 18 }} /> } }}
+            />
+            <Button
+              variant="outlined" size="small"
+              startIcon={<SearchIcon />}
+              onClick={() => {
+                if (window.daum && window.daum.Postcode) {
+                  new window.daum.Postcode({
+                    oncomplete: (data) => {
+                      const addr = data.roadAddress || data.jibunAddress || data.address;
+                      setMatchForm(f => ({ ...f, address: addr }));
+                    },
+                  }).open();
+                } else {
+                  alert('주소 검색 서비스를 불러오지 못했습니다.');
+                }
+              }}
+              sx={{ whiteSpace: 'nowrap', borderRadius: 2, flexShrink: 0, borderColor: '#2D336B', color: '#2D336B', minWidth: 'auto', px: 1.5 }}
+            >
+              검색
+            </Button>
+          </Box>
+
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setMatchDialog(false)}>취소</Button>
-          <Button variant="contained" onClick={saveMatchDate} disabled={!matchForm.date}>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5, gap: 1 }}>
+          <Button onClick={() => setMatchDialog(false)} sx={{ borderRadius: 2, color: '#999' }}>취소</Button>
+          <Button variant="contained" onClick={saveMatchDate} disabled={!matchForm.date}
+            sx={{ borderRadius: 2, bgcolor: '#2D336B', px: 3, fontWeight: 'bold',
+              '&:hover': { bgcolor: '#1A1D4E' } }}>
             {editingMatch ? '수정' : '저장'}
           </Button>
         </DialogActions>
@@ -1744,37 +1912,68 @@ export default function AdminPage() {
       </Dialog>
 
       {/* 리그 추가/수정 다이얼로그 */}
-      <Dialog open={leagueDialog} onClose={() => setLeagueDialog(false)} fullWidth maxWidth="xs">
-        <DialogTitle>{editingLeague ? '리그 수정' : '새 리그 만들기'}</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <TextField
-            label="리그 회차" size="small" fullWidth
-            value={leagueForm.id}
-            disabled={!!editingLeague}
-            onChange={e => setLeagueForm(f => ({ ...f, id: e.target.value }))}
-          />
-          <TextField
-            label="리그 이름" size="small" fullWidth
-            value={leagueForm.leagueName}
-            onChange={e => setLeagueForm(f => ({ ...f, leagueName: e.target.value }))}
-          />
-          <TextField
-            label="시작일 (필수)" type="date" size="small" fullWidth
-            value={leagueForm.startDate}
-            onChange={e => setLeagueForm(f => ({ ...f, startDate: e.target.value }))}
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-          <TextField
-            label="종료일 (필수)" type="date" size="small" fullWidth
-            value={leagueForm.endDate}
-            onChange={e => setLeagueForm(f => ({ ...f, endDate: e.target.value }))}
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
+      <Dialog open={leagueDialog} onClose={() => setLeagueDialog(false)} fullWidth maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+        <Box sx={{
+          background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 100%)',
+          py: 2.5, px: 3, display: 'flex', alignItems: 'center', gap: 1.5,
+        }}>
+          <EmojiEventsIcon sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 24 }} />
+          <Typography sx={{ color: 'white', fontWeight: 'bold', fontSize: '1.1rem' }}>
+            {editingLeague ? '리그 수정' : '새 리그 만들기'}
+          </Typography>
+        </Box>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 0, pt: '20px !important', px: 3, pb: 1 }}>
+
+          {/* 리그 정보 */}
+          <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>
+            리그 정보
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1.5, mb: 2.5 }}>
+            <TextField
+              label="회차" size="small"
+              value={leagueForm.id}
+              disabled={!!editingLeague}
+              onChange={e => setLeagueForm(f => ({ ...f, id: e.target.value }))}
+              sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+            <TextField
+              label="리그 이름" size="small"
+              value={leagueForm.leagueName}
+              onChange={e => setLeagueForm(f => ({ ...f, leagueName: e.target.value }))}
+              sx={{ flex: 2.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+          </Box>
+
+          {/* 기간 */}
+          <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>
+            리그 기간
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+            <TextField
+              label="시작일" type="date" size="small" fullWidth required
+              value={leagueForm.startDate}
+              onChange={e => setLeagueForm(f => ({ ...f, startDate: e.target.value }))}
+              slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <CalendarTodayIcon sx={{ color: '#1565C0', mr: 0.5, fontSize: 18 }} /> } }}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+            <Typography sx={{ color: '#bbb', fontWeight: 'bold', flexShrink: 0 }}>~</Typography>
+            <TextField
+              label="종료일" type="date" size="small" fullWidth required
+              value={leagueForm.endDate}
+              onChange={e => setLeagueForm(f => ({ ...f, endDate: e.target.value }))}
+              slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <CalendarTodayIcon sx={{ color: '#1565C0', mr: 0.5, fontSize: 18 }} /> } }}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+          </Box>
+
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setLeagueDialog(false)}>취소</Button>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5, gap: 1 }}>
+          <Button onClick={() => setLeagueDialog(false)} sx={{ borderRadius: 2, color: '#999' }}>취소</Button>
           <Button variant="contained" onClick={saveLeague}
-            disabled={!leagueForm.startDate || !leagueForm.endDate}>
+            disabled={!leagueForm.startDate || !leagueForm.endDate}
+            sx={{ borderRadius: 2, bgcolor: '#1565C0', px: 3, fontWeight: 'bold',
+              '&:hover': { bgcolor: '#0D47A1' } }}>
             {editingLeague ? '수정' : '만들기'}
           </Button>
         </DialogActions>
@@ -1789,11 +1988,12 @@ export default function AdminPage() {
         </DialogTitle>
         <DialogContent>
           {/* 관리자 추가 */}
-          <Box sx={{ display: 'flex', gap: 1, mb: 2, mt: 1 }}>
-            <TextField size="small" fullWidth label="이름" value={clubAdminName}
+          <Box sx={{ display: 'flex', gap: 1, mb: 2, mt: 1, alignItems: 'center' }}>
+            <TextField size="small" label="이름" value={clubAdminName}
               onChange={e => setClubAdminName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addClubAdmin()} />
-            <FormControl size="small" sx={{ minWidth: 90 }}>
+              onKeyDown={e => e.key === 'Enter' && addClubAdmin()}
+              sx={{ flex: 2 }} />
+            <FormControl size="small" sx={{ flex: 1.2 }}>
               <Select value={clubAdminRole} onChange={e => setClubAdminRole(e.target.value)}>
                 <MenuItem value="admin">관리자</MenuItem>
                 <MenuItem value="moderator">운영진</MenuItem>
@@ -1801,7 +2001,7 @@ export default function AdminPage() {
               </Select>
             </FormControl>
             <Button variant="contained" onClick={addClubAdmin} startIcon={<AddIcon />}
-              sx={{ whiteSpace: 'nowrap', bgcolor: '#7B1FA2', minWidth: 'auto' }}>추가</Button>
+              sx={{ whiteSpace: 'nowrap', bgcolor: '#7B1FA2', minWidth: 'auto', flexShrink: 0 }}>추가</Button>
           </Box>
 
           <Divider sx={{ mb: 1.5 }}>현재 관리자</Divider>
