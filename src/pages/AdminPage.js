@@ -28,8 +28,6 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_CONFIG } from '../config/app.config';
-import { getFormations, getDefaultFormation } from '../config/formations';
-import FormationField from '../components/FormationField';
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -91,13 +89,8 @@ export default function AdminPage() {
   const [editingLeague, setEditingLeague] = useState(null);
   const [leagueForm, setLeagueForm] = useState({ leagueName: '', startDate: '', endDate: '' });
 
-  // 포메이션 관리
+  // 클럽 종목
   const [clubType, setClubType] = useState('futsal');
-  const [selectedFormation, setSelectedFormation] = useState('');
-  const [formationPlayers, setFormationPlayers] = useState({});
-  const [expandFormation, setExpandFormation] = useState(false);
-  const [selectedPos, setSelectedPos] = useState(null);
-  const [registeredNames, setRegisteredNames] = useState([]);
 
   // 백업
   const [backupRunning, setBackupRunning] = useState(false);
@@ -217,10 +210,7 @@ export default function AdminPage() {
           if (clubSnap.exists()) {
             const type = clubSnap.val().type || 'futsal';
             setClubType(type);
-            setSelectedFormation(clubSnap.val().formation || getDefaultFormation(type));
           }
-          const fpSnap = await get(ref(db, `TeamFormation/${clubName}/default`));
-          if (fpSnap.exists()) setFormationPlayers(fpSnap.val().players || {});
         }
       } catch (e) {
         console.error('AdminPage load error:', e);
@@ -1457,234 +1447,6 @@ export default function AdminPage() {
               </Button>
             )}
           </Box>
-        </Paper>
-        )}
-
-        {/* 포메이션 관리 (관리자+마스터) */}
-        {(isAdmin || isMaster) && (
-        <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
-          <Box onClick={() => setExpandFormation(!expandFormation)}
-            sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}>
-            <SportsSoccerIcon sx={{ color: '#2E7D32', fontSize: 20 }} />
-            <Typography sx={{ fontWeight: 'bold', color: '#2E7D32', fontSize: '1rem', flex: 1 }}>포메이션 관리</Typography>
-            <Chip label={clubType === 'futsal' ? '풋살' : '축구'} size="small"
-              sx={{ fontSize: '0.72rem', height: 22, bgcolor: '#E8F5E9', color: '#2E7D32', fontWeight: 'bold' }} />
-            {expandFormation ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-          </Box>
-
-          {expandFormation && (
-            <Box sx={{ mt: 2 }}>
-              {/* 종목 선택 */}
-              <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>종목</Typography>
-              <Box sx={{ display: 'flex', gap: 0.8, mb: 2 }}>
-                {['futsal', 'football'].map(t => (
-                  <Chip key={t} label={t === 'futsal' ? '풋살 (5인)' : '축구 (11인)'}
-                    onClick={async () => {
-                      setClubType(t);
-                      const def = getDefaultFormation(t);
-                      setSelectedFormation(def);
-                      setFormationPlayers({});
-                      await update(ref(db, `clubs/${clubName}`), { type: t, formation: def });
-                    }}
-                    sx={{
-                      borderRadius: 2, fontWeight: 600, fontSize: '0.85rem', px: 1,
-                      bgcolor: clubType === t ? '#2E7D32' : '#F0F2F5',
-                      color: clubType === t ? 'white' : '#555',
-                      '&:hover': { bgcolor: clubType === t ? '#1B5E20' : '#E0E0E0' },
-                    }}
-                  />
-                ))}
-              </Box>
-
-              {/* 포메이션 선택 */}
-              <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>포메이션</Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8, mb: 2.5 }}>
-                {Object.entries(getFormations(clubType)).map(([key, fm]) => (
-                  <Chip key={key} label={fm.label}
-                    onClick={async () => {
-                      setSelectedFormation(key);
-                      setFormationPlayers({});
-                      await update(ref(db, `clubs/${clubName}`), { formation: key });
-                      await remove(ref(db, `TeamFormation/${clubName}/default`));
-                    }}
-                    sx={{
-                      borderRadius: 2, fontWeight: 600, fontSize: '0.82rem',
-                      bgcolor: selectedFormation === key ? '#2E7D32' : '#F0F2F5',
-                      color: selectedFormation === key ? 'white' : '#555',
-                      '&:hover': { bgcolor: selectedFormation === key ? '#1B5E20' : '#E0E0E0' },
-                    }}
-                  />
-                ))}
-              </Box>
-
-              {/* 자동 배치 + 저장 버튼 */}
-              <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-                <Button variant="outlined" size="small" fullWidth
-                  sx={{ borderRadius: 2, borderColor: '#2E7D32', color: '#2E7D32', fontWeight: 'bold' }}
-                  onClick={async () => {
-                    if (!selectedFormation || !clubName) return;
-                    const fm = getFormations(clubType)[selectedFormation];
-                    if (!fm) return;
-
-                    // 선수 통계 로드
-                    const [statsSnap, regSnap] = await Promise.all([
-                      get(ref(db, `PlayerStatsBackup_6m/${clubName}`)),
-                      get(ref(db, `registeredPlayers/${clubName}`)),
-                    ]);
-                    const stats = statsSnap.exists() ? statsSnap.val() : {};
-                    const regNames = regSnap.exists() ? Object.values(regSnap.val()).map(p => p.name).filter(Boolean) : [];
-
-                    // 통계 있는 등록 선수만
-                    const candidates = regNames
-                      .filter(n => stats[n] && (stats[n].participatedMatches || 0) > 0)
-                      .map(n => ({ name: n, ...stats[n] }))
-                      .sort((a, b) => (b.abilityScore || 0) - (a.abilityScore || 0));
-
-                    // 포지션별 점수 계산 후 배치
-                    const assigned = {};
-                    const used = new Set();
-                    const posOrder = [...fm.positions].sort((a, b) => {
-                      const priority = { GK: 0, CB: 1, LB: 1, RB: 1, DF: 1, LWB: 1, RWB: 1, CDM: 2, CM: 3, DM: 3, MF: 3, LM: 3, RM: 3, AM: 4, LW: 5, RW: 5, LF: 5, RF: 5, ST: 6, FW: 6 };
-                      return (priority[a.label] ?? 3) - (priority[b.label] ?? 3);
-                    });
-
-                    posOrder.forEach(pos => {
-                      let best = null, bestScore = -1;
-                      candidates.forEach(p => {
-                        if (used.has(p.name)) return;
-                        let score = 0;
-                        const atk = p.finalAttack || 50, def = p.finalDefense || 50;
-                        const goals = p.goals || 0, assists = p.assists || 0, cs = p.cleanSheets || 0;
-                        if (pos.label === 'GK') score = def * 2 + cs * 5 - goals * 3;
-                        else if (['CB', 'LB', 'RB', 'DF', 'LWB', 'RWB'].includes(pos.label)) score = def * 2 + cs * 3 - atk;
-                        else if (['CDM', 'CM', 'DM', 'MF', 'LM', 'RM'].includes(pos.label)) score = (atk + def) + assists * 3;
-                        else if (['AM'].includes(pos.label)) score = atk * 1.5 + assists * 4;
-                        else score = atk * 2 + goals * 4 - def;
-                        if (score > bestScore) { bestScore = score; best = p; }
-                      });
-                      if (best) { assigned[pos.id] = best.name; used.add(best.name); }
-                    });
-
-                    setFormationPlayers(assigned);
-                    await set(ref(db, `TeamFormation/${clubName}/default`), { formationId: selectedFormation, players: assigned });
-                  }}
-                >
-                  자동 배치
-                </Button>
-                <Button variant="outlined" size="small" fullWidth
-                  sx={{ borderRadius: 2, borderColor: '#999', color: '#666' }}
-                  onClick={() => { setFormationPlayers({}); remove(ref(db, `TeamFormation/${clubName}/default`)); }}
-                >
-                  초기화
-                </Button>
-              </Box>
-
-              {/* 필드 미리보기 */}
-              {selectedFormation && getFormations(clubType)[selectedFormation] && (
-                <>
-                  {selectedPos && (
-                    <Typography sx={{ fontSize: '0.75rem', color: '#FF9800', fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
-                      {(() => {
-                        const fm = getFormations(clubType)[selectedFormation];
-                        const posLabel = fm?.positions.find(p => p.id === selectedPos)?.label || selectedPos;
-                        const assigned = formationPlayers[selectedPos];
-                        return assigned
-                          ? `${posLabel} (${assigned}) 선택됨 — 다른 포지션 터치로 교체, 아래 선수 터치로 변경`
-                          : `${posLabel} 선택됨 — 아래 선수 터치로 배치`;
-                      })()}
-                    </Typography>
-                  )}
-                  <FormationField
-                    clubType={clubType}
-                    positions={getFormations(clubType)[selectedFormation].positions}
-                    players={formationPlayers}
-                    selectedPos={selectedPos}
-                    onPositionClick={async (posId) => {
-                      if (!selectedPos) {
-                        setSelectedPos(posId);
-                        return;
-                      }
-                      if (selectedPos === posId) {
-                        // 같은 포지션 다시 터치 → 해제
-                        setSelectedPos(null);
-                        return;
-                      }
-                      // 두 포지션 간 교체/이동
-                      const newPlayers = { ...formationPlayers };
-                      const a = newPlayers[selectedPos];
-                      const b = newPlayers[posId];
-                      if (a) newPlayers[posId] = a; else delete newPlayers[posId];
-                      if (b) newPlayers[selectedPos] = b; else delete newPlayers[selectedPos];
-                      setFormationPlayers(newPlayers);
-                      setSelectedPos(null);
-                      await set(ref(db, `TeamFormation/${clubName}/default`), { formationId: selectedFormation, players: newPlayers });
-                    }}
-                    readOnly={false}
-                    width={Math.min(320, window.innerWidth - 80)}
-                  />
-                </>
-              )}
-
-              {/* 선수 선택 패널 */}
-              {selectedFormation && (
-                <Box sx={{ mt: 2 }}>
-                  <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8 }}>
-                    {selectedPos ? '선수를 터치하여 배치' : '포지션을 먼저 터치하세요'}
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxHeight: 140, overflowY: 'auto' }}>
-                    {players
-                      .filter(p => !Object.values(formationPlayers).includes(p.name))
-                      .map(p => (
-                        <Chip key={p.key} label={p.name} size="small"
-                          onClick={async () => {
-                            if (!selectedPos) return;
-                            const newPlayers = { ...formationPlayers, [selectedPos]: p.name };
-                            setFormationPlayers(newPlayers);
-                            setSelectedPos(null);
-                            await set(ref(db, `TeamFormation/${clubName}/default`), { formationId: selectedFormation, players: newPlayers });
-                          }}
-                          sx={{
-                            fontSize: '0.8rem', fontWeight: 600, cursor: selectedPos ? 'pointer' : 'default',
-                            bgcolor: selectedPos ? '#FFF8E1' : '#F5F5F5',
-                            color: selectedPos ? '#F57F17' : '#999',
-                            border: selectedPos ? '1px solid #FFD600' : '1px solid #E0E0E0',
-                            '&:hover': selectedPos ? { bgcolor: '#FFD600', color: '#333' } : {},
-                          }}
-                        />
-                      ))}
-                    {players.filter(p => !Object.values(formationPlayers).includes(p.name)).length === 0 && (
-                      <Typography sx={{ fontSize: '0.75rem', color: '#BBB', fontStyle: 'italic' }}>모든 선수가 배치됨</Typography>
-                    )}
-                  </Box>
-                </Box>
-              )}
-
-              {/* 배치된 선수 목록 */}
-              {Object.keys(formationPlayers).length > 0 && (
-                <Box sx={{ mt: 2 }}>
-                  <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.5 }}>배치 현황</Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                    {getFormations(clubType)[selectedFormation]?.positions.map(pos => (
-                      <Chip key={pos.id} size="small"
-                        label={`${pos.label}: ${formationPlayers[pos.id] || '-'}`}
-                        onDelete={formationPlayers[pos.id] ? async () => {
-                          const newPlayers = { ...formationPlayers };
-                          delete newPlayers[pos.id];
-                          setFormationPlayers(newPlayers);
-                          await set(ref(db, `TeamFormation/${clubName}/default`), { formationId: selectedFormation, players: newPlayers });
-                        } : undefined}
-                        sx={{
-                          fontSize: '0.78rem', fontWeight: 600,
-                          bgcolor: formationPlayers[pos.id] ? '#E8F5E9' : '#FAFAFA',
-                          color: formationPlayers[pos.id] ? '#2E7D32' : '#999',
-                        }}
-                      />
-                    ))}
-                  </Box>
-                </Box>
-              )}
-            </Box>
-          )}
         </Paper>
         )}
 

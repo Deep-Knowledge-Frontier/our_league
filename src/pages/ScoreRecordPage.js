@@ -54,6 +54,14 @@ export default function ScoreRecordPage() {
   const [editIdx2, setEditIdx2] = useState(-1);
   const [selectedMvp, setSelectedMvp] = useState(null);
   const [endDialog, setEndDialog] = useState(false);
+  const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
+
+  useEffect(() => {
+    return onValue(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamNames`), snap => {
+      const v = snap.val() || {};
+      setTeamNames({ A: v.A || '', B: v.B || '', C: v.C || '' });
+    });
+  }, [clubName, dateParam]);
 
   useEffect(() => {
     return onValue(ref(db, `registeredPlayers/${clubName}`), snap => {
@@ -103,9 +111,11 @@ export default function ScoreRecordPage() {
     });
   }, [clubName, dateParam, gameNumber]);
 
+  const getTeamLabel = useCallback((code) => teamNames[code] || `팀 ${code}`, [teamNames]);
+
   const matches = useMemo(() => {
-    const teamNames = Object.keys(teamSelections).filter(k => k !== 'all');
-    return teamNames.length < 2 ? [['A', 'B']] : generateMatches(teamNames);
+    const tn = Object.keys(teamSelections).filter(k => k !== 'all');
+    return tn.length < 2 ? [['A', 'B']] : generateMatches(tn);
   }, [teamSelections]);
 
   const currentMatch = useMemo(() => matches[(gameNumber - 1) % matches.length] || ['A', 'B'], [matches, gameNumber]);
@@ -151,7 +161,7 @@ export default function ScoreRecordPage() {
     setSaving(true);
     try {
       await set(ref(db, `${clubName}/${dateParam}/game${gameNumber}`), {
-        team1_name: currentMatch[0], team2_name: currentMatch[1], gameNumber,
+        team1_name: getTeamLabel(currentMatch[0]), team2_name: getTeamLabel(currentMatch[1]), gameNumber,
         goalList1: list1, goalCount1: list1.length, goalList2: list2, goalCount2: list2.length,
         startTime: -1, gameTime: 0, mvp: mvp || NO_MVP,
       });
@@ -254,18 +264,18 @@ export default function ScoreRecordPage() {
           <Typography sx={{ fontWeight: 900, fontSize: '1.3rem', color: '#1565C0' }}>{gameNumber}경기</Typography>
           <IconButton onClick={() => gameNumber >= endMatch ? setEndDialog(true) : canEdit ? saveToFirebase(goalList1, goalList2, () => setGameNumber(g => g + 1)) : setGameNumber(g => g + 1)} disabled={saving}><ArrowRightIcon /></IconButton>
         </Box>
-        <Typography sx={{ fontSize: '0.85rem', color: '#666', textAlign: 'center' }}>팀 {currentMatch[0]} vs 팀 {currentMatch[1]}</Typography>
+        <Typography sx={{ fontSize: '0.85rem', color: '#666', textAlign: 'center' }}>{getTeamLabel(currentMatch[0])} vs {getTeamLabel(currentMatch[1])}</Typography>
       </Paper>
 
       <Paper sx={{ borderRadius: 3, p: 2, mb: 2, boxShadow: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 3, mb: 2 }}>
           <Box sx={{ textAlign: 'center' }}>
-            <Typography sx={{ fontWeight: 900, fontSize: '1.1rem', color: '#1E66D0' }}>팀 {currentMatch[0]}</Typography>
+            <Typography sx={{ fontWeight: 900, fontSize: '1.1rem', color: '#1E66D0' }}>{getTeamLabel(currentMatch[0])}</Typography>
             <Typography sx={{ fontWeight: 900, fontSize: '2.5rem', color: '#1E66D0' }}>{goalList1.length}</Typography>
           </Box>
           <Typography sx={{ fontWeight: 900, fontSize: '1.5rem', color: '#999' }}>:</Typography>
           <Box sx={{ textAlign: 'center' }}>
-            <Typography sx={{ fontWeight: 900, fontSize: '1.1rem', color: '#1F7A2E' }}>팀 {currentMatch[1]}</Typography>
+            <Typography sx={{ fontWeight: 900, fontSize: '1.1rem', color: '#1F7A2E' }}>{getTeamLabel(currentMatch[1])}</Typography>
             <Typography sx={{ fontWeight: 900, fontSize: '2.5rem', color: '#1F7A2E' }}>{goalList2.length}</Typography>
           </Box>
         </Box>
@@ -282,11 +292,11 @@ export default function ScoreRecordPage() {
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5, mt: 1 }}>
           <Box sx={{ flex: 1 }}>
-            <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#1E66D0', mb: 0.3 }}>팀 {currentMatch[0]} 골 기록</Typography>
+            <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#1E66D0', mb: 0.3 }}>{getTeamLabel(currentMatch[0])} 골 기록</Typography>
             <GoalList team={1} list={goalList1} onSelect={selectGoal} onDelete={deleteGoal} />
           </Box>
           <Box sx={{ flex: 1 }}>
-            <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#1F7A2E', mb: 0.3 }}>팀 {currentMatch[1]} 골 기록</Typography>
+            <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#1F7A2E', mb: 0.3 }}>{getTeamLabel(currentMatch[1])} 골 기록</Typography>
             <GoalList team={2} list={goalList2} onSelect={selectGoal} onDelete={deleteGoal} />
           </Box>
         </Box>

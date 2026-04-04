@@ -2,48 +2,52 @@
 // x: 0-100 (좌→우), y: 0-100 (상=공격, 하=수비/GK)
 
 export const FUTSAL_FORMATIONS = {
-  '1-2-1': {
-    name: '1-2-1',
-    label: '1-2-1 (기본)',
+  '1-3-1': {
+    name: '1-3-1',
+    label: '1-3-1 (기본)',
     positions: [
       { id: 'GK', label: 'GK', x: 50, y: 88 },
-      { id: 'DF', label: 'DF', x: 50, y: 65 },
-      { id: 'LW', label: 'LW', x: 22, y: 40 },
-      { id: 'RW', label: 'RW', x: 78, y: 40 },
+      { id: 'DF', label: 'DF', x: 50, y: 68 },
+      { id: 'LM', label: 'LM', x: 20, y: 42 },
+      { id: 'CM', label: 'CM', x: 50, y: 42 },
+      { id: 'RM', label: 'RM', x: 80, y: 42 },
       { id: 'FW', label: 'FW', x: 50, y: 18 },
     ],
   },
-  '2-2': {
-    name: '2-2',
-    label: '2-2 (밸런스)',
+  '2-2-1': {
+    name: '2-2-1',
+    label: '2-2-1 (밸런스)',
     positions: [
       { id: 'GK', label: 'GK', x: 50, y: 88 },
-      { id: 'LB', label: 'LB', x: 30, y: 62 },
-      { id: 'RB', label: 'RB', x: 70, y: 62 },
-      { id: 'LF', label: 'LF', x: 30, y: 28 },
-      { id: 'RF', label: 'RF', x: 70, y: 28 },
+      { id: 'LB', label: 'LB', x: 30, y: 65 },
+      { id: 'RB', label: 'RB', x: 70, y: 65 },
+      { id: 'LW', label: 'LW', x: 28, y: 38 },
+      { id: 'RW', label: 'RW', x: 72, y: 38 },
+      { id: 'FW', label: 'FW', x: 50, y: 18 },
     ],
   },
-  '2-1-1': {
-    name: '2-1-1',
-    label: '2-1-1 (수비형)',
+  '2-1-2': {
+    name: '2-1-2',
+    label: '2-1-2 (공격형)',
     positions: [
       { id: 'GK', label: 'GK', x: 50, y: 88 },
       { id: 'LB', label: 'LB', x: 30, y: 65 },
       { id: 'RB', label: 'RB', x: 70, y: 65 },
       { id: 'MF', label: 'MF', x: 50, y: 42 },
-      { id: 'FW', label: 'FW', x: 50, y: 18 },
-    ],
-  },
-  '1-1-2': {
-    name: '1-1-2',
-    label: '1-1-2 (공격형)',
-    positions: [
-      { id: 'GK', label: 'GK', x: 50, y: 88 },
-      { id: 'DF', label: 'DF', x: 50, y: 65 },
-      { id: 'MF', label: 'MF', x: 50, y: 42 },
       { id: 'LF', label: 'LF', x: 30, y: 18 },
       { id: 'RF', label: 'RF', x: 70, y: 18 },
+    ],
+  },
+  '3-1-1': {
+    name: '3-1-1',
+    label: '3-1-1 (수비형)',
+    positions: [
+      { id: 'GK', label: 'GK', x: 50, y: 88 },
+      { id: 'LB', label: 'LB', x: 22, y: 65 },
+      { id: 'CB', label: 'CB', x: 50, y: 68 },
+      { id: 'RB', label: 'RB', x: 78, y: 65 },
+      { id: 'MF', label: 'MF', x: 50, y: 40 },
+      { id: 'FW', label: 'FW', x: 50, y: 18 },
     ],
   },
 };
@@ -124,5 +128,5 @@ export function getFormations(clubType) {
 }
 
 export function getDefaultFormation(clubType) {
-  return clubType === 'futsal' ? '1-2-1' : '4-3-3';
+  return clubType === 'futsal' ? '1-3-1' : '4-3-3';
 }

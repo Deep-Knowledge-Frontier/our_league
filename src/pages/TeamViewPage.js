@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../config/firebase";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, get } from "firebase/database";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Box,
@@ -14,10 +14,15 @@ import {
 } from "@mui/material";
 import BuildIcon from "@mui/icons-material/Build";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import SportsSoccerIcon from "@mui/icons-material/SportsSoccer";
 
 import { useAuth } from "../contexts/AuthContext";
 import { normalizeNames, formatDateWithDay } from "../utils/format";
 import { softmaxPercent } from "../utils/stats";
+import { getFormations, getDefaultFormation } from "../config/formations";
+import FormationField from "../components/FormationField";
 
 // (xx.x%) 포맷
 function fmt(p) {
@@ -54,6 +59,13 @@ export default function TeamViewPage() {
   const [keyPop, setKeyPop] = useState([]);
   const [playerPointRate, setPlayerPointRate] = useState({});
 
+  // 포메이션
+  const [clubType, setClubType] = useState('futsal');
+  const [teamFormations, setTeamFormations] = useState({});
+  const [expandFormation, setExpandFormation] = useState(null);
+  const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
+  const [teamCaptains, setTeamCaptains] = useState({ A: '', B: '', C: '' });
+
   useEffect(() => {
     setLoading(true);
     const teamsRef = ref(db, `PlayerSelectionByDate/${clubName}/${date}/AttandPlayer`);
@@ -72,6 +84,18 @@ export default function TeamViewPage() {
     const off2 = onValue(keyPopRef, (snap) => {
       setKeyPop(normalizeNames(snap.val()));
     });
+
+    // 클럽 종목 + 경기별 포메이션 + 팀이름 로드
+    (async () => {
+      const clubSnap = await get(ref(db, `clubs/${clubName}`));
+      if (clubSnap.exists()) setClubType(clubSnap.val().type || 'futsal');
+      const tfSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${date}/TeamFormation`));
+      if (tfSnap.exists()) setTeamFormations(tfSnap.val());
+      const tnSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${date}/TeamNames`));
+      if (tnSnap.exists()) setTeamNames(prev => ({ ...prev, ...tnSnap.val() }));
+      const tcSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${date}/TeamCaptains`));
+      if (tcSnap.exists()) setTeamCaptains(prev => ({ ...prev, ...tcSnap.val() }));
+    })();
 
     return () => {
       off1();
@@ -175,27 +199,31 @@ export default function TeamViewPage() {
                 없음
               </Typography>
             ) : (
-              players.map((name, idx) => (
-                <Box
-                  key={`${code}-${name}-${idx}`}
-                  sx={{
-                    bgcolor: "white",
-                    border: "1px solid rgba(0,0,0,0.08)",
-                    borderRadius: 1,
-                    px: 0.5,
-                    py: 0.6,
-                    display: "flex",
-                    gap: 0.5,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 800, fontSize: "0.85rem", color: "#555" }}>
-                    {idx + 1}.
-                  </Typography>
-                  <Typography sx={{ fontWeight: 600, fontSize: "0.9rem" }}>{name}</Typography>
-                </Box>
-              ))
+              players.map((name, idx) => {
+                const isCaptain = teamCaptains[code] === name;
+                return (
+                  <Box
+                    key={`${code}-${name}-${idx}`}
+                    sx={{
+                      bgcolor: isCaptain ? "#FFF3E0" : "white",
+                      border: isCaptain ? "2px solid #FF9800" : "1px solid rgba(0,0,0,0.08)",
+                      borderRadius: 1,
+                      px: 0.5,
+                      py: 0.6,
+                      display: "flex",
+                      gap: 0.5,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {isCaptain && <Typography sx={{ fontWeight: 900, fontSize: "0.7rem", color: "#FF9800" }}>C</Typography>}
+                    <Typography sx={{ fontWeight: 800, fontSize: "0.85rem", color: "#555" }}>
+                      {idx + 1}.
+                    </Typography>
+                    <Typography sx={{ fontWeight: isCaptain ? 800 : 600, fontSize: "0.9rem", color: isCaptain ? "#E65100" : "inherit" }}>{name}</Typography>
+                  </Box>
+                );
+              })
             )}
           </Box>
         </Box>
@@ -252,14 +280,54 @@ export default function TeamViewPage() {
             alignItems: "stretch",
           }}
         >
-          <TeamCard code="A" title="팀 A" players={teams.A} percent={probs.A} />
-          <TeamCard code="B" title="팀 B" players={teams.B} percent={probs.B} />
+          <TeamCard code="A" title={teamNames.A || "팀 A"} players={teams.A} percent={probs.A} />
+          <TeamCard code="B" title={teamNames.B || "팀 B"} players={teams.B} percent={probs.B} />
           {teamCount === 3 && (
-            <TeamCard code="C" title="팀 C" players={teams.C} percent={probs.C} />
+            <TeamCard code="C" title={teamNames.C || "팀 C"} players={teams.C} percent={probs.C} />
           )}
         </Box>
 
         <Box sx={{ my: 2.2, height: 1, bgcolor: "rgba(0,0,0,0.12)" }} />
+
+        {/* 팀별 포메이션 */}
+        {Object.keys(teamFormations).length > 0 && (
+          <Box sx={{ mt: 1 }}>
+            <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', mb: 1, textAlign: 'center' }}>
+              <SportsSoccerIcon sx={{ fontSize: 18, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />
+              팀별 포메이션
+            </Typography>
+            {['A', 'B', 'C'].map(code => {
+              const tf = teamFormations[code];
+              if (!tf || !tf.formationId) return null;
+              const fmDef = getFormations(clubType)[tf.formationId];
+              if (!fmDef) return null;
+              const isExpanded = expandFormation === code;
+              return (
+                <Box key={code} sx={{ mb: 1 }}>
+                  <Box onClick={() => setExpandFormation(isExpanded ? null : code)}
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', py: 0.6, px: 1,
+                      bgcolor: theme[code].cardBg, borderRadius: 1.5, border: `1px solid ${theme[code].border}` }}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme[code].chipBg }} />
+                    <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', flex: 1 }}>{teamNames[code] || `팀 ${code}`}</Typography>
+                    <Chip label={tf.formationId} size="small" sx={{ fontSize: '0.7rem', height: 20, fontWeight: 600 }} />
+                    {isExpanded ? <ExpandLessIcon sx={{ fontSize: 18 }} /> : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+                  </Box>
+                  {isExpanded && (
+                    <Box sx={{ mt: 1, display: 'flex', justifyContent: 'center' }}>
+                      <FormationField
+                        clubType={clubType}
+                        positions={fmDef.positions}
+                        players={tf.players || {}}
+                        readOnly={true}
+                        width={Math.min(280, window.innerWidth - 80)}
+                      />
+                    </Box>
+                  )}
+                </Box>
+              );
+            })}
+          </Box>
+        )}
       </Paper>
 
       <Box sx={{ mt: 3, display: "flex", justifyContent: "center" }}>
