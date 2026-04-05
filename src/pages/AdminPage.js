@@ -1590,8 +1590,10 @@ export default function AdminPage() {
         {/* 2. 경기일 관리 (운영진 이상) */}
         {(() => {
           const today = new Date().toISOString().slice(0, 10);
-          const todayMatch = matchDates.find(m => m.dateKey === today);
-          const upcoming = matchDates.filter(m => m.dateKey > today).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+          // 다가올 경기 중 가장 가까운 것 (오늘 포함)
+          const allUpcoming = matchDates.filter(m => m.dateKey >= today).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+          const nextMatch = allUpcoming.length > 0 ? allUpcoming[0] : null;
+          const upcoming = nextMatch ? allUpcoming.filter(m => m.dateKey !== nextMatch.dateKey) : [];
           const past = matchDates.filter(m => m.dateKey < today);
           const PAST_PREVIEW = 5;
           const visiblePast = showAllPast ? past : past.slice(0, PAST_PREVIEW);
@@ -1629,7 +1631,7 @@ export default function AdminPage() {
           return (
             <>
               {/* 오늘 경기 카드 */}
-              {todayMatch && (
+              {nextMatch && (
                 <Card sx={{
                   mb: 2, borderRadius: 3, overflow: 'hidden',
                   boxShadow: '0 6px 24px rgba(21, 101, 192, 0.25)',
@@ -1640,32 +1642,32 @@ export default function AdminPage() {
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <SportsSoccerIcon sx={{ color: 'rgba(255,255,255,0.9)', fontSize: 22 }} />
                         <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', fontWeight: 600, letterSpacing: 1 }}>
-                          TODAY MATCH
+                          {nextMatch.dateKey === today ? 'TODAY MATCH' : 'NEXT MATCH'}
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', gap: 0.5 }}>
                         <IconButton size="small" sx={{ color: 'rgba(255,255,255,0.7)', '&:hover': { color: 'white' } }}
-                          onClick={() => openMatchEdit(todayMatch)}>
+                          onClick={() => openMatchEdit(nextMatch)}>
                           <EditIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                       </Box>
                     </Box>
 
                     <Typography sx={{ color: 'white', fontWeight: 900, fontSize: '1.3rem', mb: 0.5 }}>
-                      {todayMatch.dateKey}
+                      {nextMatch.dateKey}
                     </Typography>
 
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
-                      {todayMatch.time && (
+                      {nextMatch.time && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           <AccessTimeIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }} />
-                          <Typography sx={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.85rem' }}>{todayMatch.time}</Typography>
+                          <Typography sx={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.85rem' }}>{nextMatch.time}</Typography>
                         </Box>
                       )}
-                      {todayMatch.location && (
+                      {nextMatch.location && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           <PlaceIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }} />
-                          <Typography sx={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.85rem' }}>{todayMatch.location}</Typography>
+                          <Typography sx={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.85rem' }}>{nextMatch.location}</Typography>
                         </Box>
                       )}
                     </Box>
@@ -1673,7 +1675,7 @@ export default function AdminPage() {
                     <Button
                       variant="contained" fullWidth
                       startIcon={<PlayArrowIcon />}
-                      onClick={() => navigate(`/player-select?date=${todayMatch.dateKey}`)}
+                      onClick={() => navigate(`/player-select?date=${nextMatch.dateKey}`)}
                       sx={{
                         py: 1.3, borderRadius: 2, fontWeight: 800, fontSize: '1rem',
                         bgcolor: 'white', color: '#1565C0',
@@ -1704,7 +1706,7 @@ export default function AdminPage() {
 
                 {upcoming.length === 0 ? (
                   <Typography sx={{ color: '#999', textAlign: 'center', py: 1.5, fontSize: '0.85rem' }}>
-                    {todayMatch ? '다음 예정 경기가 없습니다.' : '예정된 경기가 없습니다.'}
+                    {nextMatch ? '다음 예정 경기가 없습니다.' : '예정된 경기가 없습니다.'}
                   </Typography>
                 ) : (
                   upcoming.map(item => <MatchItem key={item.dateKey} item={item} isPast={false} />)
