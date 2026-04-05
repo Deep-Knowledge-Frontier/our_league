@@ -10,6 +10,7 @@ import ArrowBackIosIcon from '@mui/icons-material/ArrowBackIos';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateWithDay } from '../utils/format';
+import { getFormations } from '../config/formations';
 
 // 로스터에서 특정 팀의 선수 명단 추출
 function extractTeamRoster(rosterData, teamName, teamSide) {
@@ -142,13 +143,22 @@ export default function MatchDetailPage() {
   const [playerStats, setPlayerStats] = useState({});
   const [winnerStars, setWinnerStars] = useState({});
 
+  // 포메이션 연동
+  const [teamFormations, setTeamFormations] = useState({});
+  const [matchTeamCodes, setMatchTeamCodes] = useState(['A', 'B']);
+  const [clubType, setClubType] = useState('futsal');
+
   const loadMatchData = useCallback(async (gNum) => {
     setLoading(true);
     const gKey = `game${gNum}`;
 
     try {
-      // 1. Match score
-      const scoreSnap = await get(ref(db, `${clubName}/${date}/${gKey}`));
+      // 1. 경기 데이터 + 선수선택 데이터 병렬 로드
+      const [scoreSnap, selSnap] = await Promise.all([
+        get(ref(db, `${clubName}/${date}/${gKey}`)),
+        get(ref(db, `PlayerSelectionByDate/${clubName}/${date}`)),
+      ]);
+
       if (!scoreSnap.exists()) {
         setLoading(false);
         return false;
@@ -165,14 +175,34 @@ export default function MatchDetailPage() {
       setGoalList1(gl1.map(parseGoal).filter(Boolean));
       setGoalList2(gl2.map(parseGoal).filter(Boolean));
 
-      // 2. Player rosters
-      const rosterSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${date}/${gKey}`));
-      if (rosterSnap.exists()) {
-        const rosterData = rosterSnap.val();
-        const tA = extractTeamRoster(rosterData, scoreData.team1_name, 'team1');
-        const tB = extractTeamRoster(rosterData, scoreData.team2_name, 'team2');
-        setTeamAPlayers(tA);
-        setTeamBPlayers(tB);
+      // 2. 선수선택 데이터에서 포메이션/매치순서/선수 추출
+      const selData = selSnap?.exists() ? selSnap.val() : {};
+
+      // 포메이션 데이터
+      setTeamFormations(selData.TeamFormation || {});
+
+      // 팀 코드 결정 (MatchOrder → team_name에서 추론)
+      const matchOrder = selData.MatchOrder;
+      let codes = ['A', 'B'];
+      if (matchOrder && Array.isArray(matchOrder) && matchOrder[gNum - 1]) {
+        codes = matchOrder[gNum - 1];
+      } else {
+        const t1 = (scoreData.team1_name || '').replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
+        const t2 = (scoreData.team2_name || '').replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
+        if (t1) codes[0] = t1;
+        if (t2) codes[1] = t2;
+      }
+      setMatchTeamCodes(codes);
+
+      // 3. 선수 로스터 (game별 데이터 → AttandPlayer 폴백)
+      const gameSelData = selData[gKey];
+      if (gameSelData) {
+        setTeamAPlayers(extractTeamRoster(gameSelData, scoreData.team1_name, 'team1'));
+        setTeamBPlayers(extractTeamRoster(gameSelData, scoreData.team2_name, 'team2'));
+      } else if (selData.AttandPlayer) {
+        const att = selData.AttandPlayer;
+        setTeamAPlayers((att[codes[0]] || []).filter(Boolean));
+        setTeamBPlayers((att[codes[1]] || []).filter(Boolean));
       } else {
         setTeamAPlayers([]);
         setTeamBPlayers([]);
@@ -194,6 +224,14 @@ export default function MatchDetailPage() {
     const [scorer, assist] = rest.split('-');
     return { time: time.trim(), scorer: scorer.trim(), assist: assist ? assist.trim() : '없음' };
   };
+
+  // 클럽 종목 로드
+  useEffect(() => {
+    if (!clubName) return;
+    get(ref(db, `clubs/${clubName}`)).then(snap => {
+      if (snap.exists()) setClubType(snap.val().type || 'futsal');
+    }).catch(() => {});
+  }, [clubName]);
 
   // Load player stats for positioning
   useEffect(() => {
@@ -312,16 +350,47 @@ export default function MatchDetailPage() {
   const FIELD_H = 580;
 
   const allPositions = useMemo(() => {
-    const posA = calculateTeamPositions(teamAPlayers, true, FIELD_W, FIELD_H, enrichedStats);
-    const posB = calculateTeamPositions(teamBPlayers, false, FIELD_W, FIELD_H, enrichedStats);
-    return [...posA, ...posB];
-  }, [teamAPlayers, teamBPlayers, enrichedStats]);
+    const formations = getFormations(clubType);
+    const tf1 = teamFormations[matchTeamCodes[0]];
+    const tf2 = teamFormations[matchTeamCodes[1]];
+    const fmDef1 = tf1?.formationId ? formations[tf1.formationId] : null;
+    const fmDef2 = tf2?.formationId ? formations[tf2.formationId] : null;
+
+    // 포메이션 기반 위치 계산
+    const buildFromFormation = (fmDef, tf, isHome, fallbackPlayers) => {
+      if (!fmDef || !tf?.players) {
+        return calculateTeamPositions(fallbackPlayers, isHome, FIELD_W, FIELD_H, enrichedStats);
+      }
+      const positioned = [];
+      const assignedNames = new Set();
+      fmDef.positions.forEach(pos => {
+        const playerName = tf.players[pos.id];
+        if (!playerName) return;
+        assignedNames.add(playerName);
+        const px = (pos.x / 100) * FIELD_W;
+        let py;
+        if (isHome) {
+          // 상단: GK가 위쪽, FW가 중앙선 근처
+          py = FIELD_H * 0.02 + (1 - pos.y / 100) * FIELD_H * 0.46;
+        } else {
+          // 하단: FW가 중앙선 근처, GK가 아래쪽
+          py = FIELD_H * 0.52 + (pos.y / 100) * FIELD_H * 0.46;
+        }
+        positioned.push({ name: playerName, x: px, y: py, isHome, posLabel: pos.label });
+      });
+      return positioned;
+    };
+
+    const pos1 = buildFromFormation(fmDef1, tf1, true, teamAPlayers);
+    const pos2 = buildFromFormation(fmDef2, tf2, false, teamBPlayers);
+    return [...pos1, ...pos2];
+  }, [teamAPlayers, teamBPlayers, enrichedStats, teamFormations, matchTeamCodes, clubType]);
 
   const formatTeamLabel = (name) => {
     if (!name) return '';
-    const n = name.toString().trim();
+    const n = name.toString().trim().replace(/^팀\s*/, '');
     if (n.toUpperCase().startsWith('TEAM')) return n;
-    return `Team ${n.length >= 3 ? n.substring(n.length - 2) : n}`;
+    return `Team ${n}`;
   };
 
   const handlePrevGame = async () => {
@@ -476,11 +545,22 @@ export default function MatchDetailPage() {
                   />
                 )}
                 {/* Uniform */}
-                <img
-                  src={pos.isHome ? '/uniform1.png' : '/uniform2.png'}
-                  alt={pos.name}
-                  style={{ width: 36, height: 36, objectFit: 'contain' }}
-                />
+                <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                  <img
+                    src={pos.isHome ? '/uniform1.png' : '/uniform2.png'}
+                    alt={pos.name}
+                    style={{ width: 36, height: 36, objectFit: 'contain' }}
+                  />
+                  {pos.posLabel && (
+                    <Box sx={{
+                      position: 'absolute', bottom: -1, left: '50%', transform: 'translateX(-50%)',
+                      bgcolor: 'rgba(0,0,0,0.7)', color: '#FFD700', fontSize: '0.5rem', fontWeight: 700,
+                      px: 0.4, py: 0.1, borderRadius: 0.5, lineHeight: 1, whiteSpace: 'nowrap',
+                    }}>
+                      {pos.posLabel}
+                    </Box>
+                  )}
+                </Box>
                 {/* Name */}
                 <Typography
                   sx={{
@@ -489,7 +569,7 @@ export default function MatchDetailPage() {
                     color: 'white',
                     textShadow: '1px 1px 3px rgba(0,0,0,0.9)',
                     lineHeight: 1.2,
-                    mt: 0.3,
+                    mt: 0.2,
                     whiteSpace: 'nowrap',
                   }}
                 >

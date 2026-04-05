@@ -10,6 +10,12 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import AddIcon from '@mui/icons-material/Add';
+import GroupsIcon from '@mui/icons-material/Groups';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_CONFIG } from '../config/app.config';
@@ -21,6 +27,9 @@ function RegisterPage() {
   const [clubList, setClubList] = useState([]);
   const [loadingClubs, setLoadingClubs] = useState(true);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [createClubOpen, setCreateClubOpen] = useState(false);
+  const [newClub, setNewClub] = useState({ name: '', type: 'futsal', region: '' });
+  const [creatingClub, setCreatingClub] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -45,6 +54,33 @@ function RegisterPage() {
       setLoadingClubs(false);
     }).catch(() => setLoadingClubs(false));
   }, []);
+
+  const handleCreateClub = async () => {
+    const name = newClub.name.trim();
+    if (!name) { alert('클럽 이름을 입력해주세요.'); return; }
+    if (clubList.includes(name)) { alert('이미 등록된 클럽입니다.'); return; }
+    if (!user) { alert('로그인 정보가 없습니다.'); return; }
+    setCreatingClub(true);
+    try {
+      await set(ref(db, `clubs/${name}`), {
+        name,
+        type: newClub.type,
+        region: newClub.region || '',
+        createdAt: new Date().toISOString().slice(0, 10),
+        createdBy: user.email,
+      });
+      // 생성자를 admin으로 등록
+      const ek = user.email.replace(/\./g, ',');
+      await set(ref(db, `AllowedUsers/admin/${ek}`), true);
+      setClubList(prev => [...prev, name].sort());
+      setFormData(prev => ({ ...prev, club: name }));
+      setNewClub({ name: '', type: 'futsal', region: '' });
+      setCreateClubOpen(false);
+    } catch (e) {
+      alert('클럽 생성 실패: ' + e.message);
+    }
+    setCreatingClub(false);
+  };
 
   const handleChange = (e) => {
     const { name, value, checked, type } = e.target;
@@ -137,17 +173,30 @@ function RegisterPage() {
           <Typography sx={{ fontWeight: 'bold', color: '#2D336B', fontSize: '0.95rem', mb: 1.5 }}>
             소속 클럽 <span style={{ color: '#D32F2F' }}>*</span>
           </Typography>
-          <FormControl fullWidth size="small">
-            <InputLabel>클럽 선택</InputLabel>
-            {loadingClubs ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}><CircularProgress size={24} /></Box>
-            ) : (
-              <Select name="club" value={formData.club} label="클럽 선택" onChange={handleChange}
-                sx={{ borderRadius: 2 }}>
-                {clubList.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-              </Select>
-            )}
-          </FormControl>
+          {loadingClubs ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}><CircularProgress size={24} /></Box>
+          ) : (
+            <>
+              <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+                <InputLabel>클럽 선택</InputLabel>
+                <Select name="club" value={formData.club} label="클럽 선택" onChange={handleChange}
+                  sx={{ borderRadius: 2 }}>
+                  {clubList.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <Button
+                fullWidth variant="outlined" size="small"
+                startIcon={<AddIcon />}
+                onClick={() => setCreateClubOpen(true)}
+                sx={{
+                  borderRadius: 2, py: 1, borderColor: '#2D336B', color: '#2D336B',
+                  borderStyle: 'dashed', fontSize: '0.85rem', fontWeight: 600,
+                  '&:hover': { borderColor: '#1A1D4E', bgcolor: 'rgba(45,51,107,0.04)' },
+                }}>
+                새 클럽 만들기
+              </Button>
+            </>
+          )}
         </Paper>
 
         {/* 기본 정보 */}
@@ -281,6 +330,55 @@ function RegisterPage() {
         >
           등록하기
         </Button>
+
+        {/* 클럽 생성 다이얼로그 */}
+        <Dialog open={createClubOpen} onClose={() => setCreateClubOpen(false)} maxWidth="xs" fullWidth
+          PaperProps={{ sx: { borderRadius: 3 } }}>
+          <DialogTitle sx={{ fontWeight: 900, fontSize: '1.05rem', pb: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <GroupsIcon sx={{ color: '#2D336B', fontSize: 22 }} />
+              새 클럽 만들기
+            </Box>
+            <Typography sx={{ fontSize: '0.78rem', color: '#999', mt: 0.3 }}>
+              클럽을 만들면 자동으로 관리자가 됩니다
+            </Typography>
+          </DialogTitle>
+          <DialogContent sx={{ pt: 1.5 }}>
+            <TextField
+              label="클럽 이름" fullWidth size="small" required
+              value={newClub.name}
+              onChange={e => setNewClub(p => ({ ...p, name: e.target.value }))}
+              placeholder="예: 한강FC"
+              sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+              <InputLabel>종목</InputLabel>
+              <Select value={newClub.type} label="종목"
+                onChange={e => setNewClub(p => ({ ...p, type: e.target.value }))}
+                sx={{ borderRadius: 2 }}>
+                <MenuItem value="futsal">풋살</MenuItem>
+                <MenuItem value="football">축구</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              label="활동 지역" fullWidth size="small"
+              value={newClub.region}
+              onChange={e => setNewClub(p => ({ ...p, region: e.target.value }))}
+              placeholder="예: 서울 마포구"
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setCreateClubOpen(false)} sx={{ color: '#666', borderRadius: 2 }}>취소</Button>
+            <Button variant="contained" onClick={handleCreateClub} disabled={creatingClub || !newClub.name.trim()}
+              sx={{
+                borderRadius: 2, fontWeight: 700, px: 3,
+                background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
+              }}>
+              {creatingClub ? <CircularProgress size={20} color="inherit" /> : '만들기'}
+            </Button>
+          </DialogActions>
+        </Dialog>
 
       </Container>
     </Box>

@@ -88,12 +88,14 @@ function autoAssignPlayers(positions, teamPlayers, statsMap) {
   const available = [...teamPlayers];
   // 포지션별로 가장 적합한 선수 매칭 (탐욕 알고리즘)
   const posOrder = [...positions].sort((a, b) => {
-    // GK 최우선, 그 다음 수비→미드→공격 순으로 배치
+    // 공격→미드→수비 순으로 배치, GK는 맨 마지막 (남은 선수가 GK)
     const priority = (id) => {
       const u = id.toUpperCase();
-      if (u === 'GK') return 0;
-      if (['CB', 'CB1', 'CB2', 'CB3', 'DF', 'LB', 'RB'].includes(u)) return 1;
+      if (['FW', 'ST', 'ST1', 'ST2', 'LW', 'RW', 'LF', 'RF'].includes(u)) return 0;
+      if (['AM', 'LWB', 'RWB'].includes(u)) return 1;
       if (['CDM', 'CDM1', 'CDM2', 'DM', 'CM', 'CM1', 'CM2', 'CM3', 'MF', 'LM', 'RM'].includes(u)) return 2;
+      if (['CB', 'CB1', 'CB2', 'CB3', 'DF', 'LB', 'RB'].includes(u)) return 3;
+      if (u === 'GK') return 4;
       return 3;
     };
     return priority(a.id) - priority(b.id);
@@ -436,7 +438,7 @@ export default function PlayerSelectPage() {
   }, [teams, editTeams, editMode, statsMap, teamCount]);
 
   const displayTeams = editMode ? editTeams : teams;
-  const getTeamLabel = (code) => teamNames[code] || `팀 ${code}`;
+  const getTeamLabel = (code) => teamNames[code] || code;
   const getTeamShortLabel = (code) => teamNames[code] || code;
   const theme = {
     A: { bg: '#1E66D0', light: '#EAF2FF', border: '#BBD3FF' },

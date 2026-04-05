@@ -54,18 +54,28 @@ function HomePage() {
           setBanners(Object.values(bannerSnap.val()).filter(b => b.active !== false).sort((a, b) => (a.order || 0) - (b.order || 0)));
         }
 
-        // 2. 다음 경기
+        // 2. 다음 경기 (오늘 경기 결과가 이미 있으면 다음 날짜로)
         const matchSnap = await get(ref(db, `MatchDates/${clubName}`));
         if (matchSnap.exists()) {
           const data = matchSnap.val();
           const today = new Date(); today.setHours(0, 0, 0, 0);
+          const todayStr = today.toISOString().slice(0, 10);
           const upcoming = Object.keys(data)
             .filter(dk => (data[dk]?.isActive === true || data[dk]?.isActive === 'true') && parseDateKeyLocal(dk) >= today)
             .sort();
-          if (upcoming.length > 0) {
-            const dk = upcoming[0];
-            setNextMatch({ date: dk, time: data[dk]?.time || '', location: data[dk]?.location || '' });
-            const attendSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${dk}/AttandPlayer/all`));
+          let selectedDk = null;
+          for (const dk of upcoming) {
+            if (dk === todayStr) {
+              // 오늘 경기 결과가 이미 있으면 끝난 것으로 간주 → 스킵
+              const resultSnap = await get(ref(db, `DailyResultsBackup/${clubName}/${dk}`));
+              if (resultSnap.exists()) continue;
+            }
+            selectedDk = dk;
+            break;
+          }
+          if (selectedDk) {
+            setNextMatch({ date: selectedDk, time: data[selectedDk]?.time || '', location: data[selectedDk]?.location || '' });
+            const attendSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/AttandPlayer/all`));
             if (attendSnap.exists() && Array.isArray(attendSnap.val())) {
               setNextMatchAttend(attendSnap.val().filter(Boolean).length);
             }
@@ -294,7 +304,7 @@ function HomePage() {
                       {formatDateWithDay(r.date)}
                     </Typography>
                     {r.winner && (
-                      <Chip label={`우승 ${r.winner}`} size="small"
+                      <Chip label={`우승 ${r.winner.replace(/^(팀\s*|Team\s*)/i, '')}`} size="small"
                         sx={{ fontSize: '0.78rem', height: 24, bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 'bold' }} />
                     )}
                     {r.dailyMvp !== '없음' && (
@@ -313,9 +323,9 @@ function HomePage() {
                           bgcolor: '#FAFAFA', borderRadius: 1.5, px: 1, py: 0.4,
                           border: '1px solid #EEEEEE',
                         }}>
-                          <Typography sx={{ fontSize: '0.82rem', fontWeight: isTeam1Win ? 800 : 400, color: isTeam1Win ? '#1565C0' : '#999' }}>{m.team1}</Typography>
+                          <Typography sx={{ fontSize: '0.82rem', fontWeight: isTeam1Win ? 800 : 400, color: isTeam1Win ? '#1565C0' : '#999' }}>{m.team1?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
                           <Typography sx={{ fontSize: '0.9rem', fontWeight: 800, color: '#333' }}>{m.score1}:{m.score2}</Typography>
-                          <Typography sx={{ fontSize: '0.82rem', fontWeight: isTeam2Win ? 800 : 400, color: isTeam2Win ? '#1565C0' : '#999' }}>{m.team2}</Typography>
+                          <Typography sx={{ fontSize: '0.82rem', fontWeight: isTeam2Win ? 800 : 400, color: isTeam2Win ? '#1565C0' : '#999' }}>{m.team2?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
                         </Box>
                       );
                     })}
@@ -337,7 +347,7 @@ function HomePage() {
                   <Typography sx={{ fontWeight: 'bold', fontSize: '1.08rem' }}>선수순위</Typography>
                   <Chip label="6개월" size="small" sx={{ fontSize: '0.72rem', height: 20, bgcolor: '#FFF3E0', color: '#F57C00' }} />
                 </Box>
-                <Button size="small" onClick={() => navigate('/results')} endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
+                <Button size="small" onClick={() => navigate('/results?tab=1')} endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
                   sx={{ fontSize: '0.8rem', color: '#999' }}>전체보기</Button>
               </Box>
 

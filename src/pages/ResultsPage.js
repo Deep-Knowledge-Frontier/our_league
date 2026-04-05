@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { db } from '../config/firebase';
 import { ref, get } from "firebase/database";
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Container, Paper, Typography, Box, Tab, Tabs,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -32,12 +32,17 @@ ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, 
 function ResultsPage() {
   const navigate = useNavigate();
 
-  const { clubName } = useAuth();
+  const { clubName, userName, loading: authLoading } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // 탭
+  // 탭 (URL ?tab=1 등으로 탭 지정 가능)
+  const [searchParams] = useSearchParams();
   const [tabIndex, setTabIndex] = useState(0);
+  useEffect(() => {
+    const t = parseInt(searchParams.get('tab') || '0', 10);
+    if ([0, 1, 2].includes(t)) setTabIndex(t);
+  }, [searchParams]);
 
   // 로딩(페이지/탭별 분리)
   const [loadingPage, setLoadingPage] = useState(true);            // 초기 탭0 로딩
@@ -51,6 +56,7 @@ function ResultsPage() {
 
   // 필터
   const [attendanceThreshold, setAttendanceThreshold] = useState(10);
+  const [statsPeriod, setStatsPeriod] = useState('6m'); // '6m' | 'season' | 'all'
 
   // 팝업
   const [selectedPlayer, setSelectedPlayer] = useState(null);
@@ -64,7 +70,7 @@ function ResultsPage() {
 
   // Firebase 결과 캐시(탭 왕복 시 read 줄이기)
   const registeredSetRef = useRef(null);
-  const statsRef = useRef(null);
+  const statsRef = useRef({});
 
   // unmount 안전장치
   const aliveRef = useRef(true);
@@ -88,7 +94,7 @@ function ResultsPage() {
 
   const formatTeamName = (name) => {
     if (!name) return "";
-    const n = name.toString().trim();
+    const n = name.toString().trim().replace(/^팀\s*/, '');
     if (n.toUpperCase().startsWith("TEAM")) return n;
     return `Team ${n}`;
   };
@@ -144,15 +150,17 @@ function ResultsPage() {
     return set;
   }, [clubName]);
 
-  const loadStats = useCallback(async () => {
-    if (statsRef.current) return statsRef.current;
+  const loadStats = useCallback(async (period) => {
+    const p = period || statsPeriod;
+    if (statsRef.current[p]) return statsRef.current[p];
     if (!clubName) return null;
 
-    const snapshot = await get(ref(db, `PlayerStatsBackup_6m/${clubName}`));
+    const pathMap = { '6m': 'PlayerStatsBackup_6m', 'season': 'PlayerStatsBackup_season', 'all': 'PlayerStatsBackup' };
+    const snapshot = await get(ref(db, `${pathMap[p]}/${clubName}`));
     const stats = snapshot.exists() ? (snapshot.val() || {}) : null;
-    statsRef.current = stats;
+    statsRef.current[p] = stats;
     return stats;
-  }, [clubName]);
+  }, [clubName, statsPeriod]);
 
   const loadBackupData = useCallback(async () => {
     if (!clubName) return [];
@@ -171,7 +179,31 @@ function ResultsPage() {
       const dateData = data[date];
       const backupMatches = dateData?.matches ? Object.values(dateData.matches) : [];
       const rawMatches = [];
-      const rawSnapshot = await get(ref(db, `${clubName}/${date}`));
+      const [rawSnapshot, selSnapshot] = await Promise.all([
+        get(ref(db, `${clubName}/${date}`)),
+        userName ? get(ref(db, `PlayerSelectionByDate/${clubName}/${date}`)) : Promise.resolve(null),
+      ]);
+      const selData = selSnapshot?.exists() ? selSnapshot.val() : {};
+
+      // 팀코드별 선수 매핑 (내가 어느 팀인지 확인용)
+      const findMyTeam = (gameKey, t1Name, t2Name) => {
+        if (!userName) return null;
+        const gameSel = selData[gameKey];
+        const att = selData?.AttandPlayer;
+        const src = gameSel || att;
+        if (!src) return null;
+        const inList = (arr) => Array.isArray(arr) && arr.some(p => p && String(p).trim() === userName);
+        // 팀코드(A,B,C) 또는 팀이름으로 찾기
+        for (const [key, val] of Object.entries(src)) {
+          if (!inList(val)) continue;
+          const code = key.replace(/^Team\s*/i, '').replace(/^팀\s*/, '').trim();
+          const t1Code = t1Name.replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
+          const t2Code = t2Name.replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
+          if (code === t1Code || key === t1Name) return 'team1';
+          if (code === t2Code || key === t2Name) return 'team2';
+        }
+        return null;
+      };
 
       if (rawSnapshot.exists()) {
         rawSnapshot.forEach((gameSnap) => {
@@ -180,16 +212,19 @@ function ResultsPage() {
           const gameData = gameSnap.val() || {};
           const gameIndex = parseInt(String(gameSnap.key).replace('game', ''), 10);
           const resolvedGameIndex = Number.isFinite(gameIndex) ? gameIndex : rawMatches.length + 1;
+          const t1 = gameData.team1_name || '';
+          const t2 = gameData.team2_name || '';
 
           rawMatches.push({
             gameIndex: resolvedGameIndex,
             date,
             gameNumber: `${resolvedGameIndex}경기`,
-            team1: gameData.team1_name || '',
-            team2: gameData.team2_name || '',
+            team1: t1,
+            team2: t2,
             score1: gameData.goalCount1 || 0,
             score2: gameData.goalCount2 || 0,
             mvp: gameData.mvp || "없음",
+            myTeam: findMyTeam(`game${resolvedGameIndex}`, t1, t2),
           });
         });
       }
@@ -241,7 +276,7 @@ function ResultsPage() {
       }
     }
     return processedGroups;
-  }, [clubName]);
+  }, [clubName, userName]);
 
   const loadLeaderboard = useCallback(async () => {
     setLoadingLeaderboard(true);
@@ -321,7 +356,7 @@ function ResultsPage() {
     } finally {
       if (aliveRef.current) setLoadingLeaderboard(false);
     }
-  }, [attendanceThreshold, loadRegisteredSet, loadStats]);
+  }, [attendanceThreshold, statsPeriod, loadRegisteredSet, loadStats]);
 
   const loadLeagueList = useCallback(async () => {
     setLoadingLeagueList(true);
@@ -347,20 +382,23 @@ function ResultsPage() {
   // 2) Effect 분리
   // =========================
   useEffect(() => {
+    if (!clubName) return; // auth 로딩 중이면 데이터 로드 스킵 (로딩 스피너 유지)
     window.scrollTo(0, 0);
+    let cancelled = false;
+    setLoadingPage(true);
     (async () => {
-      setLoadingPage(true);
       try {
         const groups = await loadBackupData();
-        if (aliveRef.current) setDateGroups(groups);
+        if (!cancelled && aliveRef.current) setDateGroups(groups);
       } catch (e) {
         console.error(e);
-        if (aliveRef.current) setDateGroups([]);
+        if (!cancelled && aliveRef.current) setDateGroups([]);
       } finally {
-        if (aliveRef.current) setLoadingPage(false);
+        if (!cancelled && aliveRef.current) setLoadingPage(false);
       }
     })();
-  }, [loadBackupData]);
+    return () => { cancelled = true; };
+  }, [loadBackupData, clubName]);
 
   useEffect(() => {
     if (tabIndex === 1) loadLeaderboard();
@@ -464,7 +502,7 @@ function ResultsPage() {
   const cellStyle = { padding: '8px 4px', fontSize: isMobile ? '0.8rem' : '0.9rem', textAlign: 'center', whiteSpace: 'nowrap', letterSpacing: '-0.03em' };
   const headerCellStyle = { ...cellStyle, fontWeight: 'bold', backgroundColor: '#E9EEF8', color: '#111827', fontSize: isMobile ? '0.85rem' : '0.95rem' };
 
-  const showGlobalLoading = loadingPage && tabIndex === 0;
+  const showGlobalLoading = (loadingPage || authLoading || !clubName) && tabIndex === 0;
 
   return (
     <div style={{ backgroundColor: '#F0F2F5', minHeight: '100vh', paddingBottom: '80px' }}>
@@ -539,20 +577,35 @@ function ResultsPage() {
                             sx={{ fontWeight: '900', fontSize: '0.75rem', height: 24, minWidth: 28, bgcolor: '#e3f2fd', color: '#1565C0' }}
                           />
 
-                          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, minWidth: 0 }}>
-                            <Typography sx={{ fontSize: teamFont, fontWeight: Number(match.score1) > Number(match.score2) ? '900' : '500', color: Number(match.score1) > Number(match.score2) ? '#1565C0' : '#444', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', flex: 1, letterSpacing: '-0.04em' }}>
+                          {/* 왼쪽 팀 영역 */}
+                          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px', minWidth: 0 }}>
+                            {match.myTeam === 'team1' && (
+                              <Box sx={{ width: 17, height: 17, borderRadius: '50%', bgcolor: '#FF9800', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Typography sx={{ fontSize: '0.5rem', fontWeight: 900, color: '#fff', lineHeight: 1 }}>나</Typography>
+                              </Box>
+                            )}
+                            <Typography sx={{ fontSize: teamFont, fontWeight: Number(match.score1) > Number(match.score2) ? '900' : '500', color: Number(match.score1) > Number(match.score2) ? '#1565C0' : '#444', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '-0.04em' }}>
                               {formatTeamName(match.team1)}
                             </Typography>
+                          </Box>
 
-                            <Box sx={{ bgcolor: '#fff', border: '1.5px solid #ddd', px: 1, py: 0.2, borderRadius: 4, minWidth: 'auto', textAlign: 'center', boxShadow: 1 }}>
-                              <Typography sx={{ fontSize: scoreFont, fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.02em', color: '#222' }}>
-                                {match.score1}:{match.score2}
-                              </Typography>
-                            </Box>
+                          {/* 점수 (중앙 고정) */}
+                          <Box sx={{ bgcolor: '#fff', border: '1.5px solid #ddd', px: 1, py: 0.2, borderRadius: 4, textAlign: 'center', boxShadow: 1, flexShrink: 0 }}>
+                            <Typography sx={{ fontSize: scoreFont, fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.02em', color: '#222' }}>
+                              {match.score1}:{match.score2}
+                            </Typography>
+                          </Box>
 
-                            <Typography sx={{ fontSize: teamFont, fontWeight: Number(match.score2) > Number(match.score1) ? '900' : '500', color: Number(match.score2) > Number(match.score1) ? '#1565C0' : '#444', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'left', flex: 1, letterSpacing: '-0.04em' }}>
+                          {/* 오른쪽 팀 영역 */}
+                          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '3px', minWidth: 0 }}>
+                            <Typography sx={{ fontSize: teamFont, fontWeight: Number(match.score2) > Number(match.score1) ? '900' : '500', color: Number(match.score2) > Number(match.score1) ? '#1565C0' : '#444', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '-0.04em' }}>
                               {formatTeamName(match.team2)}
                             </Typography>
+                            {match.myTeam === 'team2' && (
+                              <Box sx={{ width: 17, height: 17, borderRadius: '50%', bgcolor: '#FF9800', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Typography sx={{ fontSize: '0.5rem', fontWeight: 900, color: '#fff', lineHeight: 1 }}>나</Typography>
+                              </Box>
+                            )}
                           </Box>
 
                           <Box
@@ -575,7 +628,20 @@ function ResultsPage() {
             {/* 탭 1: 선수순위 */}
             {tabIndex === 1 && (
               <Box>
-                <Box display="flex" justifyContent="flex-end" mb={1}>
+                <Box display="flex" justifyContent="flex-end" gap={1} mb={1}>
+                  <FormControl size="small" sx={{ minWidth: 100, backgroundColor: 'white' }}>
+                    <InputLabel sx={{ fontSize: '0.9rem' }}>기간</InputLabel>
+                    <Select
+                      value={statsPeriod}
+                      label="기간"
+                      onChange={(e) => { setStatsPeriod(e.target.value); statsRef.current = {}; }}
+                      sx={{ fontSize: '0.9rem', height: 40 }}
+                    >
+                      <MenuItem value="6m">6개월</MenuItem>
+                      <MenuItem value="season">{new Date().getFullYear()}시즌</MenuItem>
+                      <MenuItem value="all">전체</MenuItem>
+                    </Select>
+                  </FormControl>
                   <FormControl size="small" sx={{ minWidth: 100, backgroundColor: 'white' }}>
                     <InputLabel sx={{ fontSize: '0.9rem' }}>최소 출석</InputLabel>
                     <Select

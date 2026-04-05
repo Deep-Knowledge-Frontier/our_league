@@ -26,6 +26,7 @@ import HomeIcon from '@mui/icons-material/Home';
 import SearchIcon from '@mui/icons-material/Search';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_CONFIG } from '../config/app.config';
 
@@ -475,18 +476,20 @@ export default function AdminPage() {
           for (const gameKey of games) {
             const g = dateData[gameKey];
             const t1 = g.team1_name || 'A', t2 = g.team2_name || 'B';
+            const t1Code = t1.replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
+            const t2Code = t2.replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
             const s1 = g.goalCount1 || 0, s2 = g.goalCount2 || 0;
 
             // 팀 선수 목록
             const gameSel = selectionData[date]?.[gameKey];
             let p1, p2;
             if (gameSel) {
-              p1 = getPlayersList(gameSel[t1] || gameSel[`Team ${t1}`]);
-              p2 = getPlayersList(gameSel[t2] || gameSel[`Team ${t2}`]);
+              p1 = getPlayersList(gameSel[t1] || gameSel[`Team ${t1}`] || gameSel[t1Code] || gameSel[`Team ${t1Code}`]);
+              p2 = getPlayersList(gameSel[t2] || gameSel[`Team ${t2}`] || gameSel[t2Code] || gameSel[`Team ${t2Code}`]);
             } else {
               const att = selectionData[date]?.AttandPlayer;
-              p1 = getPlayersList(att?.[t1]);
-              p2 = getPlayersList(att?.[t2]);
+              p1 = getPlayersList(att?.[t1] || att?.[t1Code]);
+              p2 = getPlayersList(att?.[t2] || att?.[t2Code]);
             }
 
             // 포인트 집계 (골1 + 어시1)
@@ -502,18 +505,21 @@ export default function AdminPage() {
             // 일별 합산
             Object.entries(matchPoints).forEach(([k, v]) => { dailyAggPoints[k] = (dailyAggPoints[k] || 0) + v; });
 
-            // 경기별 MVP: 이긴 팀 선수 중 포인트 → 골 → 능력치
-            let candidates = s1 > s2 ? [...p1] : s2 > s1 ? [...p2] : [...p1, ...p2];
-            let mvp = '없음';
-            if (candidates.length > 0) {
-              let best = candidates[0], maxPt = -1, maxG = -1, maxAb = -1;
-              for (const p of candidates) {
-                const pt = matchPoints[p] || 0, gl = matchGoals[p] || 0, ab = abilityMap[p] || 0;
-                if (pt > maxPt || (pt === maxPt && gl > maxG) || (pt === maxPt && gl === maxG && ab > maxAb)) {
-                  best = p; maxPt = pt; maxG = gl; maxAb = ab;
+            // 경기별 MVP: 기존 MVP가 없을 때만 재계산
+            const existingMvp = g.mvp;
+            let mvp = (existingMvp && existingMvp !== '없음') ? existingMvp : '없음';
+            if (mvp === '없음') {
+              let candidates = s1 > s2 ? [...p1] : s2 > s1 ? [...p2] : [...p1, ...p2];
+              if (candidates.length > 0) {
+                let best = candidates[0], maxPt = -1, maxG = -1, maxAb = -1;
+                for (const p of candidates) {
+                  const pt = matchPoints[p] || 0, gl = matchGoals[p] || 0, ab = abilityMap[p] || 0;
+                  if (pt > maxPt || (pt === maxPt && gl > maxG) || (pt === maxPt && gl === maxG && ab > maxAb)) {
+                    best = p; maxPt = pt; maxG = gl; maxAb = ab;
+                  }
                 }
+                mvp = best;
               }
-              mvp = best;
             }
 
             gameUpdates[`${clubName}/${date}/${gameKey}/mvp`] = mvp;
@@ -573,9 +579,8 @@ export default function AdminPage() {
         const normalizeTeamName = (name) => name ? name.trim().toLowerCase() : '';
         const toArr = (v) => {
           if (!v) return [];
-          if (Array.isArray(v)) return v.filter(Boolean);
-          if (typeof v === 'object') return Object.values(v).filter(Boolean);
-          return [v];
+          const arr = Array.isArray(v) ? v : (typeof v === 'object' ? Object.values(v) : [v]);
+          return arr.filter(x => x && typeof x === 'string');
         };
 
         const calcStats = (scoreData, selData, cutoffDate, maxDate = null, minDate = null) => {
@@ -584,12 +589,14 @@ export default function AdminPage() {
           let totalMatches = 0;
 
           const init = (name) => {
+            if (!name || typeof name !== 'string' || !name.trim()) return false;
             if (!pStats[name]) pStats[name] = {
               goals: 0, assists: 0, participatedMatches: 0,
               wins: 0, losses: 0, draws: 0,
               goalsConceded: 0, cleanSheets: 0, goalDiffSum: 0,
               totalVotes: 0, totalVoteDates: 0,
             };
+            return true;
           };
 
           const parseGoals = (goalList) => {
@@ -623,12 +630,12 @@ export default function AdminPage() {
               const goals2 = parseGoals(g.goalList2);
 
               goals1.forEach(gl => {
-                if (gl.scorer) { init(gl.scorer); pStats[gl.scorer].goals++; }
-                if (gl.assist && gl.assist !== '없음') { init(gl.assist); pStats[gl.assist].assists++; }
+                if (gl.scorer && init(gl.scorer)) pStats[gl.scorer].goals++;
+                if (gl.assist && gl.assist !== '없음' && init(gl.assist)) pStats[gl.assist].assists++;
               });
               goals2.forEach(gl => {
-                if (gl.scorer) { init(gl.scorer); pStats[gl.scorer].goals++; }
-                if (gl.assist && gl.assist !== '없음') { init(gl.assist); pStats[gl.assist].assists++; }
+                if (gl.scorer && init(gl.scorer)) pStats[gl.scorer].goals++;
+                if (gl.assist && gl.assist !== '없음' && init(gl.assist)) pStats[gl.assist].assists++;
               });
 
               // 로스터 기반 출전/승패 (normalizeTeamKey 매칭)
@@ -665,8 +672,7 @@ export default function AdminPage() {
               }
 
               const addResult = (name, myScore, oppScore) => {
-                if (!name) return;
-                init(name);
+                if (!init(name)) return;
                 const p = pStats[name];
                 p.participatedMatches++;
                 p.goalsConceded += oppScore;
@@ -677,8 +683,8 @@ export default function AdminPage() {
                 else p.draws++;
               };
 
-              team1Players.filter(Boolean).forEach(n => addResult(n, s1, s2));
-              team2Players.filter(Boolean).forEach(n => addResult(n, s2, s1));
+              team1Players.filter(n => n && typeof n === 'string').forEach(n => addResult(n, s1, s2));
+              team2Players.filter(n => n && typeof n === 'string').forEach(n => addResult(n, s2, s1));
             }
           }
 
@@ -793,6 +799,8 @@ export default function AdminPage() {
           const output = {};
           for (const [name, p] of Object.entries(pStats)) {
             if (p.participatedMatches === 0 && !p.totalVotes) continue;
+            // Firebase key 검증: 문자열이고 금지 문자 없어야 함
+            if (typeof name !== 'string' || !name.trim() || /[.#$\/\[\]]/.test(name)) continue;
             output[name] = {
               goals: p.goals, assists: p.assists,
               participatedMatches: p.participatedMatches,
@@ -837,6 +845,12 @@ export default function AdminPage() {
         const recentStats = calcStats(scoreData, selData, cutoff);
         await set(ref(db, `PlayerStatsBackup_6m/${clubName}`), recentStats);
         results.push({ name: '6개월 선수 통계', ok: true, msg: `${Object.keys(recentStats).length}명` });
+
+        // 시즌 통계 (올해 1월 1일부터)
+        const seasonCutoff = new Date().getFullYear() + '-01-01';
+        const seasonStats = calcStats(scoreData, selData, seasonCutoff);
+        await set(ref(db, `PlayerStatsBackup_season/${clubName}`), seasonStats);
+        results.push({ name: '시즌 선수 통계', ok: true, msg: `${Object.keys(seasonStats).length}명` });
 
         // 5) 개인별 상세 통계 (PlayerDetailStats) - per-game, 동료 분석, MVP
         const dailyResultsSnap = await get(ref(db, `DailyResultsBackup/${clubName}`));
@@ -1061,10 +1075,10 @@ export default function AdminPage() {
         const last12Weeks = [];
         for (let i = 11; i >= 0; i--) {
           const d = new Date(todayD);
-          // 해당 주의 토요일(주 마지막일) 기준
+          // 해당 주의 일요일(주 마지막일) 기준
           const dayOfWeek = todayD.getDay(); // 0=일, 6=토
-          const daysToSaturday = (6 - dayOfWeek + 7) % 7;
-          d.setDate(todayD.getDate() + daysToSaturday - i * 7);
+          const daysToSunday = (7 - dayOfWeek) % 7;
+          d.setDate(todayD.getDate() + daysToSunday - i * 7);
           if (d > todayD) d.setTime(todayD.getTime()); // 미래면 오늘로
           const maxDateStr = d.toISOString().slice(0, 10);
           last12Weeks.push({ weekKey: getISOWeekKey(maxDateStr), maxDate: maxDateStr });
@@ -1079,11 +1093,19 @@ export default function AdminPage() {
         });
 
         const weeklyStandings = {};
-        for (const { weekKey, maxDate: wMax } of uniqueWeeks) {
-          const wMaxDate = new Date(wMax + 'T00:00:00');
-          wMaxDate.setMonth(wMaxDate.getMonth() - 6);
-          const wMin = wMaxDate.toISOString().slice(0, 10);
-          const wStats = calcStats(scoreData, selData, null, wMax, wMin);
+        for (let wi = 0; wi < uniqueWeeks.length; wi++) {
+          const { weekKey, maxDate: wMax } = uniqueWeeks[wi];
+          const isLatest = wi === uniqueWeeks.length - 1;
+          let wStats;
+          if (isLatest) {
+            // 마지막 주는 6개월 통계와 동일하게 (maxDate 없이)
+            wStats = recentStats;
+          } else {
+            const wCutoff = new Date(wMax + 'T00:00:00');
+            wCutoff.setMonth(wCutoff.getMonth() - 6);
+            const cutoffStr = wCutoff.toISOString().slice(0, 10);
+            wStats = calcStats(scoreData, selData, cutoffStr, wMax);
+          }
           if (Object.keys(wStats).length === 0) continue;
           const weekData = {};
           Object.entries(wStats).forEach(([name, p]) => {
@@ -1091,6 +1113,9 @@ export default function AdminPage() {
             weekData[name] = {
               abilityScore: +(p.abilityScore || 0).toFixed(2),
               attendanceRate: +(p.attendanceRate || 0).toFixed(1),
+              pointRate: +(p.pointRate || 0).toFixed(1),
+              avgGoalDiffPerGame: +(p.avgGoalDiffPerGame || 0).toFixed(2),
+              participatedMatches: p.participatedMatches || 0,
             };
           });
           weeklyStandings[weekKey] = weekData;
@@ -1490,30 +1515,23 @@ export default function AdminPage() {
         {/* 2. 경기일 관리 (운영진 이상) */}
         {(() => {
           const today = new Date().toISOString().slice(0, 10);
-          const upcoming = matchDates.filter(m => m.dateKey >= today).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+          const todayMatch = matchDates.find(m => m.dateKey === today);
+          const upcoming = matchDates.filter(m => m.dateKey > today).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
           const past = matchDates.filter(m => m.dateKey < today);
           const PAST_PREVIEW = 5;
           const visiblePast = showAllPast ? past : past.slice(0, PAST_PREVIEW);
-
-          const isToday = (d) => d === today;
 
           const MatchItem = ({ item, isPast }) => (
             <Box sx={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               py: 1, px: 1.5, borderRadius: 2, mb: 0.5,
-              bgcolor: isPast ? '#FAFAFA' : isToday(item.dateKey) ? '#FFF3E0' : '#E3F2FD',
+              bgcolor: isPast ? '#FAFAFA' : '#E3F2FD',
               opacity: isPast ? 0.8 : 1,
             }}>
               <Box sx={{ minWidth: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                  <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: isPast ? '#888' : '#333' }}>
-                    {item.dateKey}
-                  </Typography>
-                  {isToday(item.dateKey) && (
-                    <Chip label="오늘" size="small"
-                      sx={{ fontSize: '0.65rem', height: 18, bgcolor: '#F57C00', color: 'white', fontWeight: 'bold' }} />
-                  )}
-                </Box>
+                <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: isPast ? '#888' : '#333' }}>
+                  {item.dateKey}
+                </Typography>
                 <Typography sx={{ fontSize: '0.8rem', color: '#999', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {[item.time, item.location].filter(Boolean).join(' | ')}
                 </Typography>
@@ -1534,56 +1552,119 @@ export default function AdminPage() {
           );
 
           return (
-            <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <EventIcon sx={{ color: '#1565C0', fontSize: 20 }} />
-                  <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '1rem' }}>
-                    예정 경기
-                  </Typography>
-                  <Chip label={`${upcoming.length}개`} size="small"
-                    sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#E3F2FD', color: '#1565C0' }} />
-                </Box>
-                <Button size="small" startIcon={<AddIcon />} onClick={openMatchAdd}>추가</Button>
-              </Box>
-
-              {upcoming.length === 0 ? (
-                <Typography sx={{ color: '#999', textAlign: 'center', py: 1.5, fontSize: '0.85rem' }}>
-                  예정된 경기가 없습니다.
-                </Typography>
-              ) : (
-                upcoming.map(item => <MatchItem key={item.dateKey} item={item} isPast={false} />)
-              )}
-
-              {past.length > 0 && (
-                <>
-                  <Divider sx={{ my: 1.5 }} />
-                  <Box
-                    onClick={() => setShowPast(p => !p)}
-                    sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', py: 0.5 }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <HistoryIcon sx={{ color: '#999', fontSize: 18 }} />
-                      <Typography sx={{ fontSize: '0.9rem', color: '#666', fontWeight: 'bold' }}>지난 경기</Typography>
-                      <Chip label={`${past.length}개`} size="small"
-                        sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#F5F5F5', color: '#999' }} />
+            <>
+              {/* 오늘 경기 카드 */}
+              {todayMatch && (
+                <Card sx={{
+                  mb: 2, borderRadius: 3, overflow: 'hidden',
+                  boxShadow: '0 6px 24px rgba(21, 101, 192, 0.25)',
+                  background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 100%)',
+                }}>
+                  <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <SportsSoccerIcon sx={{ color: 'rgba(255,255,255,0.9)', fontSize: 22 }} />
+                        <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', fontWeight: 600, letterSpacing: 1 }}>
+                          TODAY MATCH
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <IconButton size="small" sx={{ color: 'rgba(255,255,255,0.7)', '&:hover': { color: 'white' } }}
+                          onClick={() => openMatchEdit(todayMatch)}>
+                          <EditIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      </Box>
                     </Box>
-                    {showPast ? <ExpandLessIcon sx={{ color: '#999' }} /> : <ExpandMoreIcon sx={{ color: '#999' }} />}
-                  </Box>
-                  {showPast && (
-                    <Box sx={{ mt: 1 }}>
-                      {visiblePast.map(item => <MatchItem key={item.dateKey} item={item} isPast={true} />)}
-                      {past.length > PAST_PREVIEW && (
-                        <Button size="small" fullWidth onClick={() => setShowAllPast(p => !p)}
-                          sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
-                          {showAllPast ? '접기' : `나머지 ${past.length - PAST_PREVIEW}개 더보기`}
-                        </Button>
+
+                    <Typography sx={{ color: 'white', fontWeight: 900, fontSize: '1.3rem', mb: 0.5 }}>
+                      {todayMatch.dateKey}
+                    </Typography>
+
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
+                      {todayMatch.time && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <AccessTimeIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }} />
+                          <Typography sx={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.85rem' }}>{todayMatch.time}</Typography>
+                        </Box>
+                      )}
+                      {todayMatch.location && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <PlaceIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }} />
+                          <Typography sx={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.85rem' }}>{todayMatch.location}</Typography>
+                        </Box>
                       )}
                     </Box>
-                  )}
-                </>
+
+                    <Button
+                      variant="contained" fullWidth
+                      startIcon={<PlayArrowIcon />}
+                      onClick={() => navigate(`/player-select?date=${todayMatch.dateKey}`)}
+                      sx={{
+                        py: 1.3, borderRadius: 2, fontWeight: 800, fontSize: '1rem',
+                        bgcolor: 'white', color: '#1565C0',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        '&:hover': { bgcolor: '#F5F5F5' },
+                      }}>
+                      경기 운영
+                    </Button>
+                  </CardContent>
+                </Card>
               )}
-            </Paper>
+
+              {/* 예정 경기 + 지난 경기 */}
+              <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <EventIcon sx={{ color: '#1565C0', fontSize: 20 }} />
+                    <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '1rem' }}>
+                      예정 경기
+                    </Typography>
+                    {upcoming.length > 0 && (
+                      <Chip label={`${upcoming.length}개`} size="small"
+                        sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#E3F2FD', color: '#1565C0' }} />
+                    )}
+                  </Box>
+                  <Button size="small" startIcon={<AddIcon />} onClick={openMatchAdd}>추가</Button>
+                </Box>
+
+                {upcoming.length === 0 ? (
+                  <Typography sx={{ color: '#999', textAlign: 'center', py: 1.5, fontSize: '0.85rem' }}>
+                    {todayMatch ? '다음 예정 경기가 없습니다.' : '예정된 경기가 없습니다.'}
+                  </Typography>
+                ) : (
+                  upcoming.map(item => <MatchItem key={item.dateKey} item={item} isPast={false} />)
+                )}
+
+                {past.length > 0 && (
+                  <>
+                    <Divider sx={{ my: 1.5 }} />
+                    <Box
+                      onClick={() => setShowPast(p => !p)}
+                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', py: 0.5 }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <HistoryIcon sx={{ color: '#999', fontSize: 18 }} />
+                        <Typography sx={{ fontSize: '0.9rem', color: '#666', fontWeight: 'bold' }}>지난 경기</Typography>
+                        <Chip label={`${past.length}개`} size="small"
+                          sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#F5F5F5', color: '#999' }} />
+                      </Box>
+                      {showPast ? <ExpandLessIcon sx={{ color: '#999' }} /> : <ExpandMoreIcon sx={{ color: '#999' }} />}
+                    </Box>
+                    {showPast && (
+                      <Box sx={{ mt: 1 }}>
+                        {visiblePast.map(item => <MatchItem key={item.dateKey} item={item} isPast={true} />)}
+                        {past.length > PAST_PREVIEW && (
+                          <Button size="small" fullWidth onClick={() => setShowAllPast(p => !p)}
+                            sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
+                            {showAllPast ? '접기' : `나머지 ${past.length - PAST_PREVIEW}개 더보기`}
+                          </Button>
+                        )}
+                      </Box>
+                    )}
+                  </>
+                )}
+              </Paper>
+            </>
           );
         })()}
 

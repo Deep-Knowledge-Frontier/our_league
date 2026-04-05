@@ -252,7 +252,7 @@ function LeaguePage() {
 
   const formatTeamName = (name) => {
     if (!name) return "";
-    const n = name.toString().trim();
+    const n = name.toString().trim().replace(/^팀\s*/, '');
     if (n.toUpperCase().startsWith("TEAM")) return n;
     return `Team ${n}`;
   };

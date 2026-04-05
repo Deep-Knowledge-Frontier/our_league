@@ -280,10 +280,10 @@ export default function TeamViewPage() {
             alignItems: "stretch",
           }}
         >
-          <TeamCard code="A" title={teamNames.A || "팀 A"} players={teams.A} percent={probs.A} />
-          <TeamCard code="B" title={teamNames.B || "팀 B"} players={teams.B} percent={probs.B} />
+          <TeamCard code="A" title={teamNames.A || "A"} players={teams.A} percent={probs.A} />
+          <TeamCard code="B" title={teamNames.B || "B"} players={teams.B} percent={probs.B} />
           {teamCount === 3 && (
-            <TeamCard code="C" title={teamNames.C || "팀 C"} players={teams.C} percent={probs.C} />
+            <TeamCard code="C" title={teamNames.C || "C"} players={teams.C} percent={probs.C} />
           )}
         </Box>
 
@@ -308,7 +308,7 @@ export default function TeamViewPage() {
                     sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', py: 0.6, px: 1,
                       bgcolor: theme[code].cardBg, borderRadius: 1.5, border: `1px solid ${theme[code].border}` }}>
                     <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme[code].chipBg }} />
-                    <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', flex: 1 }}>{teamNames[code] || `팀 ${code}`}</Typography>
+                    <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', flex: 1 }}>{teamNames[code] || code}</Typography>
                     <Chip label={tf.formationId} size="small" sx={{ fontSize: '0.7rem', height: 20, fontWeight: 600 }} />
                     {isExpanded ? <ExpandLessIcon sx={{ fontSize: 18 }} /> : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
                   </Box>
