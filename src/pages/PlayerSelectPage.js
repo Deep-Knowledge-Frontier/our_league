@@ -12,6 +12,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { db } from '../config/firebase';
@@ -65,6 +66,77 @@ function snakeDraft(players, teamCount, statsMap) {
   const teams = Array.from({ length: teamCount }, () => []);
   order.forEach((name, i) => teams[i % teamCount].push(name));
   return teams;
+}
+
+/* ── AI 최적 팀 편성: 스왑 최적화 (개인 능력 균형 + 시너지) ── */
+const MIN_SYNERGY_GAMES = 10; // 동반 승률 최소 경기수
+const SYNERGY_WEIGHT = 0.3;   // 시너지 가중치 (0~1)
+
+function optimizeTeams(initialTeams, teamCount, statsMap, networkData, maxIter = 100) {
+  const teams = initialTeams.map(t => [...t]);
+
+  // 팀 내 2인 조합 평균 동반승률
+  const calcSynergy = (team) => {
+    if (!networkData || team.length < 2) return 50;
+    let sum = 0, cnt = 0;
+    for (let i = 0; i < team.length; i++) {
+      for (let j = i + 1; j < team.length; j++) {
+        const a = team[i], b = team[j];
+        const edge = networkData[a]?.[b] || networkData[b]?.[a];
+        if (edge && edge.games >= MIN_SYNERGY_GAMES) {
+          sum += edge.winRate;
+          cnt++;
+        }
+      }
+    }
+    return cnt > 0 ? sum / cnt : 50; // 데이터 없으면 중립(50%)
+  };
+
+  // 팀 점수: 능력 + 시너지
+  const calcTeamScore = (team) => {
+    const avgAbility = team.length > 0
+      ? team.reduce((s, n) => s + (statsMap[n]?.abilityScore || 0), 0) / team.length
+      : 0;
+    const synergy = calcSynergy(team);
+    return avgAbility + SYNERGY_WEIGHT * synergy;
+  };
+
+  // 비용: 팀 점수 분산 (낮을수록 균등)
+  const calcCost = () => {
+    const scores = teams.slice(0, teamCount).map(calcTeamScore);
+    const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+    return scores.reduce((s, v) => s + (v - mean) ** 2, 0);
+  };
+
+  let bestCost = calcCost();
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    let improved = false;
+    // 모든 팀 쌍에서 선수 교환 시도
+    for (let ti = 0; ti < teamCount; ti++) {
+      for (let tj = ti + 1; tj < teamCount; tj++) {
+        for (let pi = 0; pi < teams[ti].length; pi++) {
+          for (let pj = 0; pj < teams[tj].length; pj++) {
+            // 교환
+            [teams[ti][pi], teams[tj][pj]] = [teams[tj][pj], teams[ti][pi]];
+            const newCost = calcCost();
+            if (newCost < bestCost - 0.001) {
+              bestCost = newCost;
+              improved = true;
+            } else {
+              // 원복
+              [teams[ti][pi], teams[tj][pj]] = [teams[tj][pj], teams[ti][pi]];
+            }
+          }
+        }
+      }
+    }
+    if (!improved) break;
+  }
+
+  // 시너지 정보 반환
+  const synergyScores = teams.slice(0, teamCount).map(calcSynergy);
+  return { teams, synergyScores };
 }
 
 // 포지션 ID → 역할 점수 (공격 vs 수비 가중치)
@@ -155,7 +227,11 @@ export default function PlayerSelectPage() {
   // 포메이션 관리
   const [clubType, setClubType] = useState('futsal');
   const [clubFormation, setClubFormation] = useState('');
-  const [teamFormations, setTeamFormations] = useState({});  // { A: { formationId, players }, B: ... }
+  const [teamFormations, setTeamFormations] = useState({});
+  const [networkData, setNetworkData] = useState(null);
+  const [aiOptimizing, setAiOptimizing] = useState(false);
+  const [isAiOptimized, setIsAiOptimized] = useState(false);
+  const [synergyScores, setSynergyScores] = useState(null);  // { A: { formationId, players }, B: ... }
   const [selectedPos, setSelectedPos] = useState(null);
   const [expandFormation, setExpandFormation] = useState(null); // 'A' | 'B' | 'C' | null
 
@@ -185,6 +261,14 @@ export default function PlayerSelectPage() {
       });
       setStatsMap(map);
     });
+  }, [clubName]);
+
+  // PlayerNetworkGraph 로드 (시너지 데이터)
+  useEffect(() => {
+    if (!clubName) return;
+    get(ref(db, `PlayerNetworkGraph/${clubName}`)).then(snap => {
+      if (snap.exists()) setNetworkData(snap.val());
+    }).catch(() => {});
   }, [clubName]);
 
   useEffect(() => {
@@ -380,7 +464,48 @@ export default function PlayerSelectPage() {
       set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`), newTf);
     }
     setShowResult(true);
+    setIsAiOptimized(false);
+    setSynergyScores(null);
   }, [selectedPlayers, teamCount, statsMap, matchOrder, generateDefaultMatchOrder, clubFormation, clubType, clubName, dateParam]);
+
+  const runAiDraft = useCallback(() => {
+    const picked = Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k);
+    if (picked.length < 2) { alert('최소 2명 이상 선택해주세요.'); return; }
+
+    setAiOptimizing(true);
+    // setTimeout으로 UI 블로킹 방지
+    setTimeout(() => {
+      // 1단계: Snake Draft로 초기 해
+      const initial = snakeDraft(picked, teamCount, statsMap);
+      // 2단계: 스왑 최적화
+      const { teams: optimized, synergyScores: synScores } = optimizeTeams(initial, teamCount, statsMap, networkData);
+      const newTeams = { A: optimized[0] || [], B: optimized[1] || [], C: teamCount === 3 ? (optimized[2] || []) : [] };
+      setTeams(newTeams);
+      setKeyPop(pickTwoRandom(picked));
+      if (matchOrder.length === 0) {
+        const order = generateDefaultMatchOrder(teamCount);
+        setMatchOrder(order);
+      }
+      // 포메이션 자동 배치
+      const fmId = clubFormation || getDefaultFormation(clubType);
+      const fmDef = getFormations(clubType)[fmId];
+      if (fmDef) {
+        const newTf = {};
+        ['A', 'B', ...(teamCount === 3 ? ['C'] : [])].forEach(code => {
+          const teamPlayers = newTeams[code] || [];
+          if (teamPlayers.length > 0) {
+            newTf[code] = { formationId: fmId, players: autoAssignPlayers(fmDef.positions, teamPlayers, statsMap) };
+          }
+        });
+        setTeamFormations(newTf);
+        set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`), newTf);
+      }
+      setShowResult(true);
+      setIsAiOptimized(true);
+      setSynergyScores(synScores);
+      setAiOptimizing(false);
+    }, 50);
+  }, [selectedPlayers, teamCount, statsMap, networkData, matchOrder, generateDefaultMatchOrder, clubFormation, clubType, clubName, dateParam]);
 
   const saveTeams = useCallback(async (teamsToSave, keyPopToSave, cb) => {
     const base = `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`;
@@ -489,9 +614,18 @@ export default function PlayerSelectPage() {
         </Box>
 
         {canEdit && (
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
             <Button variant="contained" fullWidth startIcon={<ShuffleIcon />} onClick={runDraft}
-              sx={{ borderRadius: 2, fontWeight: 'bold', bgcolor: '#1565C0' }}>자동 팀 배정</Button>
+              sx={{ borderRadius: 2, fontWeight: 'bold', bgcolor: '#1565C0' }}>자동 편성</Button>
+            <Button variant="contained" fullWidth startIcon={aiOptimizing ? <CircularProgress size={18} color="inherit" /> : <AutoFixHighIcon />}
+              onClick={runAiDraft} disabled={aiOptimizing}
+              sx={{
+                borderRadius: 2, fontWeight: 'bold', color: 'white',
+                background: 'linear-gradient(135deg, #7B1FA2, #4A148C)',
+                '&:hover': { background: 'linear-gradient(135deg, #6A1B9A, #38006b)' },
+              }}>
+              {aiOptimizing ? '분석중...' : 'AI 편성'}
+            </Button>
           </Box>
         )}
       </Paper>
@@ -499,9 +633,16 @@ export default function PlayerSelectPage() {
       {(hasSavedTeams || showResult) && (
         <Paper sx={{ borderRadius: 3, p: 2, mb: 2, boxShadow: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-            <Typography sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
-              {editMode ? '팀 편집 (선수 클릭 -> 팀 헤더 클릭)' : '팀 구성'}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+              <Typography sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
+                {editMode ? '팀 편집 (선수 클릭 -> 팀 헤더 클릭)' : '팀 구성'}
+              </Typography>
+              {isAiOptimized && !editMode && (
+                <Chip label="AI 최적화" size="small"
+                  icon={<AutoFixHighIcon sx={{ fontSize: '14px !important' }} />}
+                  sx={{ fontSize: '0.68rem', height: 22, bgcolor: '#EDE7F6', color: '#7B1FA2', fontWeight: 700 }} />
+              )}
+            </Box>
             {canEdit && !editMode && (
               <Box sx={{ display: 'flex', gap: 0.5 }}>
                 <IconButton size="small" onClick={startEdit}><EditIcon fontSize="small" /></IconButton>
@@ -522,6 +663,11 @@ export default function PlayerSelectPage() {
                 <Box sx={{ textAlign: 'center', mb: 0.5 }}>
                   <Chip label={`${probs[code].toFixed(1)}%`} size="small"
                     sx={{ bgcolor: theme[code].bg, color: 'white', fontWeight: 700, fontSize: '0.75rem', height: 22 }} />
+                  {isAiOptimized && synergyScores && synergyScores[['A','B','C'].indexOf(code)] != null && (
+                    <Typography sx={{ fontSize: '0.6rem', color: '#7B1FA2', fontWeight: 600, mt: 0.2 }}>
+                      시너지 {synergyScores[['A','B','C'].indexOf(code)].toFixed(0)}%
+                    </Typography>
+                  )}
                 </Box>
                 <Box onClick={() => {
                   if (editMode && movingPlayer) handleTeamHeaderClick(code);

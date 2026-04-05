@@ -53,6 +53,7 @@ function ResultsPage() {
   const [dateGroups, setDateGroups] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [leagueList, setLeagueList] = useState([]);
+  const [awardStats, setAwardStats] = useState(null);
 
   // 필터
   const [attendanceThreshold, setAttendanceThreshold] = useState(10);
@@ -361,15 +362,65 @@ function ResultsPage() {
   const loadLeagueList = useCallback(async () => {
     setLoadingLeagueList(true);
     try {
-      const snapshot = await get(ref(db, `LeagueMaker/${clubName}`));
-      if (!snapshot.exists()) {
+      const [leagueSnap, dailySnap] = await Promise.all([
+        get(ref(db, `LeagueMaker/${clubName}`)),
+        get(ref(db, `DailyResultsBackup/${clubName}`)),
+      ]);
+
+      if (leagueSnap.exists()) {
+        const data = leagueSnap.val();
+        const list = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+        list.sort((a, b) => Number(b.id) - Number(a.id));
+        if (aliveRef.current) setLeagueList(list);
+      } else {
         if (aliveRef.current) setLeagueList([]);
-        return;
       }
-      const data = snapshot.val();
-      const list = Object.keys(data).map(key => ({ id: key, ...data[key] }));
-      list.sort((a, b) => Number(b.id) - Number(a.id));
-      if (aliveRef.current) setLeagueList(list);
+
+      // MVP/팀우승 통계 계산
+      if (dailySnap.exists()) {
+        const dailyData = dailySnap.val();
+        const dailyMvpMap = {}, gameMvpMap = {}, teamWinMap = {};
+
+        Object.values(dailyData).forEach(dayInfo => {
+          // 일별 MVP
+          if (dayInfo?.dailyMvp && dayInfo.dailyMvp !== '없음') {
+            dailyMvpMap[dayInfo.dailyMvp] = (dailyMvpMap[dayInfo.dailyMvp] || 0) + 1;
+          }
+          // 경기별 MVP
+          const matches = dayInfo?.matches ? Object.values(dayInfo.matches) : [];
+          matches.forEach(m => {
+            if (m.mvp && m.mvp !== '없음') gameMvpMap[m.mvp] = (gameMvpMap[m.mvp] || 0) + 1;
+          });
+          // 팀 우승
+          if (matches.length > 0) {
+            const pts = {};
+            matches.forEach(m => {
+              const t1 = m.team1, t2 = m.team2;
+              const s1 = Number(m.score1 || 0), s2 = Number(m.score2 || 0);
+              if (!pts[t1]) pts[t1] = { p: 0, gd: 0 };
+              if (!pts[t2]) pts[t2] = { p: 0, gd: 0 };
+              pts[t1].gd += (s1 - s2); pts[t2].gd += (s2 - s1);
+              if (s1 > s2) pts[t1].p += 3;
+              else if (s2 > s1) pts[t2].p += 3;
+              else { pts[t1].p += 1; pts[t2].p += 1; }
+            });
+            const winner = Object.keys(pts).sort((a, b) =>
+              pts[b].p !== pts[a].p ? pts[b].p - pts[a].p : pts[b].gd - pts[a].gd
+            )[0];
+            if (winner) {
+              const code = winner.replace(/^(팀\s*|Team\s*)/i, '').trim();
+              teamWinMap[code] = (teamWinMap[code] || 0) + 1;
+            }
+          }
+        });
+
+        const toSorted = (map) => Object.entries(map).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+        if (aliveRef.current) setAwardStats({
+          dailyMvp: toSorted(dailyMvpMap).slice(0, 5),
+          gameMvp: toSorted(gameMvpMap).slice(0, 5),
+          teamWins: toSorted(teamWinMap),
+        });
+      }
     } catch (e) {
       console.error(e);
       if (aliveRef.current) setLeagueList([]);
@@ -628,29 +679,31 @@ function ResultsPage() {
             {/* 탭 1: 선수순위 */}
             {tabIndex === 1 && (
               <Box>
-                <Box display="flex" justifyContent="flex-end" gap={1} mb={1}>
-                  <FormControl size="small" sx={{ minWidth: 100, backgroundColor: 'white' }}>
-                    <InputLabel sx={{ fontSize: '0.9rem' }}>기간</InputLabel>
-                    <Select
-                      value={statsPeriod}
-                      label="기간"
-                      onChange={(e) => { setStatsPeriod(e.target.value); statsRef.current = {}; }}
-                      sx={{ fontSize: '0.9rem', height: 40 }}
-                    >
-                      <MenuItem value="6m">6개월</MenuItem>
-                      <MenuItem value="season">{new Date().getFullYear()}시즌</MenuItem>
-                      <MenuItem value="all">전체</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <FormControl size="small" sx={{ minWidth: 100, backgroundColor: 'white' }}>
-                    <InputLabel sx={{ fontSize: '0.9rem' }}>최소 출석</InputLabel>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                  <Box sx={{ display: 'flex', gap: 0.3 }}>
+                    {[
+                      { value: '6m', label: '6개월' },
+                      { value: 'season', label: `${new Date().getFullYear()}` },
+                      { value: 'all', label: '전체' },
+                    ].map(p => (
+                      <Chip key={p.value} label={p.label} size="small"
+                        onClick={() => { setStatsPeriod(p.value); statsRef.current = {}; }}
+                        sx={{
+                          fontSize: '0.75rem', height: 26, fontWeight: statsPeriod === p.value ? 700 : 400,
+                          bgcolor: statsPeriod === p.value ? '#1565C0' : '#f0f0f0',
+                          color: statsPeriod === p.value ? 'white' : '#888',
+                          cursor: 'pointer',
+                          '&:hover': { bgcolor: statsPeriod === p.value ? '#1565C0' : '#e0e0e0' },
+                        }} />
+                    ))}
+                  </Box>
+                  <FormControl size="small" sx={{ minWidth: 80 }}>
                     <Select
                       value={attendanceThreshold}
-                      label="최소 출석"
                       onChange={(e) => setAttendanceThreshold(e.target.value)}
-                      sx={{ fontSize: '0.9rem', height: 40 }}
+                      sx={{ fontSize: '0.78rem', height: 28 }}
                     >
-                      {[5, 10, 15, 30, 50].map(v => (<MenuItem key={v} value={v}>{v}%</MenuItem>))}
+                      {[5, 10, 15, 30, 50].map(v => (<MenuItem key={v} value={v} sx={{ fontSize: '0.8rem' }}>출석 {v}%</MenuItem>))}
                     </Select>
                   </FormControl>
                 </Box>
@@ -712,45 +765,97 @@ function ResultsPage() {
               <Box>
                 {loadingLeagueList ? (
                   <Box display="flex" justifyContent="center" mt={3}><CircularProgress size={26} /></Box>
-                ) : leagueList.length === 0 ? (
-                  <Typography align="center" mt={5}>진행된 리그가 없습니다.</Typography>
                 ) : (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {leagueList.map((league) => (
-                      <Button
-                        key={league.id}
-                        variant="contained"
-                        onClick={() => navigate(`/league`, {
-                          state: {
-                            clubName,
-                            leagueNumber: league.id,
-                            startDate: league.startDate,
-                            endDate: league.endDate
-                          }
-                        })}
-                        sx={{
-                          backgroundColor: '#2D336B',
-                          color: 'white',
-                          borderRadius: 3,
-                          py: 1.5,
-                          fontSize: '1rem',
-                          fontWeight: 'bold',
-                          textTransform: 'none',
-                          boxShadow: 3,
-                          '&:hover': { backgroundColor: '#1A237E' }
-                        }}
-                      >
-                        <Box textAlign="center">
-                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontSize: '1.1rem', mb: 0.2 }}>
-                            제{league.id}회 {league.leagueName}
-                          </Typography>
-                          <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.85rem' }}>
-                            ({formatDate(league.startDate)} ~ {formatDate(league.endDate)})
-                          </Typography>
+                  <>
+                    {/* 어워드 통계 */}
+                    {awardStats && (
+                      <Box sx={{ mb: 2.5 }}>
+                        {/* MVP 랭킹 */}
+                        <Box sx={{ display: 'flex', gap: 1.5 }}>
+                          {[
+                            { title: '일별 MVP', data: awardStats.dailyMvp, color: '#E65100', bg: '#FFF3E0', border: '#FFE0B2', icon: <EmojiEventsIcon sx={{ color: '#F57C00', fontSize: 18 }} /> },
+                            { title: '경기별 MVP', data: awardStats.gameMvp, color: '#FF8F00', bg: '#FFFDE7', border: '#FFF9C4', icon: <EmojiEventsIcon sx={{ color: '#FFA000', fontSize: 18 }} /> },
+                          ].filter(s => s.data.length > 0).map(section => (
+                            <Card key={section.title} sx={{ flex: 1, borderRadius: 3, boxShadow: 2 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.5, pt: 1.2, pb: 0.5 }}>
+                                {section.icon}
+                                <Typography sx={{ fontWeight: 800, fontSize: '0.82rem', color: section.color }}>{section.title}</Typography>
+                              </Box>
+                              <CardContent sx={{ pt: 0.5, pb: 1, '&:last-child': { pb: 1 } }}>
+                                {section.data.map((p, i) => {
+                                  const medals = ['#FFD700', '#C0C0C0', '#CD7F32'];
+                                  return (
+                                    <Box key={p.name} sx={{
+                                      display: 'flex', alignItems: 'center', gap: 0.6, py: 0.4,
+                                      cursor: 'pointer',
+                                    }}
+                                      onClick={() => handleMvpClick(p.name)}
+                                    >
+                                      {i < 3 ? (
+                                        <Box sx={{ width: 18, height: 18, borderRadius: '50%', bgcolor: medals[i],
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                          <Typography sx={{ fontSize: '0.55rem', fontWeight: 900, color: 'white' }}>{i + 1}</Typography>
+                                        </Box>
+                                      ) : (
+                                        <Typography sx={{ fontSize: '0.7rem', color: '#bbb', width: 18, textAlign: 'center' }}>{i + 1}</Typography>
+                                      )}
+                                      <Typography sx={{ fontSize: '0.82rem', fontWeight: i === 0 ? 700 : 400, flex: 1,
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {p.name}
+                                      </Typography>
+                                      <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: section.color }}>{p.count}</Typography>
+                                    </Box>
+                                  );
+                                })}
+                              </CardContent>
+                            </Card>
+                          ))}
                         </Box>
-                      </Button>
-                    ))}
-                  </Box>
+                      </Box>
+                    )}
+
+                    {/* 리그 목록 */}
+                    {leagueList.length === 0 ? (
+                      <Typography align="center" mt={3} sx={{ color: '#999' }}>진행된 리그가 없습니다.</Typography>
+                    ) : (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {leagueList.map((league) => (
+                          <Button
+                            key={league.id}
+                            variant="contained"
+                            onClick={() => navigate(`/league`, {
+                              state: {
+                                clubName,
+                                leagueNumber: league.id,
+                                startDate: league.startDate,
+                                endDate: league.endDate
+                              }
+                            })}
+                            sx={{
+                              backgroundColor: '#2D336B',
+                              color: 'white',
+                              borderRadius: 3,
+                              py: 1.5,
+                              fontSize: '1rem',
+                              fontWeight: 'bold',
+                              textTransform: 'none',
+                              boxShadow: 3,
+                              '&:hover': { backgroundColor: '#1A237E' }
+                            }}
+                          >
+                            <Box textAlign="center">
+                              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontSize: '1.1rem', mb: 0.2 }}>
+                                제{league.id}회 {league.leagueName}
+                              </Typography>
+                              <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.85rem' }}>
+                                ({formatDate(league.startDate)} ~ {formatDate(league.endDate)})
+                              </Typography>
+                            </Box>
+                          </Button>
+                        ))}
+                      </Box>
+                    )}
+                  </>
                 )}
               </Box>
             )}

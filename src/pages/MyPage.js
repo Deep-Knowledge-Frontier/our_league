@@ -47,7 +47,7 @@ function extractTeamRoster(rosterData, teamName, fallbackKey) {
 
 export default function MyPage() {
   const navigate = useNavigate();
-  const { clubName, userName, emailKey, user, isMaster, viewingClub, setViewingClub, realClubName } = useAuth();
+  const { clubName, userName, emailKey, user, isMaster, viewingClub, setViewingClub, realClubName, authReady } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [clubList, setClubList] = useState([]);
@@ -88,6 +88,7 @@ export default function MyPage() {
   }, [isMaster]);
 
   useEffect(() => {
+    if (!authReady) return; // auth 로딩 중이면 대기
     if (!user) { navigate('/login'); return; }
     if (!clubName) return;
     // 클럽 전환 시 기존 데이터 초기화
@@ -231,7 +232,7 @@ export default function MyPage() {
 
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, navigate, emailKey, clubName, userName]);
+  }, [user, navigate, emailKey, clubName, userName, authReady]);
 
   /* -- Fallback: 경기 데이터로부터 상세 통계 계산 -- */
   const calculateFromMatchData = async (playerName) => {
@@ -633,12 +634,13 @@ export default function MyPage() {
       Object.keys(networkGraph[a]).forEach(b => playerSet.add(b));
     });
 
+    const getGames = (n) => statsMap?.[n]?.totalGames || statsMap?.[n]?.participatedMatches || 0;
     const MIN_NODE_GAMES = graphPeriod === 'all' ? 15 : graphPeriod === 'season' ? 8 : 12;
     const eligibleSet = new Set(
-      [...playerSet].filter(n => (statsMap?.[n]?.totalGames || 0) > MIN_NODE_GAMES)
+      [...playerSet].filter(n => getGames(n) > MIN_NODE_GAMES)
     );
 
-    const allGames = [...eligibleSet].map(n => statsMap?.[n]?.totalGames || 0);
+    const allGames = [...eligibleSet].map(n => getGames(n));
     const maxG = Math.max(...allGames, 1);
     const minG = Math.min(...allGames, maxG);
 
@@ -662,13 +664,16 @@ export default function MyPage() {
       });
     });
 
-    const wrList = [...connectedNames].map(name => statsMap?.[name]?.winRate ?? 50);
+    const wrList = [...connectedNames].map(name => {
+      const s = statsMap?.[name];
+      return s?.winRate ?? (s?.pointRate ? Math.round(s.pointRate) : 50);
+    });
     const avgWr = wrList.length > 0 ? wrList.reduce((a, b) => a + b, 0) / wrList.length : 50;
 
     const nodes = [...connectedNames].map(name => {
+      const g = getGames(name);
       const s = statsMap?.[name];
-      const g = s?.totalGames || 0;
-      const wr = s?.winRate ?? 50;
+      const wr = s?.winRate ?? (s?.pointRate ? Math.round(s.pointRate) : 50);
       const baseSize = 3 + Math.pow(wr / 100, 3) * 57;
       const scale = wr >= avgWr ? 1.2 : 0.8;
       const size = baseSize * scale;

@@ -40,6 +40,7 @@ export default function AdminPage() {
 
   // 마스터 전용: 팀 관리
   const [clubsList, setClubsList] = useState([]);
+  const [clubRequests, setClubRequests] = useState([]);
   const [newClubName, setNewClubName] = useState('');
   const [clubsExpanded, setClubsExpanded] = useState(false);
   const [clubAdminDialog, setClubAdminDialog] = useState(false);
@@ -184,12 +185,20 @@ export default function AdminPage() {
         const userSnap = await get(ref(db, `Users/${emailKey}`));
         if (userSnap.exists()) setUserName(userSnap.val().name || '');
 
-        // 마스터: 팀 목록 로드
+        // 마스터: 팀 목록 + 클럽 생성 요청 로드
         if (isMaster) {
-          const clubsSnap = await get(ref(db, 'clubs'));
+          const [clubsSnap, reqSnap] = await Promise.all([
+            get(ref(db, 'clubs')),
+            get(ref(db, 'ClubRequests')),
+          ]);
           if (clubsSnap.exists()) {
             const data = clubsSnap.val();
             setClubsList(Object.entries(data).map(([key, val]) => ({ key, ...val })));
+          }
+          if (reqSnap.exists()) {
+            setClubRequests(Object.entries(reqSnap.val())
+              .map(([key, val]) => ({ key, ...val }))
+              .filter(r => r.status === 'pending'));
           }
         }
 
@@ -1179,6 +1188,39 @@ export default function AdminPage() {
     }
   };
 
+  const handleApproveClub = async (req) => {
+    try {
+      // 클럽 생성
+      await set(ref(db, `clubs/${req.name}`), {
+        name: req.name,
+        type: req.type || 'futsal',
+        region: req.region || '',
+        createdAt: new Date().toISOString().slice(0, 10),
+        createdBy: req.requestedBy,
+      });
+      // 신청자를 admin으로 등록
+      const ek = req.requestedBy.replace(/\./g, ',');
+      await set(ref(db, `AllowedUsers/admin/${ek}`), true);
+      // 요청 상태 업데이트
+      await set(ref(db, `ClubRequests/${req.key}/status`), 'approved');
+      setClubRequests(prev => prev.filter(r => r.key !== req.key));
+      setClubsList(prev => [...prev, { key: req.name, name: req.name, type: req.type, createdBy: req.requestedBy }]);
+      alert(`"${req.name}" 클럽이 승인되었습니다.`);
+    } catch (e) {
+      alert('승인 실패: ' + e.message);
+    }
+  };
+
+  const handleRejectClub = async (req) => {
+    if (!window.confirm(`"${req.name}" 클럽 신청을 거절하시겠습니까?`)) return;
+    try {
+      await set(ref(db, `ClubRequests/${req.key}/status`), 'rejected');
+      setClubRequests(prev => prev.filter(r => r.key !== req.key));
+    } catch (e) {
+      alert('거절 실패: ' + e.message);
+    }
+  };
+
   const handleDeleteClub = async (clubKey) => {
     if (!window.confirm(`"${clubKey}" 팀을 삭제하시겠습니까?\n(팀 데이터는 삭제되지 않습니다)`)) return;
     try {
@@ -1303,6 +1345,39 @@ export default function AdminPage() {
 
             {clubsExpanded && (
               <Box sx={{ mt: 2 }}>
+                {/* 클럽 생성 요청 */}
+                {clubRequests.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: '#F57C00', mb: 1 }}>
+                      승인 대기 ({clubRequests.length}건)
+                    </Typography>
+                    {clubRequests.map(req => (
+                      <Box key={req.key} sx={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        py: 1, px: 1.5, mb: 0.5, bgcolor: '#FFF3E0', borderRadius: 2, border: '1px solid #FFE0B2',
+                      }}>
+                        <Box>
+                          <Typography sx={{ fontWeight: 700, fontSize: '0.9rem' }}>{req.name}</Typography>
+                          <Typography sx={{ fontSize: '0.72rem', color: '#999' }}>
+                            {req.type === 'football' ? '축구' : '풋살'}{req.region ? ` · ${req.region}` : ''} · {req.requestedBy}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <Button size="small" variant="contained" onClick={() => handleApproveClub(req)}
+                            sx={{ fontSize: '0.72rem', minWidth: 'auto', px: 1.5, py: 0.5, bgcolor: '#388E3C', color: 'white', borderRadius: 2 }}>
+                            승인
+                          </Button>
+                          <Button size="small" variant="outlined" onClick={() => handleRejectClub(req)}
+                            sx={{ fontSize: '0.72rem', minWidth: 'auto', px: 1, py: 0.5, borderColor: '#D32F2F', color: '#D32F2F', borderRadius: 2 }}>
+                            거절
+                          </Button>
+                        </Box>
+                      </Box>
+                    ))}
+                    <Divider sx={{ mt: 1.5, mb: 1.5 }} />
+                  </Box>
+                )}
+
                 {/* 팀 추가 */}
                 <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
                   <TextField size="small" fullWidth label="새 팀 이름" value={newClubName}

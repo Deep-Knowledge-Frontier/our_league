@@ -62,22 +62,22 @@ function RegisterPage() {
     if (!user) { alert('로그인 정보가 없습니다.'); return; }
     setCreatingClub(true);
     try {
-      await set(ref(db, `clubs/${name}`), {
+      // 승인 대기 요청으로 저장 (마스터 관리자가 승인해야 실제 생성)
+      const requestKey = name.replace(/[.#$\/\[\]]/g, '_');
+      await set(ref(db, `ClubRequests/${requestKey}`), {
         name,
         type: newClub.type,
         region: newClub.region || '',
-        createdAt: new Date().toISOString().slice(0, 10),
-        createdBy: user.email,
+        requestedAt: new Date().toISOString().slice(0, 10),
+        requestedBy: user.email,
+        requestedByName: user.displayName || '',
+        status: 'pending',
       });
-      // 생성자를 admin으로 등록
-      const ek = user.email.replace(/\./g, ',');
-      await set(ref(db, `AllowedUsers/admin/${ek}`), true);
-      setClubList(prev => [...prev, name].sort());
-      setFormData(prev => ({ ...prev, club: name }));
       setNewClub({ name: '', type: 'futsal', region: '' });
       setCreateClubOpen(false);
+      alert('클럽 생성 신청이 완료되었습니다.\n마스터 관리자 승인 후 이용 가능합니다.');
     } catch (e) {
-      alert('클럽 생성 실패: ' + e.message);
+      alert('신청 실패: ' + e.message);
     }
     setCreatingClub(false);
   };
@@ -340,7 +340,7 @@ function RegisterPage() {
               새 클럽 만들기
             </Box>
             <Typography sx={{ fontSize: '0.78rem', color: '#999', mt: 0.3 }}>
-              클럽을 만들면 자동으로 관리자가 됩니다
+              마스터 관리자 승인 후 클럽이 생성됩니다
             </Typography>
           </DialogTitle>
           <DialogContent sx={{ pt: 1.5 }}>
@@ -372,10 +372,10 @@ function RegisterPage() {
             <Button onClick={() => setCreateClubOpen(false)} sx={{ color: '#666', borderRadius: 2 }}>취소</Button>
             <Button variant="contained" onClick={handleCreateClub} disabled={creatingClub || !newClub.name.trim()}
               sx={{
-                borderRadius: 2, fontWeight: 700, px: 3,
+                borderRadius: 2, fontWeight: 700, px: 3, color: 'white',
                 background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
               }}>
-              {creatingClub ? <CircularProgress size={20} color="inherit" /> : '만들기'}
+              {creatingClub ? <CircularProgress size={20} color="inherit" /> : '신청하기'}
             </Button>
           </DialogActions>
         </Dialog>

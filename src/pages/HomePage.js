@@ -28,6 +28,7 @@ function HomePage() {
   const [recentResults, setRecentResults] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [teamStats, setTeamStats] = useState({ totalPlayers: 0, avgAttend: 0 });
+  const [mvpRanking, setMvpRanking] = useState(null);
 
   // 배너 자동 슬라이드
   useEffect(() => {
@@ -100,6 +101,21 @@ function HomePage() {
             const winner = Object.keys(pts).sort((a,b)=>(pts[b]||0)-(pts[a]||0)||(gd[b]||0)-(gd[a]||0)||(gs[b]||0)-(gs[a]||0))[0]||null;
             return { date: dk, dailyMvp: data[dk].dailyMvp || '없음', matches, winner };
           }));
+
+          // MVP 랭킹 계산
+          const dailyMvpMap = {}, gameMvpMap = {};
+          Object.values(data).forEach(dayInfo => {
+            if (dayInfo?.dailyMvp && dayInfo.dailyMvp !== '없음')
+              dailyMvpMap[dayInfo.dailyMvp] = (dailyMvpMap[dayInfo.dailyMvp] || 0) + 1;
+            (dayInfo?.matches ? Object.values(dayInfo.matches) : []).forEach(m => {
+              if (m.mvp && m.mvp !== '없음') gameMvpMap[m.mvp] = (gameMvpMap[m.mvp] || 0) + 1;
+            });
+          });
+          const toSorted = (map) => Object.entries(map).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+          setMvpRanking({
+            daily: toSorted(dailyMvpMap).slice(0, 5),
+            game: toSorted(gameMvpMap).slice(0, 5),
+          });
         }
 
         // 4. 선수순위 리더보드 (abilityScore 기준 TOP 5)
@@ -393,6 +409,43 @@ function HomePage() {
               ))}
             </CardContent>
           </Card>
+        )}
+
+        {/* ── MVP 랭킹 ── */}
+        {mvpRanking && (mvpRanking.daily.length > 0 || mvpRanking.game.length > 0) && (
+          <Box sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
+            {[
+              { title: '일별 MVP', data: mvpRanking.daily, color: '#E65100', icon: <EmojiEventsIcon sx={{ color: '#F57C00', fontSize: 18 }} /> },
+              { title: '경기별 MVP', data: mvpRanking.game, color: '#FF8F00', icon: <EmojiEventsIcon sx={{ color: '#FFA000', fontSize: 18 }} /> },
+            ].filter(s => s.data.length > 0).map(section => {
+              const medals = ['#FFD700', '#C0C0C0', '#CD7F32'];
+              return (
+                <Card key={section.title} sx={{ flex: 1, borderRadius: 3, boxShadow: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.5, pt: 1.2, pb: 0.5 }}>
+                    {section.icon}
+                    <Typography sx={{ fontWeight: 800, fontSize: '0.82rem', color: section.color }}>{section.title}</Typography>
+                  </Box>
+                  <CardContent sx={{ pt: 0.5, pb: 1, '&:last-child': { pb: 1 } }}>
+                    {section.data.map((p, i) => (
+                      <Box key={p.name} sx={{ display: 'flex', alignItems: 'center', gap: 0.6, py: 0.4 }}>
+                        {i < 3 ? (
+                          <Box sx={{ width: 18, height: 18, borderRadius: '50%', bgcolor: medals[i],
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Typography sx={{ fontSize: '0.55rem', fontWeight: 900, color: 'white' }}>{i + 1}</Typography>
+                          </Box>
+                        ) : (
+                          <Typography sx={{ fontSize: '0.7rem', color: '#bbb', width: 18, textAlign: 'center' }}>{i + 1}</Typography>
+                        )}
+                        <Typography sx={{ fontSize: '0.82rem', fontWeight: i === 0 ? 700 : 400, flex: 1,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</Typography>
+                        <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: section.color }}>{p.count}</Typography>
+                      </Box>
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </Box>
         )}
 
         {/* ── 팀 현황 ── */}
