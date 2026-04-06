@@ -1159,7 +1159,7 @@ export default function AdminPage() {
 
   if (!canAccess) {
     return (
-      <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 10 }}>
+      <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
         <Container maxWidth="sm" sx={{ pt: 8, textAlign: 'center' }}>
           <Alert severity="error" sx={{ borderRadius: 2 }}>
             관리자 권한이 필요합니다.
@@ -1314,7 +1314,7 @@ export default function AdminPage() {
   const roleBg = { admin: '#FFEBEE', moderator: '#FFF3E0', verified: '#E8F5E9', master: '#F3E5F5' };
 
   return (
-    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 10 }}>
+    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
       <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
 
         {/* ── 헤더 카드 ── */}

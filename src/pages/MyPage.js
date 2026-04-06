@@ -24,6 +24,7 @@ import ForceGraph2D from 'react-force-graph-2d';
 import { useAuth } from '../contexts/AuthContext';
 import { calcMean, calcStd, calculateArchetype } from '../utils/stats';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
+import { MyPageSkeleton } from '../components/common/SkeletonLoading';
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, CategoryScale, LinearScale);
 
@@ -899,9 +900,11 @@ export default function MyPage() {
 
   if (loading) {
     return (
-      <Container sx={{ mt: 6, textAlign: 'center' }}>
-        <CircularProgress />
-      </Container>
+      <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
+        <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
+          <MyPageSkeleton />
+        </Container>
+      </Box>
     );
   }
 
@@ -971,7 +974,7 @@ export default function MyPage() {
   };
 
   return (
-    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 10 }}>
+    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
       <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
 
         {/* -- 헤더 카드 -- */}

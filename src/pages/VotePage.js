@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Container, Box, Typography, Card, CardContent, Button,
   Grid, CircularProgress, Chip, Stack, Alert,
-  Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText,
+  Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText, Slide,
   List, ListItem, ListItemText, Divider, ListItemButton, ListItemIcon,
   TextField, IconButton,
   FormControl, InputLabel, Select, MenuItem
@@ -28,6 +28,9 @@ import {
   parseDateKeyLocal, normalizeNames, ensureArray, getDaysDiff,
   extractHourMinute, formatHHMM, formatDateWithDay
 } from '../utils/format';
+
+const SlideUp = React.forwardRef((props, ref) => <Slide direction="up" ref={ref} {...props} />);
+const bottomSheetProps = { TransitionComponent: SlideUp, PaperProps: { sx: { borderRadius: '20px 20px 0 0', position: 'fixed', bottom: 0, m: 0, maxHeight: '80vh' } } };
 
 function VotePage() {
   const navigate = useNavigate();
@@ -422,16 +425,21 @@ function VotePage() {
   }
 
   return (
-    <Container maxWidth="sm" sx={{ mt: 4, pb: 10 }}>
-      <Box sx={{ mb: 3, textAlign: 'center' }}>
-        <Typography variant="h4" fontWeight="bold" color="primary"
-          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
-          <CalendarMonthIcon sx={{ fontSize: 40 }} /> 경기 일정 투표
-        </Typography>
-        <Typography variant="subtitle1" color="textSecondary" sx={{ mt: 1 }}>
-          {userName ? <strong>{userName}</strong> : '회원'}님, 경기 참여 여부를 선택해주세요.
-        </Typography>
-      </Box>
+    <Container maxWidth="sm" sx={{ pt: 2, pb: 12 }}>
+      <Card sx={{
+        mb: 2.5, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
+        background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
+      }}>
+        <CardContent sx={{ py: 2.5, textAlign: 'center' }}>
+          <CalendarMonthIcon sx={{ fontSize: 28, color: 'rgba(255,255,255,0.4)', mb: 0.5 }} />
+          <Typography variant="h5" sx={{ color: 'white', fontWeight: 900 }}>
+            경기 일정 투표
+          </Typography>
+          <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.85rem', mt: 0.3 }}>
+            {userName ? <strong>{userName}</strong> : '회원'}님, 경기 참여 여부를 선택해주세요.
+          </Typography>
+        </CardContent>
+      </Card>
 
       {matchList.length === 0 ? (
         <Alert severity="warning" sx={{ justifyContent: 'center' }}>현재 진행 중인 투표가 없습니다.</Alert>
@@ -455,7 +463,7 @@ function VotePage() {
           else if (!isTimeReady) { teamBtnText = '팀 구성으로 넘어가기 (오픈 전)'; teamBtnBg = '#E0E0E0'; teamBtnColor = '#757575'; }
 
           return (
-            <Card key={date} sx={{ mb: 3, borderRadius: 3, boxShadow: 3 }}>
+            <Card key={date} sx={{ mb: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.04)' }}>
               <CardContent sx={{ textAlign: 'center' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1 }}>
                   <Typography variant="h5" fontWeight="bold">{formattedDate}</Typography>
@@ -524,7 +532,7 @@ function VotePage() {
       )}
 
       {/* 참석 모드 선택 */}
-      <Dialog open={openAttendMode} onClose={() => setOpenAttendMode(false)}>
+      <Dialog open={openAttendMode} onClose={() => setOpenAttendMode(false)} {...bottomSheetProps}>
         <DialogTitle sx={{ fontWeight: 'bold' }}>참석</DialogTitle>
         <DialogContent><DialogContentText>시간을 선택하지 않으면 전체 운동 시간 참석으로 처리됩니다.</DialogContentText></DialogContent>
         <DialogActions>
@@ -535,7 +543,7 @@ function VotePage() {
       </Dialog>
 
       {/* 시간 선택 */}
-      <Dialog open={openAttendTime} onClose={() => setOpenAttendTime(false)} fullWidth maxWidth="xs">
+      <Dialog open={openAttendTime} onClose={() => setOpenAttendTime(false)} fullWidth maxWidth="xs" {...bottomSheetProps}>
         <DialogTitle sx={{ fontWeight: 'bold', textAlign: 'center' }}>참석 시간 선택</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', mb: 2 }}>참석 가능한 시간을 선택해주세요.</Typography>
@@ -561,7 +569,7 @@ function VotePage() {
       </Dialog>
 
       {/* 명단 보기 */}
-      <Dialog open={openList} onClose={closeNameListDialog} PaperProps={{ sx: { width: 'fit-content', minWidth: '220px', maxWidth: '90vw' } }}>
+      <Dialog open={openList} onClose={closeNameListDialog} {...bottomSheetProps}>
         <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
           <Typography variant="h6" fontWeight="bold">{dialogDateStr}</Typography>
           <Typography variant="subtitle1" color="primary" sx={{ mt: 0.5 }}>{dialogSubTitle}</Typography>
@@ -587,7 +595,7 @@ function VotePage() {
       </Dialog>
 
       {/* 용병 관리 */}
-      <Dialog open={openGuestDialog} onClose={() => setOpenGuestDialog(false)} fullWidth maxWidth="xs">
+      <Dialog open={openGuestDialog} onClose={() => setOpenGuestDialog(false)} fullWidth maxWidth="xs" {...bottomSheetProps}>
         <DialogTitle sx={{ fontWeight: 'bold', textAlign: 'center' }}>
           용병(지인) 관리
           <Typography variant="body2" color="textSecondary">{userName}님의 지인을 등록해주세요.</Typography>
@@ -614,7 +622,7 @@ function VotePage() {
       </Dialog>
 
       {/* 지도 앱 선택 */}
-      <Dialog open={openMapDialog} onClose={() => setOpenMapDialog(false)} PaperProps={{ sx: { width: '300px', maxWidth: '80%', borderRadius: 2 } }}>
+      <Dialog open={openMapDialog} onClose={() => setOpenMapDialog(false)} {...bottomSheetProps}>
         <DialogTitle sx={{ fontWeight: 'bold', textAlign: 'center' }}>지도 앱 선택</DialogTitle>
         <List sx={{ pt: 0 }}>
           {[{ key: 'kakao', label: '카카오맵', color: '#FEE500' }, { key: 'naver', label: '네이버 지도', color: '#2DB400' }, { key: 'google', label: '구글 지도', color: '#1976D2' }].map((m, i) => (
@@ -633,7 +641,7 @@ function VotePage() {
       </Dialog>
 
       {/* 알림 */}
-      <Dialog open={openAlert} onClose={() => setOpenAlert(false)} PaperProps={{ sx: { minWidth: '300px', borderRadius: 2 } }}>
+      <Dialog open={openAlert} onClose={() => setOpenAlert(false)} {...bottomSheetProps}>
         <DialogTitle sx={{ fontWeight: 'bold' }}>알림</DialogTitle>
         <DialogContent><DialogContentText sx={{ color: 'text.primary', whiteSpace: 'pre-line' }}>{alertMessage}</DialogContentText></DialogContent>
         <DialogActions><Button onClick={() => setOpenAlert(false)} variant="contained" autoFocus>확인</Button></DialogActions>

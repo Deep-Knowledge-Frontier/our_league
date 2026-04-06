@@ -15,6 +15,8 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { parseDateKeyLocal, getDaysDiff, formatDateWithDay } from '../utils/format';
+import { HomePageSkeleton } from '../components/common/SkeletonLoading';
+import { touchCard } from '../utils/styles';
 
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 
@@ -246,11 +248,10 @@ function HomePage() {
 
   if (loading) {
     return (
-      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#F0F2F5' }}>
-        <Box sx={{ textAlign: 'center' }}>
-          <CircularProgress sx={{ color: '#2D336B' }} />
-          <Typography sx={{ mt: 2, color: '#666' }}>로딩 중...</Typography>
-        </Box>
+      <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
+        <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
+          <HomePageSkeleton />
+        </Container>
       </Box>
     );
   }
@@ -259,7 +260,7 @@ function HomePage() {
   const dday = nextMatch ? getDaysDiff(nextMatch.date) : -1;
 
   return (
-    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 10 }}>
+    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
 
       <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
 
@@ -413,56 +414,67 @@ function HomePage() {
           </Card>
         )}
 
-        {/* ── 최근 경기 결과 ── */}
+        {/* ── 최근 경기 결과 (가로 스크롤) ── */}
         {recentResults.length > 0 && (
-          <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 2 }}>
-            <CardContent sx={{ pb: '12px !important' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <SportsSoccerIcon sx={{ color: '#333', fontSize: 20 }} />
-                  <Typography sx={{ fontWeight: 'bold', fontSize: '1.08rem' }}>최근 경기</Typography>
-                </Box>
-                <Button size="small" onClick={() => navigate('/results')} endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
-                  sx={{ fontSize: '0.8rem', color: '#999' }}>전체보기</Button>
+          <Box sx={{ mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, px: 0.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                <SportsSoccerIcon sx={{ color: '#333', fontSize: 20 }} />
+                <Typography sx={{ fontWeight: 'bold', fontSize: '1.05rem' }}>최근 경기</Typography>
               </Box>
-              {recentResults.map((r, ri) => (
-                <Box key={r.date}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.8 }}>
-                    <Typography sx={{ fontSize: '0.9rem', fontWeight: 700, color: '#333' }}>
-                      {formatDateWithDay(r.date)}
-                    </Typography>
-                    {r.winner && (
-                      <Chip label={`우승 ${r.winner.replace(/^(팀\s*|Team\s*)/i, '')}`} size="small"
-                        sx={{ fontSize: '0.78rem', height: 24, bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 'bold' }} />
-                    )}
+              <Button size="small" onClick={() => navigate('/results')} endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
+                sx={{ fontSize: '0.8rem', color: '#999' }}>전체보기</Button>
+            </Box>
+            <Box sx={{
+              display: 'flex', gap: 1.2, overflowX: 'auto', pb: 1,
+              scrollSnapType: 'x mandatory',
+              '&::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none',
+              mx: -0.5, px: 0.5,
+            }}>
+              {recentResults.map((r) => (
+                <Card key={r.date} onClick={() => navigate('/results')}
+                  sx={{
+                    minWidth: 240, maxWidth: 280, flexShrink: 0, scrollSnapAlign: 'start',
+                    borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.04)',
+                    cursor: 'pointer', ...touchCard,
+                  }}>
+                  <CardContent sx={{ p: 1.8, '&:last-child': { pb: 1.8 } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: '#333' }}>
+                        {formatDateWithDay(r.date)}
+                      </Typography>
+                      {r.winner && (
+                        <Chip label={`우승 ${r.winner.replace(/^(팀\s*|Team\s*)/i, '')}`} size="small"
+                          sx={{ fontSize: '0.7rem', height: 22, bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 'bold' }} />
+                      )}
+                    </Box>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.8 }}>
+                      {r.matches.slice(0, 6).map((m, mi) => {
+                        const isTeam1Win = m.score1 > m.score2;
+                        const isTeam2Win = m.score2 > m.score1;
+                        return (
+                          <Box key={mi} sx={{
+                            display: 'flex', alignItems: 'center', gap: 0.4,
+                            bgcolor: '#F5F7FA', borderRadius: 1.5, px: 0.8, py: 0.3,
+                          }}>
+                            <Typography sx={{ fontSize: '0.75rem', fontWeight: isTeam1Win ? 800 : 400, color: isTeam1Win ? '#1565C0' : '#bbb' }}>{m.team1?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
+                            <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#333' }}>{m.score1}:{m.score2}</Typography>
+                            <Typography sx={{ fontSize: '0.75rem', fontWeight: isTeam2Win ? 800 : 400, color: isTeam2Win ? '#1565C0' : '#bbb' }}>{m.team2?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
+                          </Box>
+                        );
+                      })}
+                    </Box>
                     {r.dailyMvp !== '없음' && (
-                      <Chip icon={<EmojiEventsIcon sx={{ fontSize: '14px !important', color: '#F57C00 !important' }} />}
-                        label={r.dailyMvp} size="small"
-                        sx={{ fontSize: '0.78rem', height: 24, bgcolor: '#FFF3E0', color: '#E65100', fontWeight: 'bold' }} />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+                        <EmojiEventsIcon sx={{ fontSize: 14, color: '#F57C00' }} />
+                        <Typography sx={{ fontSize: '0.72rem', color: '#E65100', fontWeight: 600 }}>MVP {r.dailyMvp}</Typography>
+                      </Box>
                     )}
-                  </Box>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1.2 }}>
-                    {r.matches.map((m, mi) => {
-                      const isTeam1Win = m.score1 > m.score2;
-                      const isTeam2Win = m.score2 > m.score1;
-                      return (
-                        <Box key={mi} sx={{
-                          display: 'flex', alignItems: 'center', gap: 0.5,
-                          bgcolor: '#FAFAFA', borderRadius: 1.5, px: 1, py: 0.4,
-                          border: '1px solid #EEEEEE',
-                        }}>
-                          <Typography sx={{ fontSize: '0.82rem', fontWeight: isTeam1Win ? 800 : 400, color: isTeam1Win ? '#1565C0' : '#999' }}>{m.team1?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
-                          <Typography sx={{ fontSize: '0.9rem', fontWeight: 800, color: '#333' }}>{m.score1}:{m.score2}</Typography>
-                          <Typography sx={{ fontSize: '0.82rem', fontWeight: isTeam2Win ? 800 : 400, color: isTeam2Win ? '#1565C0' : '#999' }}>{m.team2?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                  {ri < recentResults.length - 1 && <Divider sx={{ mb: 1 }} />}
-                </Box>
+                  </CardContent>
+                </Card>
               ))}
-            </CardContent>
-          </Card>
+            </Box>
+          </Box>
         )}
 
         {/* ── 선수순위 TOP 5 ── */}

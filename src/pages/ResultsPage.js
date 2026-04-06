@@ -16,6 +16,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAuth } from '../contexts/AuthContext';
 import { calcMean, calcStd } from '../utils/stats';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
+import { ResultsPageSkeleton } from '../components/common/SkeletonLoading';
 
 import {
   Chart as ChartJS,
@@ -170,116 +171,64 @@ function ResultsPage() {
 
   const loadBackupData = useCallback(async () => {
     if (!dataClub) return [];
-    const snapshot = await get(ref(db, `DailyResultsBackup/${dataClub}`));
-    if (!snapshot.exists()) return [];
 
-    const data = snapshot.val();
+    // 1회 읽기: DailyResultsBackup + PlayerSelectionByDate (myTeam 판별용)
+    const [backupSnap, selAllSnap] = await Promise.all([
+      get(ref(db, `DailyResultsBackup/${dataClub}`)),
+      (userName && !demoMode) ? get(ref(db, `PlayerSelectionByDate/${dataClub}`)) : Promise.resolve(null),
+    ]);
+    if (!backupSnap.exists()) return [];
+
+    const data = backupSnap.val();
+    const selAllData = selAllSnap?.exists() ? selAllSnap.val() : {};
     const dates = Object.keys(data).sort().reverse();
-
-    // 데이터가 많을 때 초기 로딩이 무거우면 최근 N개만 표시(원하면 조정)
     const MAX_DATES = 30;
     const limitedDates = dates.slice(0, MAX_DATES);
+
+    // myTeam 판별 헬퍼
+    const findMyTeam = (date, gameKey, t1Name, t2Name) => {
+      if (!userName || demoMode) return null;
+      const dateSel = selAllData[date];
+      if (!dateSel) return null;
+      const src = dateSel[gameKey] || dateSel.AttandPlayer;
+      if (!src) return null;
+      const inList = (arr) => Array.isArray(arr) && arr.some(p => p && typeof p === 'string' && p.trim() === userName);
+      for (const [key, val] of Object.entries(src)) {
+        if (!inList(val)) continue;
+        const code = key.replace(/^Team\s*/i, '').replace(/^팀\s*/, '').trim();
+        const t1Code = t1Name.replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
+        const t2Code = t2Name.replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
+        if (code === t1Code || key === t1Name) return 'team1';
+        if (code === t2Code || key === t2Name) return 'team2';
+      }
+      return null;
+    };
 
     const processedGroups = [];
     for (const date of limitedDates) {
       const dateData = data[date];
       const backupMatches = dateData?.matches ? Object.values(dateData.matches) : [];
-      const rawMatches = [];
-      const [rawSnapshot, selSnapshot] = await Promise.all([
-        get(ref(db, `${dataClub}/${date}`)),
-        (userName && !demoMode) ? get(ref(db, `PlayerSelectionByDate/${dataClub}/${date}`)) : Promise.resolve(null),
-      ]);
-      const selData = selSnapshot?.exists() ? selSnapshot.val() : {};
+      if (backupMatches.length === 0) continue;
 
-      // 팀코드별 선수 매핑 (내가 어느 팀인지 확인용)
-      const findMyTeam = (gameKey, t1Name, t2Name) => {
-        if (!userName) return null;
-        const gameSel = selData[gameKey];
-        const att = selData?.AttandPlayer;
-        const src = gameSel || att;
-        if (!src) return null;
-        const inList = (arr) => Array.isArray(arr) && arr.some(p => p && String(p).trim() === userName);
-        // 팀코드(A,B,C) 또는 팀이름으로 찾기
-        for (const [key, val] of Object.entries(src)) {
-          if (!inList(val)) continue;
-          const code = key.replace(/^Team\s*/i, '').replace(/^팀\s*/, '').trim();
-          const t1Code = t1Name.replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
-          const t2Code = t2Name.replace(/^팀\s*/, '').replace(/^Team\s*/i, '').trim();
-          if (code === t1Code || key === t1Name) return 'team1';
-          if (code === t2Code || key === t2Name) return 'team2';
-        }
-        return null;
-      };
+      const matches = backupMatches.map((m, i) => ({
+        gameNumber: m.gameNumber || `${i + 1}경기`,
+        team1: m.team1 || '', team2: m.team2 || '',
+        score1: m.score1 || 0, score2: m.score2 || 0,
+        mvp: m.mvp || '없음',
+        myTeam: findMyTeam(date, `game${i + 1}`, m.team1 || '', m.team2 || ''),
+      }));
 
-      if (rawSnapshot.exists()) {
-        rawSnapshot.forEach((gameSnap) => {
-          if (!String(gameSnap.key || '').startsWith('game')) return;
+      const dateObj = safeParseYmd(date);
+      const dayName = dateObj ? ['일', '월', '화', '수', '목', '금', '토'][dateObj.getDay()] : '?';
 
-          const gameData = gameSnap.val() || {};
-          const gameIndex = parseInt(String(gameSnap.key).replace('game', ''), 10);
-          const resolvedGameIndex = Number.isFinite(gameIndex) ? gameIndex : rawMatches.length + 1;
-          const t1 = gameData.team1_name || '';
-          const t2 = gameData.team2_name || '';
-
-          rawMatches.push({
-            gameIndex: resolvedGameIndex,
-            date,
-            gameNumber: `${resolvedGameIndex}경기`,
-            team1: t1,
-            team2: t2,
-            score1: gameData.goalCount1 || 0,
-            score2: gameData.goalCount2 || 0,
-            mvp: gameData.mvp || "없음",
-            myTeam: findMyTeam(`game${resolvedGameIndex}`, t1, t2),
-          });
-        });
-      }
-
-      rawMatches.sort((a, b) => a.gameIndex - b.gameIndex);
-
-      const mergedMatches = [];
-      const maxMatchCount = Math.max(backupMatches.length, rawMatches.length);
-      for (let i = 0; i < maxMatchCount; i++) {
-        const backupMatch = backupMatches[i] || {};
-        const rawMatch = rawMatches[i] || {};
-        const resolvedMvp =
-          backupMatch?.mvp && backupMatch.mvp !== "없음"
-            ? backupMatch.mvp
-            : (rawMatch?.mvp || "없음");
-
-        mergedMatches.push({
-          ...rawMatch,
-          ...backupMatch,
-          gameNumber: backupMatch?.gameNumber || rawMatch?.gameNumber || `${i + 1}경기`,
-          mvp: resolvedMvp,
-        });
-      }
-
-      const matches = mergedMatches.filter((match) => match.team1 || match.team2 || match.gameNumber);
-      if (matches.length > 0) {
-        const dateObj = safeParseYmd(date);
-        const dayName = dateObj ? ['일', '월', '화', '수', '목', '금', '토'][dateObj.getDay()] : '?';
-        const mvpVotes = {};
-        matches.forEach((match) => {
-          if (match.mvp && match.mvp !== "없음") {
-            mvpVotes[match.mvp] = (mvpVotes[match.mvp] || 0) + 1;
-          }
-        });
-
-        const resolvedDateMvp =
-          dateData?.dailyMvp && dateData.dailyMvp !== "없음"
-            ? dateData.dailyMvp
-            : (Object.keys(mvpVotes).length > 0
-              ? Object.entries(mvpVotes).sort((a, b) => b[1] - a[1])[0][0]
-              : "없음");
-
-        processedGroups.push({
-          dateStr: `${date} (${dayName})`,
-          matches,
-          dateMvp: resolvedDateMvp,
-          dailyWinner: calculateDailyWinningTeamSimple(matches)
-        });
-      }
+      processedGroups.push({
+        dateStr: `${date} (${dayName})`,
+        matches,
+        dateMvp: dateData?.dailyMvp && dateData.dailyMvp !== '없음'
+          ? dateData.dailyMvp
+          : (matches.find(m => m.mvp !== '없음')?.mvp || '없음'),
+        dailyWinner: calculateDailyWinningTeamSimple(matches),
+      });
     }
     return processedGroups;
   }, [dataClub, userName, demoMode]);
@@ -438,19 +387,19 @@ function ResultsPage() {
   // 2) Effect 분리
   // =========================
   useEffect(() => {
-    if (!dataClub) return; // auth 로딩 중이면 데이터 로드 스킵 (로딩 스피너 유지)
-    window.scrollTo(0, 0);
+    if (!dataClub) return;
     let cancelled = false;
     setLoadingPage(true);
+    setDateGroups([]);
     (async () => {
       try {
         const groups = await loadBackupData();
-        if (!cancelled && aliveRef.current) setDateGroups(groups);
+        if (!cancelled) setDateGroups(groups || []);
       } catch (e) {
-        console.error(e);
-        if (!cancelled && aliveRef.current) setDateGroups([]);
+        console.error('loadBackupData error:', e);
+        if (!cancelled) setDateGroups([]);
       } finally {
-        if (!cancelled && aliveRef.current) setLoadingPage(false);
+        if (!cancelled) setLoadingPage(false);
       }
     })();
     return () => { cancelled = true; };
@@ -584,7 +533,7 @@ function ResultsPage() {
   const showGlobalLoading = (loadingPage || authLoading || !dataClub) && tabIndex === 0;
 
   return (
-    <div style={{ backgroundColor: '#F0F2F5', minHeight: '100vh', paddingBottom: '80px' }}>
+    <div style={{ backgroundColor: '#F0F2F5', minHeight: '100vh', paddingBottom: '96px' }}>
       <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
         <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
           background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)' }}>
@@ -614,7 +563,7 @@ function ResultsPage() {
         )}
 
         {showGlobalLoading ? (
-          <Box display="flex" justifyContent="center" mt={5}><CircularProgress /></Box>
+          <ResultsPageSkeleton />
         ) : (
           <>
             {/* 탭 0: 경기결과 */}
