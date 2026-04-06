@@ -749,7 +749,7 @@ function ResultsPage() {
                       onChange={(e) => setAttendanceThreshold(e.target.value)}
                       sx={{ fontSize: '0.78rem', height: 28 }}
                     >
-                      {[5, 10, 15, 30, 50].map(v => (<MenuItem key={v} value={v} sx={{ fontSize: '0.8rem' }}>출석 {v}%</MenuItem>))}
+                      {[5, 10, 15, 30, 50].map(v => (<MenuItem key={v} value={v} sx={{ fontSize: '0.8rem' }}>출전 {v}%</MenuItem>))}
                     </Select>
                   </FormControl>
                 </Box>
@@ -766,7 +766,7 @@ function ResultsPage() {
                           <TableCell sx={{ ...headerCellStyle, width: '14%' }}>능력</TableCell>
                           <TableCell sx={{ ...headerCellStyle, width: '14%' }}>승률</TableCell>
                           <TableCell sx={{ ...headerCellStyle, width: '14%' }}>득실</TableCell>
-                          <TableCell sx={{ ...headerCellStyle, width: '14%' }}>출석</TableCell>
+                          <TableCell sx={{ ...headerCellStyle, width: '14%' }}>출전</TableCell>
                           <TableCell sx={{ ...headerCellStyle, width: '14%' }}>투표</TableCell>
                         </TableRow>
                       </TableHead>
@@ -783,7 +783,7 @@ function ResultsPage() {
                                   fontWeight: 'bold',
                                   color: '#1565C0',
                                   cursor: 'pointer',
-                                  textDecoration: 'underline'
+                                  textDecoration: 'none'
                                 }}
                                 onClick={() => handlePlayerClick(row)}
                               >
@@ -813,53 +813,6 @@ function ResultsPage() {
                   <Box display="flex" justifyContent="center" mt={3}><CircularProgress size={26} /></Box>
                 ) : (
                   <>
-                    {/* 어워드 통계 */}
-                    {awardStats && (
-                      <Box sx={{ mb: 2.5 }}>
-                        {/* MVP 랭킹 */}
-                        <Box sx={{ display: 'flex', gap: 1.5 }}>
-                          {[
-                            { title: '일별 MVP', data: awardStats.dailyMvp, color: '#E65100', bg: '#FFF3E0', border: '#FFE0B2', icon: <EmojiEventsIcon sx={{ color: '#F57C00', fontSize: 18 }} /> },
-                            { title: '경기별 MVP', data: awardStats.gameMvp, color: '#FF8F00', bg: '#FFFDE7', border: '#FFF9C4', icon: <EmojiEventsIcon sx={{ color: '#FFA000', fontSize: 18 }} /> },
-                          ].filter(s => s.data.length > 0).map(section => (
-                            <Card key={section.title} sx={{ flex: 1, borderRadius: 3, boxShadow: 2 }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.5, pt: 1.2, pb: 0.5 }}>
-                                {section.icon}
-                                <Typography sx={{ fontWeight: 800, fontSize: '0.82rem', color: section.color }}>{section.title}</Typography>
-                              </Box>
-                              <CardContent sx={{ pt: 0.5, pb: 1, '&:last-child': { pb: 1 } }}>
-                                {section.data.map((p, i) => {
-                                  const medals = ['#FFD700', '#C0C0C0', '#CD7F32'];
-                                  return (
-                                    <Box key={p.name} sx={{
-                                      display: 'flex', alignItems: 'center', gap: 0.6, py: 0.4,
-                                      cursor: 'pointer',
-                                    }}
-                                      onClick={() => handleMvpClick(p.name)}
-                                    >
-                                      {i < 3 ? (
-                                        <Box sx={{ width: 18, height: 18, borderRadius: '50%', bgcolor: medals[i],
-                                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                          <Typography sx={{ fontSize: '0.55rem', fontWeight: 900, color: 'white' }}>{i + 1}</Typography>
-                                        </Box>
-                                      ) : (
-                                        <Typography sx={{ fontSize: '0.7rem', color: '#bbb', width: 18, textAlign: 'center' }}>{i + 1}</Typography>
-                                      )}
-                                      <Typography sx={{ fontSize: '0.82rem', fontWeight: i === 0 ? 700 : 400, flex: 1,
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {dn(p.name)}
-                                      </Typography>
-                                      <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: section.color }}>{p.count}</Typography>
-                                    </Box>
-                                  );
-                                })}
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </Box>
-                      </Box>
-                    )}
-
                     {/* 리그 목록 */}
                     {leagueList.length === 0 ? (
                       <Typography align="center" mt={3} sx={{ color: '#999' }}>진행된 리그가 없습니다.</Typography>
@@ -1018,7 +971,7 @@ function ResultsPage() {
                       { label: '능력치', value: mvpData.stats.ability.toFixed(1), color: '#FFD700' },
                       { label: '승률', value: `${mvpData.stats.pointRate.toFixed(0)}%`, color: '#69F0AE' },
                       { label: '골/어시', value: `${mvpData.stats.goals}G ${mvpData.stats.assists}A`, color: '#FF8A80' },
-                      { label: '출석률', value: `${mvpData.stats.attendance.toFixed(0)}%`, color: '#80D8FF' },
+                      { label: '출전률', value: `${mvpData.stats.attendance.toFixed(0)}%`, color: '#80D8FF' },
                       { label: '전적', value: `${mvpData.stats.wins}승 ${mvpData.stats.losses}패`, color: '#B388FF' },
                       { label: '출전', value: `${mvpData.stats.participated}경기`, color: '#FFCC80' },
                     ].map((item, i) => (

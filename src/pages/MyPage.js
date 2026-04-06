@@ -1235,7 +1235,7 @@ export default function MyPage() {
                 }
               }
               const atDiff = +(curData.attendanceRate || 0).toFixed(1) - +(prevData.attendanceRate || 0).toFixed(1);
-              if (Math.abs(atDiff) >= 0.5) changes.push({ label: '출석', value: `${atDiff > 0 ? '+' : ''}${atDiff.toFixed(1)}%`, positive: atDiff > 0 });
+              if (Math.abs(atDiff) >= 0.5) changes.push({ label: '출전', value: `${atDiff > 0 ? '+' : ''}${atDiff.toFixed(1)}%`, positive: atDiff > 0 });
 
               if (changes.length > 0 || Math.abs(abDiff) >= 0.1) {
                 rankReason = { changes, abDiff, prevScore: +(prevData.abilityScore || 0).toFixed(1), curScore: +(curData.abilityScore || 0).toFixed(1) };
@@ -1263,7 +1263,7 @@ export default function MyPage() {
                 </Box>
               </Box>
               <Typography sx={{ fontSize: '0.72rem', color: '#999', mb: 1.5 }}>
-                최근 6개월 기준 · 주차별 능력치 순위 · 출석률 {rankThreshold}% 이상 선수 대상
+                최근 6개월 기준 · 주차별 능력치 순위 · 출전률 {rankThreshold}% 이상 선수 대상
               </Typography>
               {/* 현재 순위 */}
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2 }}>
