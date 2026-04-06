@@ -101,20 +101,35 @@ function RegisterPage() {
         return;
       }
 
-      // 2. 동명이인 경고: 같은 클럽에 같은 이름이 있는지 확인
+      // 2. 동명이인 처리
       const playersSnap = await get(ref(db, `registeredPlayers/${formData.club}`));
-      if (playersSnap.exists()) {
-        const names = Object.values(playersSnap.val()).map(p => p.name);
-        if (names.includes(formData.name.trim())) {
-          if (!window.confirm(`${formData.club}에 "${formData.name}" 이름이 이미 있습니다. 동명이인으로 등록하시겠습니까?`)) return;
+      const existingNames = playersSnap.exists() ? Object.values(playersSnap.val()).map(p => p.name) : [];
+      let finalName = formData.name.trim();
+      let alreadyRegistered = false;
+
+      if (existingNames.includes(finalName)) {
+        const choice = window.confirm(
+          `${formData.club}에 "${finalName}" 이름이 이미 있습니다.\n\n` +
+          `[확인] 본인입니다 (기존 데이터와 연결)\n` +
+          `[취소] 동명이인입니다 (새 이름으로 등록)`
+        );
+        if (choice) {
+          // 본인 → registeredPlayers에 추가 안 함
+          alreadyRegistered = true;
+        } else {
+          // 동명이인 → 이름 뒤에 번호 추가
+          let num = 2;
+          while (existingNames.includes(`${formData.name.trim()}(${num})`)) num++;
+          finalName = `${formData.name.trim()}(${num})`;
+          if (!window.confirm(`"${finalName}"(으)로 등록됩니다. 진행할까요?`)) return;
         }
       }
 
       const today = new Date().toISOString().slice(0, 10);
 
-      // 3. Users에 저장 (동의 날짜 포함)
+      // 3. Users에 저장
       await set(ref(db, `Users/${emailKey}`), {
-        name: formData.name,
+        name: finalName,
         height: parseFloat(formData.height) || 0,
         weight: parseFloat(formData.weight) || 0,
         birthYear: formData.birthYear,
@@ -125,11 +140,13 @@ function RegisterPage() {
         consentDate: today,
       });
 
-      // 4. registeredPlayers에 자동 등록
-      await push(ref(db, `registeredPlayers/${formData.club}`), {
-        name: formData.name.trim(),
-        date: today,
-      });
+      // 4. registeredPlayers에 등록 (이미 있으면 스킵)
+      if (!alreadyRegistered) {
+        await push(ref(db, `registeredPlayers/${formData.club}`), {
+          name: finalName,
+          date: today,
+        });
+      }
 
       alert('등록 완료!');
       navigate('/home');
