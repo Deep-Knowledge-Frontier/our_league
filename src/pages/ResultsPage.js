@@ -15,6 +15,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAuth } from '../contexts/AuthContext';
 import { calcMean, calcStd } from '../utils/stats';
+import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 
 import {
   Chart as ChartJS,
@@ -54,6 +55,10 @@ function ResultsPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [leagueList, setLeagueList] = useState([]);
   const [awardStats, setAwardStats] = useState(null);
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoNameMap, setDemoNameMap] = useState(null);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const dataClub = demoMode ? DEMO_CLUB : clubName;
 
   // 필터
   const [attendanceThreshold, setAttendanceThreshold] = useState(10);
@@ -137,9 +142,9 @@ function ResultsPage() {
   // =========================
   const loadRegisteredSet = useCallback(async () => {
     if (registeredSetRef.current) return registeredSetRef.current;
-    if (!clubName) return new Set();
+    if (!dataClub) return new Set();
 
-    const regSnap = await get(ref(db, `registeredPlayers/${clubName}`));
+    const regSnap = await get(ref(db, `registeredPlayers/${dataClub}`));
     const set = new Set();
     if (regSnap.exists()) {
       regSnap.forEach((child) => {
@@ -149,23 +154,23 @@ function ResultsPage() {
     }
     registeredSetRef.current = set;
     return set;
-  }, [clubName]);
+  }, [dataClub]);
 
   const loadStats = useCallback(async (period) => {
     const p = period || statsPeriod;
     if (statsRef.current[p]) return statsRef.current[p];
-    if (!clubName) return null;
+    if (!dataClub) return null;
 
     const pathMap = { '6m': 'PlayerStatsBackup_6m', 'season': 'PlayerStatsBackup_season', 'all': 'PlayerStatsBackup' };
-    const snapshot = await get(ref(db, `${pathMap[p]}/${clubName}`));
+    const snapshot = await get(ref(db, `${pathMap[p]}/${dataClub}`));
     const stats = snapshot.exists() ? (snapshot.val() || {}) : null;
     statsRef.current[p] = stats;
     return stats;
-  }, [clubName, statsPeriod]);
+  }, [dataClub, statsPeriod]);
 
   const loadBackupData = useCallback(async () => {
-    if (!clubName) return [];
-    const snapshot = await get(ref(db, `DailyResultsBackup/${clubName}`));
+    if (!dataClub) return [];
+    const snapshot = await get(ref(db, `DailyResultsBackup/${dataClub}`));
     if (!snapshot.exists()) return [];
 
     const data = snapshot.val();
@@ -181,8 +186,8 @@ function ResultsPage() {
       const backupMatches = dateData?.matches ? Object.values(dateData.matches) : [];
       const rawMatches = [];
       const [rawSnapshot, selSnapshot] = await Promise.all([
-        get(ref(db, `${clubName}/${date}`)),
-        userName ? get(ref(db, `PlayerSelectionByDate/${clubName}/${date}`)) : Promise.resolve(null),
+        get(ref(db, `${dataClub}/${date}`)),
+        (userName && !demoMode) ? get(ref(db, `PlayerSelectionByDate/${dataClub}/${date}`)) : Promise.resolve(null),
       ]);
       const selData = selSnapshot?.exists() ? selSnapshot.val() : {};
 
@@ -277,7 +282,7 @@ function ResultsPage() {
       }
     }
     return processedGroups;
-  }, [clubName, userName]);
+  }, [dataClub, userName, demoMode]);
 
   const loadLeaderboard = useCallback(async () => {
     setLoadingLeaderboard(true);
@@ -363,8 +368,8 @@ function ResultsPage() {
     setLoadingLeagueList(true);
     try {
       const [leagueSnap, dailySnap] = await Promise.all([
-        get(ref(db, `LeagueMaker/${clubName}`)),
-        get(ref(db, `DailyResultsBackup/${clubName}`)),
+        get(ref(db, `LeagueMaker/${dataClub}`)),
+        get(ref(db, `DailyResultsBackup/${dataClub}`)),
       ]);
 
       if (leagueSnap.exists()) {
@@ -427,13 +432,13 @@ function ResultsPage() {
     } finally {
       if (aliveRef.current) setLoadingLeagueList(false);
     }
-  }, [clubName]);
+  }, [dataClub]);
 
   // =========================
   // 2) Effect 분리
   // =========================
   useEffect(() => {
-    if (!clubName) return; // auth 로딩 중이면 데이터 로드 스킵 (로딩 스피너 유지)
+    if (!dataClub) return; // auth 로딩 중이면 데이터 로드 스킵 (로딩 스피너 유지)
     window.scrollTo(0, 0);
     let cancelled = false;
     setLoadingPage(true);
@@ -449,7 +454,7 @@ function ResultsPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [loadBackupData, clubName]);
+  }, [loadBackupData, dataClub]);
 
   useEffect(() => {
     if (tabIndex === 1) loadLeaderboard();
@@ -471,7 +476,7 @@ function ResultsPage() {
 
     try {
       // 1. DailyResultsBackup에서 MVP 횟수 집계
-      const backupSnap = await get(ref(db, `DailyResultsBackup/${clubName}`));
+      const backupSnap = await get(ref(db, `DailyResultsBackup/${dataClub}`));
       let dailyMvpCount = 0;
       let gameMvpCount = 0;
       const mvpDates = [];
@@ -493,7 +498,7 @@ function ResultsPage() {
       mvpDates.sort().reverse();
 
       // 2. PlayerStatsBackup_6m에서 선수 스탯
-      const statsSnap = await get(ref(db, `PlayerStatsBackup_6m/${clubName}/${mvpName}`));
+      const statsSnap = await get(ref(db, `PlayerStatsBackup_6m/${dataClub}/${mvpName}`));
       let stats = null;
       if (statsSnap.exists()) {
         const s = statsSnap.val();
@@ -522,7 +527,30 @@ function ResultsPage() {
     } finally {
       setMvpLoading(false);
     }
-  }, [clubName]);
+  }, [dataClub]);
+
+  const activateDemo = async () => {
+    setDemoLoading(true);
+    try {
+      registeredSetRef.current = null;
+      statsRef.current = {};
+      const regSnap = await get(ref(db, `registeredPlayers/${DEMO_CLUB}`));
+      const realNames = regSnap.exists() ? Object.values(regSnap.val()).map(p => p.name).filter(Boolean) : [];
+      setDemoNameMap(createNameMap(realNames));
+      setDemoMode(true);
+    } catch (e) { console.error(e); }
+    setDemoLoading(false);
+  };
+
+  const deactivateDemo = () => {
+    setDemoMode(false);
+    setDemoNameMap(null);
+    registeredSetRef.current = null;
+    statsRef.current = {};
+  };
+
+  // 데모 모드: 이름 변환 헬퍼
+  const dn = (name) => demoMode && demoNameMap ? anonymize(name, demoNameMap) : name;
 
   const handlePlayerClick = (player) => {
     setSelectedPlayer(player);
@@ -553,7 +581,7 @@ function ResultsPage() {
   const cellStyle = { padding: '8px 4px', fontSize: isMobile ? '0.8rem' : '0.9rem', textAlign: 'center', whiteSpace: 'nowrap', letterSpacing: '-0.03em' };
   const headerCellStyle = { ...cellStyle, fontWeight: 'bold', backgroundColor: '#E9EEF8', color: '#111827', fontSize: isMobile ? '0.85rem' : '0.95rem' };
 
-  const showGlobalLoading = (loadingPage || authLoading || !clubName) && tabIndex === 0;
+  const showGlobalLoading = (loadingPage || authLoading || !dataClub) && tabIndex === 0;
 
   return (
     <div style={{ backgroundColor: '#F0F2F5', minHeight: '100vh', paddingBottom: '80px' }}>
@@ -577,6 +605,14 @@ function ResultsPage() {
           </Tabs>
         </Paper>
 
+        {/* 데모 모드 배너 */}
+        {demoMode && (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, px: 2, py: 0.8, borderRadius: 2, bgcolor: '#FFF3E0', border: '1px solid #FFE0B2' }}>
+            <Typography sx={{ fontSize: '0.82rem', color: '#E65100', fontWeight: 700 }}>샘플 데이터를 보고 있습니다</Typography>
+            <Button size="small" onClick={deactivateDemo} sx={{ fontSize: '0.75rem', color: '#E65100', fontWeight: 700, minWidth: 'auto' }}>닫기</Button>
+          </Box>
+        )}
+
         {showGlobalLoading ? (
           <Box display="flex" justifyContent="center" mt={5}><CircularProgress /></Box>
         ) : (
@@ -584,7 +620,17 @@ function ResultsPage() {
             {/* 탭 0: 경기결과 */}
             {tabIndex === 0 && (
               <>
-                {dateGroups.length === 0 && <Typography align="center" mt={5}>데이터가 없습니다.</Typography>}
+                {dateGroups.length === 0 && !demoMode && (
+                  <Box sx={{ textAlign: 'center', mt: 5 }}>
+                    <Typography sx={{ color: '#999', mb: 2 }}>데이터가 없습니다.</Typography>
+                    <Button variant="contained" onClick={activateDemo} disabled={demoLoading}
+                      startIcon={demoLoading ? <CircularProgress size={16} color="inherit" /> : <EmojiEventsIcon />}
+                      sx={{ borderRadius: 2, fontWeight: 700, background: 'linear-gradient(135deg, #F57C00, #E65100)' }}>
+                      {demoLoading ? '로딩중...' : '샘플 데이터 보기'}
+                    </Button>
+                  </Box>
+                )}
+                {dateGroups.length === 0 && demoMode && <Typography align="center" mt={5}>데이터를 불러오는 중...</Typography>}
                 {dateGroups.map((group, idx) => (
                   <Card key={idx} sx={{ mb: 2, boxShadow: 3, borderRadius: 3 }}>
                     <CardContent sx={{ p: isMobile ? 1.5 : 2.5, '&:last-child': { pb: isMobile ? 1.5 : 2.5 } }}>
@@ -602,7 +648,7 @@ function ResultsPage() {
                             </Box>
                           )}
                           <Chip
-                            label={`MVP: ${group.dateMvp}`}
+                            label={`MVP: ${dn(group.dateMvp)}`}
                             size="small"
                             color="error"
                             variant="outlined"
@@ -665,7 +711,7 @@ function ResultsPage() {
                           >
                             <EmojiEventsIcon sx={{ color: '#FFD700', fontSize: '1.2rem', mr: 0 }} />
                             <Typography sx={{ fontSize: mvpFont, fontWeight: 'bold', color: '#333', letterSpacing: '-0.05em' }}>
-                              {match.mvp}
+                              {dn(match.mvp)}
                             </Typography>
                           </Box>
                         </Box>
@@ -741,7 +787,7 @@ function ResultsPage() {
                                 }}
                                 onClick={() => handlePlayerClick(row)}
                               >
-                                {row.name}
+                                {dn(row.name)}
                               </TableCell>
                               <TableCell sx={{ ...cellStyle, color: '#1565C0', fontWeight: 'bold' }}>{Number(row.ability).toFixed(1)}</TableCell>
                               <TableCell sx={cellStyle}>{Number(row.pointRate).toFixed(0)}%</TableCell>
@@ -801,7 +847,7 @@ function ResultsPage() {
                                       )}
                                       <Typography sx={{ fontSize: '0.82rem', fontWeight: i === 0 ? 700 : 400, flex: 1,
                                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {p.name}
+                                        {dn(p.name)}
                                       </Typography>
                                       <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: section.color }}>{p.count}</Typography>
                                     </Box>

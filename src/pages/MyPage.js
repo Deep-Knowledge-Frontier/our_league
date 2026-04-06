@@ -23,6 +23,7 @@ import {
 import ForceGraph2D from 'react-force-graph-2d';
 import { useAuth } from '../contexts/AuthContext';
 import { calcMean, calcStd, calculateArchetype } from '../utils/stats';
+import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, CategoryScale, LinearScale);
 
@@ -55,6 +56,8 @@ export default function MyPage() {
   const [memberInfo, setMemberInfo] = useState(null);
   const [allMembers, setAllMembers] = useState({});
   const [clickedBox, setClickedBox] = useState(null); // 프로필 박스 클릭 상태
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [statsPeriod, setStatsPeriod] = useState('6m');
   const [periodMatchStats, setPeriodMatchStats] = useState(null);
   const statsCache = useRef({});
@@ -532,6 +535,68 @@ export default function MyPage() {
     loadGraphStats(graphPeriod);
   }, [graphPeriod, allPlayerStats, loadGraphStats]);
 
+  // 데모 모드: 한강FC 데이터를 익명화해서 보여주기
+  const loadDemoData = async () => {
+    setDemoLoading(true);
+    try {
+      const regSnap = await get(ref(db, `registeredPlayers/${DEMO_CLUB}`));
+      const realNames = regSnap.exists() ? Object.values(regSnap.val()).map(p => p.name).filter(Boolean) : [];
+      const nameMap = createNameMap(realNames);
+      // 상위 선수 1명 선택 (데모용)
+      const allStatsSnap = await get(ref(db, `PlayerDetailStats/${DEMO_CLUB}`));
+      const allRankSnap = await get(ref(db, `PlayerStatsBackup_6m/${DEMO_CLUB}`));
+      if (allStatsSnap.exists()) setAllPlayerStats(allStatsSnap.val());
+      if (allRankSnap.exists()) setAllStatsForRank(allRankSnap.val());
+
+      // 출전수 많은 선수 1명 골라서 개인 통계로 사용
+      const detailData = allStatsSnap.exists() ? allStatsSnap.val() : {};
+      const topPlayer = Object.entries(detailData)
+        .filter(([, d]) => d.totalGames > 10)
+        .sort((a, b) => (b[1].totalGames || 0) - (a[1].totalGames || 0))[0];
+
+      if (topPlayer) {
+        const [, d] = topPlayer;
+        setMatchStats({
+          totalGames: d.totalGames, totalGoals: d.totalGoals, totalAssists: d.totalAssists,
+          totalWins: d.totalWins, totalLosses: d.totalLosses, totalDraws: d.totalDraws,
+          totalConceded: d.totalConceded, totalCleanSheets: d.totalCleanSheets,
+          totalMatchDays: d.totalMatchDays, mvpCount: d.mvpCount || 0,
+          goalsPerGame: d.goalsPerGame, assistsPerGame: d.assistsPerGame,
+          concededPerGame: d.concededPerGame, goalDiffPerGame: d.goalDiffPerGame, winRate: d.winRate,
+        });
+        if (d.teammates) {
+          // 동료 이름 익명화
+          const anonTeammates = {};
+          ['best', 'worst', 'mostPlayed'].forEach(key => {
+            if (Array.isArray(d.teammates[key])) {
+              anonTeammates[key] = d.teammates[key].map(t => ({
+                ...t, name: anonymize(t.name, nameMap),
+              }));
+            }
+          });
+          setTeammates(anonTeammates);
+        }
+      }
+
+      // 선수 통계 (레이더 차트용)
+      const rankData = allRankSnap.exists() ? allRankSnap.val() : {};
+      if (topPlayer && rankData[topPlayer[0]]) {
+        setPlayerStats(rankData[topPlayer[0]]);
+      }
+
+      // 관계도
+      const netSnap = await get(ref(db, `PlayerNetworkGraph/${DEMO_CLUB}`));
+      if (netSnap.exists()) setNetworkGraph(netSnap.val());
+
+      setDemoMode(true);
+    } catch (e) {
+      console.error('Demo load error:', e);
+    }
+    setDemoLoading(false);
+  };
+
+  const hasData = matchStats || playerStats;
+
   const handleLogout = async () => {
     await signOut(auth);
     navigate('/');
@@ -961,6 +1026,31 @@ export default function MyPage() {
               />
             )}
           </Paper>
+        )}
+
+        {/* 데모 모드 배너 */}
+        {demoMode && (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, px: 2, py: 0.8, borderRadius: 2, bgcolor: '#FFF3E0', border: '1px solid #FFE0B2' }}>
+            <Typography sx={{ fontSize: '0.82rem', color: '#E65100', fontWeight: 700 }}>샘플 데이터를 보고 있습니다</Typography>
+            <Button size="small" onClick={() => { setDemoMode(false); setMatchStats(null); setPlayerStats(null); setTeammates(null); setNetworkGraph(null); setAllPlayerStats(null); setAllStatsForRank(null); }}
+              sx={{ fontSize: '0.75rem', color: '#E65100', fontWeight: 700, minWidth: 'auto' }}>닫기</Button>
+          </Box>
+        )}
+
+        {/* 데이터 없을 때 샘플 보기 */}
+        {!loading && !hasData && !demoMode && (
+          <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 2, textAlign: 'center' }}>
+            <CardContent sx={{ py: 3 }}>
+              <SportsSoccerIcon sx={{ fontSize: 40, color: '#ccc', mb: 1 }} />
+              <Typography sx={{ color: '#888', fontSize: '0.95rem', mb: 0.5 }}>아직 경기 데이터가 없습니다</Typography>
+              <Typography sx={{ color: '#bbb', fontSize: '0.78rem', mb: 2 }}>샘플 데이터로 미리 확인해보세요</Typography>
+              <Button variant="contained" onClick={loadDemoData} disabled={demoLoading}
+                startIcon={demoLoading ? <CircularProgress size={16} color="inherit" /> : <EmojiEventsIcon />}
+                sx={{ borderRadius: 2, fontWeight: 700, px: 3, background: 'linear-gradient(135deg, #F57C00, #E65100)' }}>
+                {demoLoading ? '로딩중...' : '샘플 데이터 보기'}
+              </Button>
+            </CardContent>
+          </Card>
         )}
 
         {/* -- 기본 정보 (유리 박스, 한 줄) -- */}

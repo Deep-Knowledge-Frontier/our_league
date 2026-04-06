@@ -11,12 +11,15 @@ import {
   Chip,
   Stack,
   Button,
+  Card,
+  CardContent,
 } from "@mui/material";
-import BuildIcon from "@mui/icons-material/Build";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import SportsSoccerIcon from "@mui/icons-material/SportsSoccer";
+import GroupsIcon from "@mui/icons-material/Groups";
+import VpnKeyIcon from "@mui/icons-material/VpnKey";
 
 import { useAuth } from "../contexts/AuthContext";
 import { normalizeNames, formatDateWithDay } from "../utils/format";
@@ -58,11 +61,12 @@ export default function TeamViewPage() {
   const [teams, setTeams] = useState({ A: [], B: [], C: [] });
   const [keyPop, setKeyPop] = useState([]);
   const [playerPointRate, setPlayerPointRate] = useState({});
+  const [playerAbility, setPlayerAbility] = useState({});
 
   // 포메이션
   const [clubType, setClubType] = useState('futsal');
   const [teamFormations, setTeamFormations] = useState({});
-  const [expandFormation, setExpandFormation] = useState(null);
+  const [expandFormation, setExpandFormation] = useState('A');
   const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
   const [teamCaptains, setTeamCaptains] = useState({ A: '', B: '', C: '' });
 
@@ -107,11 +111,13 @@ export default function TeamViewPage() {
     const statsRef = ref(db, `PlayerStatsBackup_6m/${clubName}`);
     const off = onValue(statsRef, (snap) => {
       const v = snap.val() || {};
-      const map = {};
+      const rateMap = {}, abilMap = {};
       Object.keys(v).forEach((player) => {
-        map[player] = Number(v[player]?.pointRate || 0);
+        rateMap[player] = Number(v[player]?.pointRate || 0);
+        abilMap[player] = Number(v[player]?.abilityScore || 0);
       });
-      setPlayerPointRate(map);
+      setPlayerPointRate(rateMap);
+      setPlayerAbility(abilMap);
     });
     return () => off();
   }, [clubName]);
@@ -144,83 +150,48 @@ export default function TeamViewPage() {
   const TeamCard = ({ code, title, players, percent }) => {
     const t = theme[code];
     return (
-      <Box
-        sx={{
-          flex: 1,
-          minWidth: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 1,
-        }}
-      >
-        {/* 상단 칩: '우승 (xx.x%)' 포맷 */}
-        <Chip
-          label={`우승 (${fmt(percent)})`}
-          sx={{
-            bgcolor: t.chipBg,
-            color: "white",
-            fontWeight: 700,
-            px: 0.5,
-            fontSize: "0.8rem",
-            borderRadius: "16px",
-            height: 28,
-          }}
-        />
-
-        <Box
-          sx={{
-            width: "100%",
-            borderRadius: 2,
-            overflow: "hidden",
-            border: `1px solid ${t.border}`,
-            bgcolor: t.cardBg,
-            boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
-          }}
-        >
-          {/* 상단 컬러바 */}
-          <Box
-            sx={{
-              bgcolor: t.bar,
-              color: "white",
-              textAlign: "center",
-              fontWeight: 800,
-              py: 0.8,
-              fontSize: "0.95rem",
-              letterSpacing: 0.5,
-            }}
-          >
+      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 0.8 }}>
+        <Chip label={`우승 ${fmt(percent)}`}
+          sx={{ bgcolor: t.chipBg, color: "white", fontWeight: 700, fontSize: "0.75rem", borderRadius: "16px", height: 26 }} />
+        <Box sx={{
+          width: "100%", borderRadius: 2.5, overflow: "hidden",
+          border: `1px solid ${t.border}`, bgcolor: t.cardBg,
+          boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+        }}>
+          <Box sx={{ bgcolor: t.bar, color: "white", textAlign: "center", fontWeight: 800, py: 0.7, fontSize: "0.9rem" }}>
             {title}
           </Box>
-
-          <Box sx={{ p: 1, display: "flex", flexDirection: "column", gap: 0.8 }}>
+          <Box sx={{ p: 0.8, display: "flex", flexDirection: "column", gap: 0.5 }}>
             {players.length === 0 ? (
-              <Typography sx={{ color: "text.secondary", textAlign: "center", py: 2, fontSize: "0.875rem" }}>
-                없음
-              </Typography>
+              <Typography sx={{ color: "text.secondary", textAlign: "center", py: 2, fontSize: "0.85rem" }}>없음</Typography>
             ) : (
               players.map((name, idx) => {
                 const isCaptain = teamCaptains[code] === name;
+                const isMe = name === userName;
+                const ability = playerAbility[name];
                 return (
-                  <Box
-                    key={`${code}-${name}-${idx}`}
-                    sx={{
-                      bgcolor: isCaptain ? "#FFF3E0" : "white",
-                      border: isCaptain ? "2px solid #FF9800" : "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 1,
-                      px: 0.5,
-                      py: 0.6,
-                      display: "flex",
-                      gap: 0.5,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {isCaptain && <Typography sx={{ fontWeight: 900, fontSize: "0.7rem", color: "#FF9800" }}>C</Typography>}
-                    <Typography sx={{ fontWeight: 800, fontSize: "0.85rem", color: "#555" }}>
-                      {idx + 1}.
-                    </Typography>
-                    <Typography sx={{ fontWeight: isCaptain ? 800 : 600, fontSize: "0.9rem", color: isCaptain ? "#E65100" : "inherit" }}>{name}</Typography>
+                  <Box key={`${code}-${name}-${idx}`} sx={{
+                    bgcolor: isMe ? '#E3F2FD' : isCaptain ? "#FFF3E0" : "white",
+                    border: isMe ? '1.5px solid #1565C0' : isCaptain ? "1.5px solid #FF9800" : "1px solid rgba(0,0,0,0.06)",
+                    borderRadius: 1.5, px: 0.8, py: 0.5,
+                    display: "flex", alignItems: "center", gap: 0.4,
+                  }}>
+                    {isCaptain && (
+                      <Box sx={{ width: 16, height: 16, borderRadius: '50%', bgcolor: '#FF9800', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Typography sx={{ fontSize: '0.55rem', fontWeight: 900, color: 'white' }}>C</Typography>
+                      </Box>
+                    )}
+                    <Typography sx={{ fontSize: "0.72rem", color: "#aaa", fontWeight: 600, flexShrink: 0 }}>{idx + 1}</Typography>
+                    <Typography sx={{
+                      fontWeight: isMe ? 800 : isCaptain ? 700 : 500, fontSize: "0.85rem", flex: 1,
+                      color: isMe ? '#1565C0' : isCaptain ? "#E65100" : "#333",
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{name}</Typography>
+                    {ability > 0 && (
+                      <Typography sx={{ fontSize: '0.65rem', color: '#999', fontWeight: 600, flexShrink: 0 }}>
+                        {ability.toFixed(0)}
+                      </Typography>
+                    )}
                   </Box>
                 );
               })
@@ -241,27 +212,23 @@ export default function TeamViewPage() {
   }
 
   return (
-    <Container maxWidth="sm" sx={{ mt: 3.5, pb: 5 }}>
-      <Box sx={{ textAlign: "center", mb: 2.2 }}>
-        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
-          <BuildIcon sx={{ fontSize: 30 }} />
-          <Typography variant="h4" fontWeight={900} color="primary">
-            팀 구성
-          </Typography>
-        </Box>
+    <Container maxWidth="sm" sx={{ pt: 2, pb: 5 }}>
+      <Card sx={{
+        mb: 2, borderRadius: 3, overflow: 'hidden',
+        background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
+        boxShadow: 3,
+      }}>
+        <CardContent sx={{ py: 2.5, textAlign: 'center', position: 'relative' }}>
+          <Button onClick={() => navigate(-1)}
+            sx={{ position: 'absolute', left: 8, top: 12, minWidth: 'auto', color: 'rgba(255,255,255,0.6)' }}>
+            <ArrowBackIcon />
+          </Button>
+          <GroupsIcon sx={{ fontSize: 28, color: 'rgba(255,255,255,0.4)', mb: 0.5 }} />
+          <Typography variant="h5" sx={{ color: 'white', fontWeight: 900 }}>팀 구성</Typography>
+          <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem', mt: 0.3 }}>{formattedDate}</Typography>
+        </CardContent>
+      </Card>
 
-        <Typography sx={{ mt: 0.5, fontWeight: 800, color: "text.secondary" }}>
-          {formattedDate}
-        </Typography>
-
-        <Box sx={{ mt: 1.2, display: "flex", justifyContent: "center" }}>
-          <Chip
-            label="편집은 앱에서만 가능합니다"
-            variant="outlined"
-            sx={{ borderRadius: "18px", fontWeight: 700 }}
-          />
-        </Box>
-      </Box>
 
       <Paper
         elevation={3}
@@ -329,17 +296,6 @@ export default function TeamViewPage() {
           </Box>
         )}
       </Paper>
-
-      <Box sx={{ mt: 3, display: "flex", justifyContent: "center" }}>
-        <Button
-          variant="outlined"
-          startIcon={<ArrowBackIcon />}
-          onClick={() => navigate(-1)}
-          sx={{ borderRadius: 2, px: 3, py: 1, fontWeight: 800 }}
-        >
-          뒤로가기
-        </Button>
-      </Box>
 
       {userName ? (
         <Box sx={{ mt: 2, textAlign: "center", color: "text.secondary" }}>

@@ -16,6 +16,8 @@ import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { parseDateKeyLocal, getDaysDiff, formatDateWithDay } from '../utils/format';
 
+import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
+
 function HomePage() {
   const navigate = useNavigate();
   const { clubName, userName, authReady, user } = useAuth();
@@ -29,6 +31,8 @@ function HomePage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [teamStats, setTeamStats] = useState({ totalPlayers: 0, avgAttend: 0 });
   const [mvpRanking, setMvpRanking] = useState(null);
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   // 배너 자동 슬라이드
   useEffect(() => {
@@ -166,6 +170,80 @@ function HomePage() {
   }, [authReady, user, clubName]);
 
 
+  const loadDemoData = async () => {
+    setDemoLoading(true);
+    try {
+      // 선수 이름 수집 → 매핑 생성
+      const regSnap = await get(ref(db, `registeredPlayers/${DEMO_CLUB}`));
+      const realNames = regSnap.exists() ? Object.values(regSnap.val()).map(p => p.name).filter(Boolean) : [];
+      const nameMap = createNameMap(realNames);
+
+      // 최근 경기
+      const dailySnap = await get(ref(db, `DailyResultsBackup/${DEMO_CLUB}`));
+      if (dailySnap.exists()) {
+        const data = dailySnap.val();
+        setRecentResults(Object.keys(data).sort().reverse().slice(0, 3).map(dk => {
+          const matches = (data[dk].matches || []).map(m => ({
+            ...m, mvp: anonymize(m.mvp, nameMap),
+          }));
+          const pts = {}, gd2 = {}, gs = {};
+          matches.forEach(m => {
+            const t1 = m.team1, t2 = m.team2, s1 = m.score1, s2 = m.score2;
+            gs[t1] = (gs[t1]||0)+s1; gs[t2] = (gs[t2]||0)+s2;
+            gd2[t1] = (gd2[t1]||0)+(s1-s2); gd2[t2] = (gd2[t2]||0)+(s2-s1);
+            pts[t1] = (pts[t1]||0)+(s1>s2?3:s1===s2?1:0);
+            pts[t2] = (pts[t2]||0)+(s2>s1?3:s1===s2?1:0);
+          });
+          const winner = Object.keys(pts).sort((a,b)=>(pts[b]||0)-(pts[a]||0)||(gd2[b]||0)-(gd2[a]||0)||(gs[b]||0)-(gs[a]||0))[0]||null;
+          return { date: dk, dailyMvp: anonymize(data[dk].dailyMvp, nameMap), matches, winner };
+        }));
+
+        // MVP 랭킹
+        const dailyMvpMap = {}, gameMvpMap = {};
+        Object.values(data).forEach(dayInfo => {
+          const dm = anonymize(dayInfo?.dailyMvp, nameMap);
+          if (dm && dm !== '없음') dailyMvpMap[dm] = (dailyMvpMap[dm] || 0) + 1;
+          (dayInfo?.matches ? Object.values(dayInfo.matches) : []).forEach(m => {
+            const gm = anonymize(m.mvp, nameMap);
+            if (gm && gm !== '없음') gameMvpMap[gm] = (gameMvpMap[gm] || 0) + 1;
+          });
+        });
+        const toSorted = (map) => Object.entries(map).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+        setMvpRanking({ daily: toSorted(dailyMvpMap).slice(0, 5), game: toSorted(gameMvpMap).slice(0, 5) });
+      }
+
+      // 선수순위
+      const statsSnap = await get(ref(db, `PlayerStatsBackup_6m/${DEMO_CLUB}`));
+      if (statsSnap.exists()) {
+        setLeaderboard(
+          Object.entries(statsSnap.val())
+            .filter(([, s]) => (s.attendanceRate || 0) >= 10)
+            .map(([name, s]) => ({
+              name: nameMap[name] || name,
+              abilityScore: s.abilityScore || 0, goals: s.goals || 0,
+              assists: s.assists || 0, attendanceRate: s.attendanceRate || 0,
+              pointRate: s.pointRate || 0, matches: s.participatedMatches || 0,
+            }))
+            .sort((a, b) => b.abilityScore - a.abilityScore).slice(0, 5)
+        );
+
+        let sum = 0, cnt = 0;
+        realNames.forEach(name => {
+          const s = statsSnap.val()[name];
+          if (s?.attendanceRate) { sum += s.attendanceRate; cnt++; }
+        });
+        setTeamStats({ totalPlayers: realNames.length, avgAttend: cnt > 0 ? Math.round(sum / cnt) : 0 });
+      }
+
+      setDemoMode(true);
+    } catch (e) {
+      console.error('Demo load error:', e);
+    }
+    setDemoLoading(false);
+  };
+
+  const hasData = recentResults.length > 0 || leaderboard.length > 0;
+
   if (loading) {
     return (
       <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#F0F2F5' }}>
@@ -248,6 +326,40 @@ function HomePage() {
                 </Box>
               )}
             </Box>
+          </Card>
+        )}
+
+        {/* ── 데모 모드 배너 ── */}
+        {demoMode && (
+          <Box sx={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            mb: 2, px: 2, py: 1, borderRadius: 2,
+            bgcolor: '#FFF3E0', border: '1px solid #FFE0B2',
+          }}>
+            <Typography sx={{ fontSize: '0.82rem', color: '#E65100', fontWeight: 700 }}>
+              샘플 데이터를 보고 있습니다
+            </Typography>
+            <Button size="small" onClick={() => { setDemoMode(false); setRecentResults([]); setLeaderboard([]); setMvpRanking(null); setTeamStats({ totalPlayers: 0, avgAttend: 0 }); }}
+              sx={{ fontSize: '0.75rem', color: '#E65100', fontWeight: 700, minWidth: 'auto' }}>닫기</Button>
+          </Box>
+        )}
+
+        {/* ── 샘플 데이터 보기 (데이터 없을 때) ── */}
+        {!loading && !hasData && !demoMode && (
+          <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 2, textAlign: 'center' }}>
+            <CardContent sx={{ py: 3 }}>
+              <SportsSoccerIcon sx={{ fontSize: 40, color: '#ccc', mb: 1 }} />
+              <Typography sx={{ color: '#888', fontSize: '0.95rem', mb: 0.5 }}>아직 경기 데이터가 없습니다</Typography>
+              <Typography sx={{ color: '#bbb', fontSize: '0.78rem', mb: 2 }}>다른 클럽의 샘플 데이터로 미리 확인해보세요</Typography>
+              <Button variant="contained" onClick={loadDemoData} disabled={demoLoading}
+                startIcon={demoLoading ? <CircularProgress size={16} color="inherit" /> : <EmojiEventsIcon />}
+                sx={{
+                  borderRadius: 2, fontWeight: 700, px: 3,
+                  background: 'linear-gradient(135deg, #F57C00, #E65100)',
+                }}>
+                {demoLoading ? '로딩중...' : '샘플 데이터 보기'}
+              </Button>
+            </CardContent>
           </Card>
         )}
 
