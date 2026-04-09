@@ -34,7 +34,7 @@ ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, 
 function ResultsPage() {
   const navigate = useNavigate();
 
-  const { clubName, userName, loading: authLoading } = useAuth();
+  const { clubName, userName, loading: authLoading, isDemoGuest } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -59,7 +59,7 @@ function ResultsPage() {
   const [demoMode, setDemoMode] = useState(false);
   const [demoNameMap, setDemoNameMap] = useState(null);
   const [demoLoading, setDemoLoading] = useState(false);
-  const dataClub = demoMode ? DEMO_CLUB : clubName;
+  const dataClub = (demoMode || isDemoGuest) ? DEMO_CLUB : clubName;
 
   // 필터
   const [attendanceThreshold, setAttendanceThreshold] = useState(10);
@@ -477,6 +477,23 @@ function ResultsPage() {
       setMvpLoading(false);
     }
   }, [dataClub]);
+
+  // 데모 게스트: 자동 데모 활성화
+  useEffect(() => {
+    if (isDemoGuest && !demoMode) {
+      (async () => {
+        setDemoLoading(true);
+        try {
+          const regSnap = await get(ref(db, `registeredPlayers/${DEMO_CLUB}`));
+          const realNames = regSnap.exists() ? Object.values(regSnap.val()).map(p => p.name).filter(Boolean) : [];
+          setDemoNameMap(createNameMap(realNames));
+          setDemoMode(true);
+        } catch (e) { console.error(e); }
+        setDemoLoading(false);
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemoGuest]);
 
   const activateDemo = async () => {
     setDemoLoading(true);

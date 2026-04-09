@@ -15,6 +15,10 @@ export function AuthProvider({ children }) {
   const [isModerator, setIsModerator] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [loading, setLoading] = useState(true);
+  // 게스트 데모 모드 (로그인 없이 체험)
+  const [isDemoGuest, setIsDemoGuest] = useState(() => sessionStorage.getItem('demoGuest') === 'true');
+  const enterDemoGuest = () => { sessionStorage.setItem('demoGuest', 'true'); setIsDemoGuest(true); };
+  const exitDemoGuest = () => { sessionStorage.removeItem('demoGuest'); setIsDemoGuest(false); };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -60,13 +64,13 @@ export function AuthProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-  const userName = userData?.name || user?.displayName || user?.email?.split('@')[0] || '';
+  const userName = isDemoGuest ? '체험 사용자' : (userData?.name || user?.displayName || user?.email?.split('@')[0] || '');
   const realClubName = userData?.club || '';
   const isMaster = !!(user?.email && APP_CONFIG.masterEmails?.includes(user.email));
 
   // 마스터 전용: 다른 클럽 조회
   const [viewingClub, setViewingClub] = useState('');
-  const clubName = (isMaster && viewingClub) ? viewingClub : realClubName;
+  const clubName = isDemoGuest ? '한강FC' : ((isMaster && viewingClub) ? viewingClub : realClubName);
 
   const value = {
     user,
@@ -82,6 +86,9 @@ export function AuthProvider({ children }) {
     loading,
     viewingClub,
     setViewingClub,
+    isDemoGuest,
+    enterDemoGuest,
+    exitDemoGuest,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

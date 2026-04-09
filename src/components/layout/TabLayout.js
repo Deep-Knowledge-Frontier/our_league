@@ -6,6 +6,7 @@ import MyPage from '../../pages/MyPage';
 import AdminPage from '../../pages/AdminPage';
 import BottomNav from '../common/BottomNav';
 import ErrorBoundary from '../common/ErrorBoundary';
+import DemoGuestBanner from '../common/DemoGuestBanner';
 
 const tabs = [
   { path: '/home', Component: HomePage },
@@ -27,6 +28,7 @@ export default function TabLayout({ currentPath }) {
 
   return (
     <>
+      <DemoGuestBanner />
       {tabs.map(({ path, Component }) => {
         const isMounted = mounted[path];
         const isActive = currentPath === path;

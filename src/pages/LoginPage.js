@@ -2,11 +2,13 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithPopup } from 'firebase/auth';
 import { ref, get, child } from 'firebase/database';
-import { Container, Button, Typography, Paper, Box } from '@mui/material';
+import { Container, Button, Typography, Paper, Box, Divider } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 import { auth, googleProvider, db } from '../config/firebase';
 import { getSafeEmailKey } from '../utils/format';
 import { APP_CONFIG } from '../config/app.config';
+import { useAuth } from '../contexts/AuthContext';
 
 // =========================================================================
 // Particle Intro Animation
@@ -178,11 +180,17 @@ const ParticleIntro = ({ isDataLoaded, onReveal, onComplete }) => {
 // =========================================================================
 function LoginPage() {
   const navigate = useNavigate();
+  const { enterDemoGuest } = useAuth();
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState(null);
   const [targetPath, setTargetPath] = useState(null);
   const [introStage, setIntroStage] = useState('playing');
   const [introDone, setIntroDone] = useState(false);
+
+  const handleDemoGuest = () => {
+    enterDemoGuest();
+    navigate('/home');
+  };
 
   // 카카오톡 인앱 브라우저 대응
   useEffect(() => {
@@ -274,10 +282,29 @@ function LoginPage() {
               <Button
                 variant="contained" fullWidth startIcon={<GoogleIcon />}
                 onClick={handleGoogleLogin}
-                sx={{ backgroundColor: '#DB4437', color: 'white', padding: '10px' }}
+                sx={{ backgroundColor: '#DB4437', color: 'white', padding: '10px', borderRadius: 2, fontWeight: 700 }}
               >
                 Google 계정으로 시작하기
               </Button>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, my: 2 }}>
+                <Divider sx={{ flex: 1 }} />
+                <Typography sx={{ fontSize: '0.75rem', color: '#aaa' }}>또는</Typography>
+                <Divider sx={{ flex: 1 }} />
+              </Box>
+              <Button
+                variant="outlined" fullWidth startIcon={<VisibilityIcon />}
+                onClick={handleDemoGuest}
+                sx={{
+                  borderColor: '#474E93', color: '#474E93', padding: '10px',
+                  borderRadius: 2, fontWeight: 700,
+                  '&:hover': { borderColor: '#2D336B', bgcolor: 'rgba(71,78,147,0.04)' },
+                }}
+              >
+                로그인 없이 둘러보기
+              </Button>
+              <Typography sx={{ fontSize: '0.7rem', color: '#bbb', mt: 1 }}>
+                샘플 데이터로 모든 기능을 체험할 수 있어요
+              </Typography>
             </Paper>
           </Container>
         )}

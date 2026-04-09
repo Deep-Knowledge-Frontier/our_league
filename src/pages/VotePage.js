@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ref, onValue, runTransaction } from 'firebase/database';
+import { ref, onValue, runTransaction, get } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import {
   Container, Box, Typography, Card, CardContent, Button,
@@ -34,7 +34,7 @@ const bottomSheetProps = { TransitionComponent: SlideUp, PaperProps: { sx: { bor
 
 function VotePage() {
   const navigate = useNavigate();
-  const { userName, emailKey, clubName, authReady, user } = useAuth();
+  const { userName, emailKey, clubName, authReady, user, isDemoGuest } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [matchList, setMatchList] = useState([]);
@@ -154,6 +154,26 @@ function VotePage() {
 
   // 데이터 리스너
   useEffect(() => {
+    if (isDemoGuest) {
+      setLoading(false);
+      // 데모 게스트: 한강FC 다음 경기 샘플 로드
+      get(ref(db, `MatchDates/한강FC`)).then(snap => {
+        if (!snap.exists()) return;
+        const data = snap.val();
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const active = Object.keys(data)
+          .filter(dk => {
+            const isActive = data[dk]?.isActive === true || data[dk]?.isActive === 'true';
+            const d = parseDateKeyLocal(dk);
+            return isActive && !isNaN(d) && d >= today;
+          })
+          .sort()
+          .slice(0, 2)
+          .map(dk => ({ date: dk, time: data[dk]?.time || '', location: data[dk]?.location || '', address: data[dk]?.address || '' }));
+        setMatchList(active);
+      });
+      return;
+    }
     if (!authReady || !user || !clubName) return;
     setLoading(true);
 

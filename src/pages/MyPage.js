@@ -49,7 +49,7 @@ function extractTeamRoster(rosterData, teamName, fallbackKey) {
 
 export default function MyPage() {
   const navigate = useNavigate();
-  const { clubName, userName, emailKey, user, isMaster, viewingClub, setViewingClub, realClubName, authReady } = useAuth();
+  const { clubName, userName, emailKey, user, isMaster, viewingClub, setViewingClub, realClubName, authReady, isDemoGuest } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [clubList, setClubList] = useState([]);
@@ -91,7 +91,16 @@ export default function MyPage() {
     })();
   }, [isMaster]);
 
+  // 데모 게스트: 자동 데모 데이터 로드
   useEffect(() => {
+    if (isDemoGuest && !demoMode && !loading) {
+      loadDemoData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemoGuest, loading]);
+
+  useEffect(() => {
+    if (isDemoGuest) { setLoading(false); return; }
     if (!authReady) return; // auth 로딩 중이면 대기
     if (!user) { navigate('/login'); return; }
     if (!clubName) return;

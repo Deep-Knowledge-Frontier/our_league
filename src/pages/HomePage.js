@@ -22,7 +22,7 @@ import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 
 function HomePage() {
   const navigate = useNavigate();
-  const { clubName, userName, authReady, user } = useAuth();
+  const { clubName, userName, authReady, user, isDemoGuest } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [banners, setBanners] = useState([]);
@@ -43,7 +43,16 @@ function HomePage() {
     return () => clearInterval(timer);
   }, [banners.length]);
 
+  // 데모 게스트: 자동으로 한강FC 데이터 로드
   useEffect(() => {
+    if (isDemoGuest && !demoMode && !loading) {
+      loadDemoData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemoGuest, loading]);
+
+  useEffect(() => {
+    if (isDemoGuest) { setLoading(false); return; }
     if (!authReady || !user || !clubName) return;
     // 클럽 전환 시 기존 데이터 초기화
     setNextMatch(null);

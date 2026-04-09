@@ -20,13 +20,14 @@ const adminItem = { label: '관리', icon: SettingsIcon, path: '/admin' };
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAdmin, isModerator, isMaster } = useAuth();
+  const { isAdmin, isModerator, isMaster, isDemoGuest } = useAuth();
 
-  const navItems = (isAdmin || isModerator || isMaster) ? [...baseItems, adminItem] : baseItems;
+  const navItems = (!isDemoGuest && (isAdmin || isModerator || isMaster)) ? [...baseItems, adminItem] : baseItems;
 
   return (
     <Box sx={{
-      position: 'fixed', bottom: 12, left: 12, right: 12, zIndex: 1200,
+      position: 'fixed', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1200,
+      width: 'calc(100% - 24px)', maxWidth: 'calc(600px - 24px)',
       bgcolor: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       borderRadius: '20px', boxShadow: '0 4px 24px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.06)',
       border: '1px solid rgba(255,255,255,0.6)',
