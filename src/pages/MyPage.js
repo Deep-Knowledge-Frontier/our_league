@@ -462,6 +462,7 @@ export default function MyPage() {
 
   // 기간 변경 시 로드
   useEffect(() => {
+    if (isDemoGuest) return; // 데모 모드에서는 기간 로딩 스킵
     if (!teammates && !loading) return; // 초기 데이터 없으면 스킵
     if (teammatePeriod === '6m' && teammates && !teammateCache.current['6m']) {
       // 초기 로드된 6m 데이터 캐시
@@ -469,7 +470,7 @@ export default function MyPage() {
       return;
     }
     loadTeammatesForPeriod(teammatePeriod);
-  }, [teammatePeriod, loadTeammatesForPeriod]);
+  }, [teammatePeriod, loadTeammatesForPeriod, isDemoGuest]);
 
   // 통계 기간별 로드
   const loadStatsForPeriod = useCallback(async (period) => {
@@ -510,13 +511,14 @@ export default function MyPage() {
   }, [clubName, userName]);
 
   useEffect(() => {
+    if (isDemoGuest) { setPeriodMatchStats(matchStats); return; }
     if (statsPeriod === '6m' && matchStats && !statsCache.current['6m']) {
       statsCache.current['6m'] = matchStats;
       setPeriodMatchStats(matchStats);
       return;
     }
     loadStatsForPeriod(statsPeriod);
-  }, [statsPeriod, matchStats, loadStatsForPeriod]);
+  }, [statsPeriod, matchStats, loadStatsForPeriod, isDemoGuest]);
 
   // 관계도 기간별 스탯 로드
   const loadGraphStats = useCallback(async (period) => {
@@ -537,13 +539,18 @@ export default function MyPage() {
   }, [clubName]);
 
   useEffect(() => {
+    if (isDemoGuest) {
+      // 데모 모드: allPlayerStats가 로드되면 그대로 사용
+      if (allPlayerStats) setGraphStatsMap(allPlayerStats);
+      return;
+    }
     if (graphPeriod === '6m' && allPlayerStats && !graphStatsCache.current['6m']) {
       graphStatsCache.current['6m'] = allPlayerStats;
       setGraphStatsMap(allPlayerStats);
       return;
     }
     loadGraphStats(graphPeriod);
-  }, [graphPeriod, allPlayerStats, loadGraphStats]);
+  }, [graphPeriod, allPlayerStats, loadGraphStats, isDemoGuest]);
 
   // 데모 모드: 한강FC 데이터를 익명화해서 보여주기
   const loadDemoData = async () => {
@@ -558,10 +565,10 @@ export default function MyPage() {
       if (allStatsSnap.exists()) setAllPlayerStats(allStatsSnap.val());
       if (allRankSnap.exists()) setAllStatsForRank(allRankSnap.val());
 
-      // 출전수 많은 선수 1명 골라서 개인 통계로 사용
+      // 출전수 많고 teammates 데이터가 있는 선수 1명 골라서 개인 통계로 사용
       const detailData = allStatsSnap.exists() ? allStatsSnap.val() : {};
       const topPlayer = Object.entries(detailData)
-        .filter(([, d]) => d.totalGames > 10)
+        .filter(([, d]) => d.totalGames > 10 && d.teammates && (d.teammates.best?.length > 0 || d.teammates.mostPlayed?.length > 0))
         .sort((a, b) => (b[1].totalGames || 0) - (a[1].totalGames || 0))[0];
 
       if (topPlayer) {
@@ -575,14 +582,13 @@ export default function MyPage() {
           concededPerGame: d.concededPerGame, goalDiffPerGame: d.goalDiffPerGame, winRate: d.winRate,
         });
         if (d.teammates) {
-          // 동료 이름 익명화
-          const anonTeammates = {};
+          // 동료 이름 익명화 (Firebase는 배열을 객체로 저장하므로 변환)
+          const toArr = (v) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+          const anonTeammates = { best: [], worst: [], mostPlayed: [] };
           ['best', 'worst', 'mostPlayed'].forEach(key => {
-            if (Array.isArray(d.teammates[key])) {
-              anonTeammates[key] = d.teammates[key].map(t => ({
-                ...t, name: anonymize(t.name, nameMap),
-              }));
-            }
+            anonTeammates[key] = toArr(d.teammates[key]).map(t => ({
+              ...t, name: anonymize(t.name, nameMap),
+            }));
           });
           setTeammates(anonTeammates);
         }

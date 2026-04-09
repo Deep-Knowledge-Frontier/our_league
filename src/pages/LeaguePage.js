@@ -10,30 +10,42 @@ import {
 import { useTheme } from '@mui/material/styles';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAuth } from '../contexts/AuthContext';
+import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 
 function LeaguePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { clubName } = useAuth();
+  const { clubName, isDemoGuest } = useAuth();
 
   const { leagueNumber, startDate, endDate } = location.state || {};
+  const dataClub = isDemoGuest ? DEMO_CLUB : clubName;
 
   const [loading, setLoading] = useState(true);
   const [leagueTable, setLeagueTable] = useState([]);
   const [playerStats, setPlayerStats] = useState([]);
   const [playerLoading, setPlayerLoading] = useState(false);
   const [sortBy, setSortBy] = useState('attackPts');
+  const [nameMap, setNameMap] = useState(null);
+  const dn = (name) => (isDemoGuest && nameMap) ? anonymize(name, nameMap) : name;
 
   useEffect(() => {
-    if (!clubName || !startDate || !endDate) {
+    if (!dataClub || !startDate || !endDate) {
       alert("잘못된 접근입니다.");
       navigate('/');
       return;
     }
     window.scrollTo(0, 0);
-    loadAllData();
+    (async () => {
+      // 데모 게스트: 이름 맵 먼저 생성
+      if (isDemoGuest) {
+        const regSnap = await get(ref(db, `registeredPlayers/${DEMO_CLUB}`));
+        const realNames = regSnap.exists() ? Object.values(regSnap.val()).map(p => p.name).filter(Boolean) : [];
+        setNameMap(createNameMap(realNames));
+      }
+      loadAllData();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -41,7 +53,7 @@ function LeaguePage() {
     setLoading(true);
     setPlayerLoading(true);
     try {
-      const snapshot = await get(ref(db, `DailyResultsBackup/${clubName}`));
+      const snapshot = await get(ref(db, `DailyResultsBackup/${dataClub}`));
       if (!snapshot.exists()) {
         setLeagueTable([]);
         setPlayerStats([]);
@@ -111,10 +123,10 @@ function LeaguePage() {
       // 2. 선수별 골/어시스트/출전/승률 집계
       const pStats = {};
       for (const date of leagueDates) {
-        const dateSnap = await get(ref(db, `${clubName}/${date}`));
+        const dateSnap = await get(ref(db, `${dataClub}/${date}`));
         if (!dateSnap.exists()) continue;
 
-        const rosterSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${date}`));
+        const rosterSnap = await get(ref(db, `PlayerSelectionByDate/${dataClub}/${date}`));
 
         dateSnap.forEach(gameChild => {
           if (!gameChild.key.startsWith('game')) return;
@@ -415,7 +427,7 @@ function LeaguePage() {
                   getBadges(p).map((b, i) => (
                     <Chip
                       key={`${p.name}-${i}`}
-                      label={`${b.label} ${p.name}`}
+                      label={`${b.label} ${dn(p.name)}`}
                       size="small"
                       sx={{
                         bgcolor: b.color, color: 'white', fontWeight: 'bold',
@@ -468,7 +480,7 @@ function LeaguePage() {
                         >
                           <TableCell sx={{ ...cellStyle, fontWeight: 'bold' }}>{idx + 1}</TableCell>
                           <TableCell sx={{ ...cellStyle, fontWeight: 'bold', color: '#1565C0', textAlign: 'left' }}>
-                            {p.name}
+                            {dn(p.name)}
                             {badges.length > 0 && (
                               <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3, flexWrap: 'wrap' }}>
                                 {badges.map((b, i) => (
