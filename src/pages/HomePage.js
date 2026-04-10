@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ref, get } from 'firebase/database';
 import {
   Container, Box, Typography, Card, CardContent, Button,
-  CircularProgress, Chip, Divider
+  CircularProgress, Chip, Divider, Badge
 } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
@@ -12,6 +12,10 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
 import PlaceIcon from '@mui/icons-material/Place';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import HowToVoteIcon from '@mui/icons-material/HowToVote';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { parseDateKeyLocal, getDaysDiff, formatDateWithDay } from '../utils/format';
@@ -22,13 +26,15 @@ import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 
 function HomePage() {
   const navigate = useNavigate();
-  const { clubName, userName, authReady, user, isDemoGuest } = useAuth();
+  const { clubName, userName, emailKey, authReady, user, isDemoGuest } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [banners, setBanners] = useState([]);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [nextMatch, setNextMatch] = useState(null);
   const [nextMatchAttend, setNextMatchAttend] = useState(0);
+  const [myVoteStatus, setMyVoteStatus] = useState(null);
+  const [myAttendTime, setMyAttendTime] = useState(null);
   const [recentResults, setRecentResults] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [teamStats, setTeamStats] = useState({ totalPlayers: 0, avgAttend: 0 });
@@ -57,6 +63,8 @@ function HomePage() {
     // 클럽 전환 시 기존 데이터 초기화
     setNextMatch(null);
     setNextMatchAttend(0);
+    setMyVoteStatus(null);
+    setMyAttendTime(null);
     setRecentResults([]);
     setLeaderboard([]);
     setTeamStats({ totalPlayers: 0, avgAttend: 0 });
@@ -91,10 +99,21 @@ function HomePage() {
           }
           if (selectedDk) {
             setNextMatch({ date: selectedDk, time: data[selectedDk]?.time || '', location: data[selectedDk]?.location || '' });
-            const attendSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/AttandPlayer/all`));
-            if (attendSnap.exists() && Array.isArray(attendSnap.val())) {
-              setNextMatchAttend(attendSnap.val().filter(Boolean).length);
-            }
+            const [attendSnap, absentSnap, undecidedSnap, attendTimeSnap] = await Promise.all([
+              get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/AttandPlayer/all`)),
+              get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/AbsentPlayer/all`)),
+              get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/UndecidedPlayer/all`)),
+              emailKey ? get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/AttendTime/${emailKey}`)) : Promise.resolve(null),
+            ]);
+            const toArr = snap => (snap.exists() && Array.isArray(snap.val())) ? snap.val().filter(Boolean) : [];
+            const attendList = toArr(attendSnap);
+            if (attendList.length > 0) setNextMatchAttend(attendList.length);
+            if (attendList.includes(userName)) {
+              setMyVoteStatus('attend');
+              if (attendTimeSnap && attendTimeSnap.exists()) setMyAttendTime(attendTimeSnap.val());
+            } else if (toArr(absentSnap).includes(userName)) setMyVoteStatus('absent');
+            else if (toArr(undecidedSnap).includes(userName)) setMyVoteStatus('undecided');
+            else setMyVoteStatus(null);
           }
         }
 
@@ -178,7 +197,7 @@ function HomePage() {
       setLoading(false);
     };
     loadData();
-  }, [authReady, user, clubName]);
+  }, [authReady, user, clubName, emailKey, userName]);
 
 
   const loadDemoData = async () => {
@@ -413,11 +432,83 @@ function HomePage() {
                 <Chip icon={<PeopleIcon sx={{ fontSize: '16px !important' }} />}
                   label={`${nextMatchAttend}명 참석`} size="small"
                   sx={{ bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 'bold', fontSize: '0.8rem', height: 28 }} />
-                <Button variant="contained" size="small" endIcon={<ArrowForwardIcon />}
-                  onClick={() => navigate('/vote')}
-                  sx={{ borderRadius: 2, bgcolor: '#1565C0', fontWeight: 'bold', px: 2.5, py: 0.8 }}>
-                  투표하기
-                </Button>
+                {(() => {
+                  // ── 상태별 설정 계산 ──
+                  const partialTime = (myVoteStatus === 'attend' && myAttendTime && myAttendTime.full === false && myAttendTime.start && myAttendTime.end)
+                    ? `${myAttendTime.start}-${myAttendTime.end}`
+                    : null;
+                  // 미투표 시 D-day 긴급도
+                  const urgent = myVoteStatus === null && dday >= 0 && dday <= 3;
+                  const critical = myVoteStatus === null && dday === 0;
+                  const cfg =
+                    myVoteStatus === 'attend' ? {
+                      label: partialTime ? `참석 · ${partialTime}` : '참석',
+                      Icon: CheckCircleIcon,
+                      bg: '#2E7D32', bgHover: '#1B5E20', shadow: '0 2px 8px rgba(46,125,50,0.3)',
+                      aria: `현재 ${partialTime ? `부분 참석(${partialTime})` : '참석'}으로 투표함. 누르면 수정 페이지로 이동`,
+                    } :
+                    myVoteStatus === 'absent' ? {
+                      label: '불참', Icon: CancelIcon,
+                      bg: '#546E7A', bgHover: '#37474F', shadow: '0 2px 8px rgba(84,110,122,0.3)',
+                      aria: '현재 불참으로 투표함. 누르면 수정 페이지로 이동',
+                    } :
+                    myVoteStatus === 'undecided' ? {
+                      label: '미정', Icon: HelpOutlineIcon,
+                      bg: '#F57C00', bgHover: '#E65100', shadow: '0 2px 8px rgba(245,124,0,0.3)',
+                      aria: '현재 미정으로 투표함. 누르면 수정 페이지로 이동',
+                    } :
+                    critical ? {
+                      label: '지금 투표!', Icon: HowToVoteIcon,
+                      bg: '#D32F2F', bgHover: '#B71C1C', shadow: '0 2px 12px rgba(211,47,47,0.5)',
+                      aria: '오늘 경기입니다. 아직 투표하지 않음. 누르면 투표 페이지로 이동',
+                    } :
+                    urgent ? {
+                      label: '투표하기', Icon: HowToVoteIcon,
+                      bg: '#EF6C00', bgHover: '#E65100', shadow: '0 2px 10px rgba(239,108,0,0.4)',
+                      aria: `D-${dday}, 아직 투표하지 않음. 누르면 투표 페이지로 이동`,
+                    } : {
+                      label: '투표하기', Icon: HowToVoteIcon,
+                      bg: '#1565C0', bgHover: '#0D47A1', shadow: '0 2px 8px rgba(21,101,192,0.3)',
+                      aria: '아직 투표하지 않음. 누르면 투표 페이지로 이동',
+                    };
+                  const BtnIcon = cfg.Icon;
+                  const pulseSpeed = critical ? '0.9s' : '1.4s';
+
+                  return (
+                    <Badge
+                      variant="dot"
+                      invisible={myVoteStatus !== null}
+                      sx={{
+                        '& .MuiBadge-dot': {
+                          bgcolor: '#FF1744', width: 10, height: 10,
+                          border: '2px solid white',
+                          animation: `voteAlert ${pulseSpeed} ease-in-out infinite`,
+                          '@keyframes voteAlert': {
+                            '0%, 100%': { transform: 'scale(1)', opacity: 1 },
+                            '50%': { transform: 'scale(1.6)', opacity: 0.6 },
+                          },
+                        },
+                      }}
+                    >
+                      <Button
+                        variant="contained" size="small"
+                        startIcon={<BtnIcon sx={{ fontSize: '18px !important' }} />}
+                        endIcon={myVoteStatus === null ? <ArrowForwardIcon /> : null}
+                        onClick={() => navigate('/vote')}
+                        aria-label={cfg.aria}
+                        sx={{
+                          borderRadius: 2, fontWeight: 'bold', px: 2.2, py: 0.8,
+                          bgcolor: cfg.bg, boxShadow: cfg.shadow,
+                          transition: 'all 0.15s ease',
+                          '&:hover': { bgcolor: cfg.bgHover, boxShadow: cfg.shadow },
+                          '&:active': { transform: 'scale(0.96)' },
+                        }}
+                      >
+                        {cfg.label}
+                      </Button>
+                    </Badge>
+                  );
+                })()}
               </Box>
             </CardContent>
           </Card>
