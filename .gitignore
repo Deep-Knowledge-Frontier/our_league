@@ -4,3 +4,8 @@ build/
 .env.local
 .firebase/
 .claude/
+.emulator-data/
+firebase-debug.log
+database-debug.log
+ui-debug.log
+backups/

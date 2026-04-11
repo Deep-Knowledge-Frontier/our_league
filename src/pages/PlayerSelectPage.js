@@ -13,6 +13,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import ShieldIcon from '@mui/icons-material/Shield';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { db } from '../config/firebase';
@@ -201,8 +202,10 @@ export default function PlayerSelectPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.get('date') || new Date().toISOString().slice(0, 10);
-  const { clubName, isAdmin, isModerator } = useAuth();
+  const { clubName, userName, isAdmin, isModerator } = useAuth();
   const canEdit = isAdmin || isModerator;
+  // 주장은 자기 팀의 포메이션만 편집 가능 (선수 구성/경기순서는 admin 전용)
+  const canEditTeamFormation = (code) => canEdit || (!!userName && teamCaptains?.[code] === userName);
 
   const [loading, setLoading] = useState(true);
   const [registeredPlayers, setRegisteredPlayers] = useState([]);
@@ -354,12 +357,11 @@ export default function PlayerSelectPage() {
     }
   }, [hasSavedTeams, teamFormations, teams, clubType, clubFormation, statsMap, clubName, dateParam]);
 
+  // 참여선수 = 등록선수 + 이 경기일의 등록 용병 (스탯 기록만 있는 과거 선수는 제외)
   const playerList = useMemo(() => {
-    const regSet = new Set(registeredPlayers);
-    const extras = Object.keys(statsMap).filter(n => !regSet.has(n)).sort((a, b) => a.localeCompare(b, 'ko'));
     const guestNames = guests.map(g => `${g} (용병)`);
-    return [...registeredPlayers, ...guestNames, ...extras];
-  }, [registeredPlayers, statsMap, guests]);
+    return [...registeredPlayers, ...guestNames];
+  }, [registeredPlayers, guests]);
 
   const selectedCount = useMemo(() => Object.values(selectedPlayers).filter(Boolean).length, [selectedPlayers]);
 
@@ -614,19 +616,32 @@ export default function PlayerSelectPage() {
         </Box>
 
         {canEdit && (
-          <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-            <Button variant="contained" fullWidth startIcon={<ShuffleIcon />} onClick={runDraft}
-              sx={{ borderRadius: 2, fontWeight: 'bold', bgcolor: '#1565C0' }}>자동 편성</Button>
-            <Button variant="contained" fullWidth startIcon={aiOptimizing ? <CircularProgress size={18} color="inherit" /> : <AutoFixHighIcon />}
-              onClick={runAiDraft} disabled={aiOptimizing}
+          <>
+            <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+              <Button variant="contained" fullWidth startIcon={<ShuffleIcon />} onClick={runDraft}
+                sx={{ borderRadius: 2, fontWeight: 'bold', bgcolor: '#1565C0' }}>자동 편성</Button>
+              <Button variant="contained" fullWidth startIcon={aiOptimizing ? <CircularProgress size={18} color="inherit" /> : <AutoFixHighIcon />}
+                onClick={runAiDraft} disabled={aiOptimizing}
+                sx={{
+                  borderRadius: 2, fontWeight: 'bold', color: 'white',
+                  background: 'linear-gradient(135deg, #7B1FA2, #4A148C)',
+                  '&:hover': { background: 'linear-gradient(135deg, #6A1B9A, #38006b)' },
+                }}>
+                {aiOptimizing ? '분석중...' : 'AI 편성'}
+              </Button>
+            </Box>
+            <Button
+              fullWidth variant="outlined" startIcon={<ShieldIcon />}
+              onClick={() => navigate(`/draft/${dateParam}`)}
               sx={{
-                borderRadius: 2, fontWeight: 'bold', color: 'white',
-                background: 'linear-gradient(135deg, #7B1FA2, #4A148C)',
-                '&:hover': { background: 'linear-gradient(135deg, #6A1B9A, #38006b)' },
+                mt: 1, borderRadius: 2, fontWeight: 'bold',
+                borderColor: '#7B1FA2', color: '#7B1FA2',
+                borderWidth: 2, py: 1,
+                '&:hover': { borderColor: '#4A148C', bgcolor: '#F3E5F5', borderWidth: 2 },
               }}>
-              {aiOptimizing ? '분석중...' : 'AI 편성'}
+              ⚔ 주장 드래프트로 편성
             </Button>
-          </Box>
+          </>
         )}
       </Paper>
 
@@ -709,32 +724,40 @@ export default function PlayerSelectPage() {
                   {editMode && movingPlayer && movingPlayer.from !== code && <SwapHorizIcon sx={{ fontSize: 14, ml: 0.5, verticalAlign: 'middle' }} />}
                 </Box>
                 <Box sx={{ border: `1px solid ${theme[code].border}`, borderTop: 'none', bgcolor: theme[code].light, borderRadius: '0 0 8px 8px', p: 0.5, minHeight: 60 }}>
-                  {(displayTeams[code] || []).length === 0 ? (
-                    <Typography sx={{ color: '#999', textAlign: 'center', py: 2, fontSize: '0.8rem' }}>없음</Typography>
-                  ) : (displayTeams[code] || []).map((name, idx) => {
-                    const isCaptain = teamCaptains[code] === name;
-                    return (
-                      <Box key={`${code}-${name}-${idx}`}
-                        onClick={() => {
-                          if (editMode) handleEditPlayerClick(name, code);
-                          else if (canEdit) {
-                            const newCap = isCaptain ? '' : name;
-                            setTeamCaptains(prev => ({ ...prev, [code]: newCap }));
-                            set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamCaptains/${code}`), newCap || null);
-                          }
-                        }}
-                        sx={{
-                          bgcolor: movingPlayer?.name === name && movingPlayer?.from === code ? '#FFE082' : isCaptain ? '#FFF3E0' : 'white',
-                          border: movingPlayer?.name === name && movingPlayer?.from === code ? '2px solid #F57C00' : isCaptain ? '2px solid #FF9800' : '1px solid rgba(0,0,0,0.08)',
-                          borderRadius: 1, px: 0.5, py: 0.5, mb: 0.3, display: 'flex', gap: 0.3, alignItems: 'center', justifyContent: 'center',
-                          cursor: canEdit ? 'pointer' : 'default', transition: 'all 0.15s',
-                        }}>
-                        {isCaptain && <Typography sx={{ fontWeight: 900, fontSize: '0.7rem', color: '#FF9800', mr: 0.2 }}>C</Typography>}
-                        <Typography sx={{ fontWeight: 700, fontSize: '0.75rem', color: '#888' }}>{idx + 1}.</Typography>
-                        <Typography sx={{ fontWeight: isCaptain ? 800 : 600, fontSize: '0.82rem', color: isCaptain ? '#E65100' : 'inherit' }}>{name}</Typography>
-                      </Box>
-                    );
-                  })}
+                  {(() => {
+                    const players = displayTeams[code] || [];
+                    if (players.length === 0) {
+                      return <Typography sx={{ color: '#999', textAlign: 'center', py: 2, fontSize: '0.8rem' }}>없음</Typography>;
+                    }
+                    // 주장을 맨 위(1번)로 정렬
+                    const cap = teamCaptains[code];
+                    const sorted = cap && players.includes(cap)
+                      ? [cap, ...players.filter(p => p !== cap)]
+                      : players;
+                    return sorted.map((name, idx) => {
+                      const isCaptain = cap === name;
+                      return (
+                        <Box key={`${code}-${name}-${idx}`}
+                          onClick={() => {
+                            if (editMode) handleEditPlayerClick(name, code);
+                            else if (canEdit) {
+                              const newCap = isCaptain ? '' : name;
+                              setTeamCaptains(prev => ({ ...prev, [code]: newCap }));
+                              set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamCaptains/${code}`), newCap || null);
+                            }
+                          }}
+                          sx={{
+                            bgcolor: movingPlayer?.name === name && movingPlayer?.from === code ? '#FFE082' : isCaptain ? '#FFF3E0' : 'white',
+                            border: movingPlayer?.name === name && movingPlayer?.from === code ? '2px solid #F57C00' : isCaptain ? '2px solid #FF9800' : '1px solid rgba(0,0,0,0.08)',
+                            borderRadius: 1, px: 0.5, py: 0.5, mb: 0.3, display: 'flex', gap: 0.3, alignItems: 'center', justifyContent: 'center',
+                            cursor: canEdit ? 'pointer' : 'default', transition: 'all 0.15s',
+                          }}>
+                          <Typography sx={{ fontWeight: 700, fontSize: '0.75rem', color: '#888' }}>{idx + 1}.</Typography>
+                          <Typography sx={{ fontWeight: isCaptain ? 800 : 600, fontSize: '0.82rem', color: isCaptain ? '#E65100' : 'inherit' }}>{name}</Typography>
+                        </Box>
+                      );
+                    });
+                  })()}
                 </Box>
               </Box>
             ))}
@@ -833,6 +856,8 @@ export default function PlayerSelectPage() {
                 const fmDef = getFormations(clubType)[fmId];
                 const assignedPlayers = tf.players || {};
                 const isExpanded = expandFormation === code;
+                const canEditThis = canEditTeamFormation(code);
+                const isMyTeam = !!userName && teamCaptains?.[code] === userName && !canEdit;
 
                 return (
                   <Box key={code} sx={{ mb: 1 }}>
@@ -841,6 +866,9 @@ export default function PlayerSelectPage() {
                         bgcolor: theme[code].light, borderRadius: 1.5, border: `1px solid ${theme[code].border}` }}>
                       <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme[code].bg }} />
                       <Typography sx={{ fontWeight: 700, fontSize: '0.88rem', flex: 1 }}>{getTeamLabel(code)} 포메이션</Typography>
+                      {isMyTeam && (
+                        <Chip label="내 팀 ⚽" size="small" sx={{ fontSize: '0.68rem', height: 18, bgcolor: '#FF6F00', color: 'white', fontWeight: 800, mr: 0.3 }} />
+                      )}
                       <Chip label={fmId} size="small" sx={{ fontSize: '0.72rem', height: 20, fontWeight: 600 }} />
                       {isExpanded ? <ExpandLessIcon sx={{ fontSize: 18 }} /> : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
                     </Box>
@@ -848,7 +876,7 @@ export default function PlayerSelectPage() {
                     {isExpanded && fmDef && (
                       <Box sx={{ mt: 1, px: 0.5 }}>
                         {/* 포메이션 프리셋 변경 */}
-                        {canEdit && (
+                        {canEditThis && (
                           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
                             {Object.entries(getFormations(clubType)).map(([key, fm]) => (
                               <Chip key={key} label={fm.name} size="small"
@@ -867,7 +895,7 @@ export default function PlayerSelectPage() {
                         )}
 
                         {/* 안내 메시지 */}
-                        {canEdit && selectedPos && expandFormation === code && (
+                        {canEditThis && selectedPos && expandFormation === code && (
                           <Typography sx={{ fontSize: '0.73rem', color: '#FF9800', fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
                             {assignedPlayers[selectedPos]
                               ? `${fmDef.positions.find(p => p.id === selectedPos)?.label} (${assignedPlayers[selectedPos]}) — 다른 포지션 또는 아래 선수 터치`
@@ -881,7 +909,7 @@ export default function PlayerSelectPage() {
                           positions={fmDef.positions}
                           players={assignedPlayers}
                           selectedPos={expandFormation === code ? selectedPos : null}
-                          onPositionClick={canEdit ? async (posId) => {
+                          onPositionClick={canEditThis ? async (posId) => {
                             if (!selectedPos) { setSelectedPos(posId); return; }
                             if (selectedPos === posId) { setSelectedPos(null); return; }
                             const newPlayers = { ...assignedPlayers };
@@ -894,12 +922,12 @@ export default function PlayerSelectPage() {
                             setSelectedPos(null);
                             await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), newTf[code]);
                           } : undefined}
-                          readOnly={!canEdit}
+                          readOnly={!canEditThis}
                           width={Math.min(280, window.innerWidth - 80)}
                         />
 
                         {/* 미배치 선수 목록 */}
-                        {canEdit && (
+                        {canEditThis && (
                           <Box sx={{ mt: 1 }}>
                             <Typography sx={{ fontSize: '0.73rem', color: '#999', fontWeight: 600, mb: 0.5 }}>
                               {selectedPos ? '선수 터치로 배치' : '포지션을 먼저 터치'}

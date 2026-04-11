@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ref, get } from 'firebase/database';
+import { ref, get, onValue, set, update } from 'firebase/database';
 import {
   Container, Box, Typography, Card, CardContent, Button,
-  CircularProgress, Chip, Divider, Badge
+  CircularProgress, Chip, Divider, Badge, Stack
 } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
@@ -16,6 +16,7 @@ import HowToVoteIcon from '@mui/icons-material/HowToVote';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import ShieldIcon from '@mui/icons-material/Shield';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { parseDateKeyLocal, getDaysDiff, formatDateWithDay } from '../utils/format';
@@ -26,7 +27,8 @@ import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 
 function HomePage() {
   const navigate = useNavigate();
-  const { clubName, userName, emailKey, authReady, user, isDemoGuest } = useAuth();
+  const { clubName, userName, emailKey, authReady, user, isDemoGuest, isAdmin, isModerator } = useAuth();
+  const canAdmin = isAdmin || isModerator;
 
   const [loading, setLoading] = useState(true);
   const [banners, setBanners] = useState([]);
@@ -41,6 +43,9 @@ function HomePage() {
   const [mvpRanking, setMvpRanking] = useState(null);
   const [demoMode, setDemoMode] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
+  const [activeDraft, setActiveDraft] = useState(null); // { date, status, myCode, captains, pickOrder, currentPickIdx, snake }
+  const [draftSession, setDraftSession] = useState(null); // 전체 Draft 세션 (confirmed 포함, 재드래프트 요청용)
+  const [myCaptainCode, setMyCaptainCode] = useState(null); // 확정된 팀의 내 주장 코드 (포메이션 편집용)
 
   // 배너 자동 슬라이드
   useEffect(() => {
@@ -48,6 +53,32 @@ function HomePage() {
     const timer = setInterval(() => setBannerIndex(prev => (prev + 1) % banners.length), 15000);
     return () => clearInterval(timer);
   }, [banners.length]);
+
+  // 드래프트 세션 실시간 구독 (주장/관리자 진입점 + 재드래프트 요청 UI)
+  useEffect(() => {
+    if (isDemoGuest || !clubName || !nextMatch?.date) {
+      setActiveDraft(null); setDraftSession(null); return;
+    }
+    const draftRef = ref(db, `PlayerSelectionByDate/${clubName}/${nextMatch.date}/Draft`);
+    const unsub = onValue(draftRef, (snap) => {
+      if (!snap.exists()) { setActiveDraft(null); setDraftSession(null); return; }
+      const d = snap.val();
+      setDraftSession(d);
+      // 진행 중(active/review)만 상단 카드로 표시
+      if (d.status !== 'active' && d.status !== 'review') { setActiveDraft(null); return; }
+      const myCode = Object.keys(d.captains || {}).find((c) => d.captains[c] === userName) || null;
+      setActiveDraft({
+        date: nextMatch.date,
+        status: d.status,
+        myCode,
+        captains: d.captains || {},
+        pickOrder: d.pickOrder || [],
+        currentPickIdx: d.currentPickIdx || 0,
+        snake: !!d.snake,
+      });
+    });
+    return () => unsub();
+  }, [clubName, nextMatch?.date, userName, isDemoGuest]);
 
   // 데모 게스트: 자동으로 한강FC 데이터 로드
   useEffect(() => {
@@ -65,6 +96,7 @@ function HomePage() {
     setNextMatchAttend(0);
     setMyVoteStatus(null);
     setMyAttendTime(null);
+    setMyCaptainCode(null);
     setRecentResults([]);
     setLeaderboard([]);
     setTeamStats({ totalPlayers: 0, avgAttend: 0 });
@@ -99,12 +131,19 @@ function HomePage() {
           }
           if (selectedDk) {
             setNextMatch({ date: selectedDk, time: data[selectedDk]?.time || '', location: data[selectedDk]?.location || '' });
-            const [attendSnap, absentSnap, undecidedSnap, attendTimeSnap] = await Promise.all([
+            const [attendSnap, absentSnap, undecidedSnap, attendTimeSnap, captainsSnap] = await Promise.all([
               get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/AttandPlayer/all`)),
               get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/AbsentPlayer/all`)),
               get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/UndecidedPlayer/all`)),
               emailKey ? get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/AttendTime/${emailKey}`)) : Promise.resolve(null),
+              get(ref(db, `PlayerSelectionByDate/${clubName}/${selectedDk}/TeamCaptains`)),
             ]);
+            // 내가 어느 팀 주장인지 확인 (확정된 팀 편성 후)
+            if (captainsSnap.exists() && userName) {
+              const caps = captainsSnap.val() || {};
+              const myCode = Object.keys(caps).find((c) => caps[c] === userName) || null;
+              setMyCaptainCode(myCode);
+            }
             const toArr = snap => (snap.exists() && Array.isArray(snap.val())) ? snap.val().filter(Boolean) : [];
             const attendList = toArr(attendSnap);
             if (attendList.length > 0) setNextMatchAttend(attendList.length);
@@ -274,6 +313,57 @@ function HomePage() {
 
   const hasData = recentResults.length > 0 || leaderboard.length > 0;
 
+  // ── 재드래프트 요청 / 관리자 즉시 승인 ──
+  // 주장이 요청 → 전원 동의 시 자동으로 active 상태로 리셋
+  // 관리자는 즉시 승인 가능 (consent 무시)
+  const handleReDraftRequest = async (bypassConsent = false) => {
+    if (!draftSession || !nextMatch?.date || !clubName) return;
+    const codes = draftSession.pickOrder || [];
+    const captains = draftSession.captains || {};
+    const myCode = Object.keys(captains).find((c) => captains[c] === userName) || null;
+    if (!myCode && !canAdmin) return;
+
+    const current = draftSession.reDraftRequests || {};
+    const updated = myCode ? { ...current, [myCode]: true } : current;
+    const allAgreed = codes.length > 0 && codes.every((c) => updated[c]);
+
+    if (bypassConsent || allAgreed) {
+      // 참석자 다시 로드 (혹시 바뀐 경우 대비)
+      const attendSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${nextMatch.date}/AttandPlayer/all`));
+      const attendees = (attendSnap.exists() && Array.isArray(attendSnap.val()))
+        ? attendSnap.val().filter(Boolean) : [];
+      const fresh = {
+        ...draftSession,
+        status: 'active',
+        currentPickIdx: 0,
+        pool: attendees.filter((n) => !Object.values(captains).includes(n)),
+        teams: Object.fromEntries(codes.map((c) => [c, [captains[c]]])),
+        picks: [],
+        trades: null,
+        resetRequests: null,
+        reDraftRequests: null,
+        restartedAt: Date.now(),
+      };
+      await set(ref(db, `PlayerSelectionByDate/${clubName}/${nextMatch.date}/Draft`), fresh);
+      navigate(`/draft/${nextMatch.date}`);
+    } else {
+      await update(ref(db, `PlayerSelectionByDate/${clubName}/${nextMatch.date}/Draft`), {
+        reDraftRequests: updated,
+      });
+    }
+  };
+
+  const handleCancelReDraftRequest = async () => {
+    if (!draftSession || !nextMatch?.date || !clubName) return;
+    const captains = draftSession.captains || {};
+    const myCode = Object.keys(captains).find((c) => captains[c] === userName) || null;
+    if (!myCode) return;
+    const updated = { ...(draftSession.reDraftRequests || {}), [myCode]: false };
+    await update(ref(db, `PlayerSelectionByDate/${clubName}/${nextMatch.date}/Draft`), {
+      reDraftRequests: updated,
+    });
+  };
+
   if (loading) {
     return (
       <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
@@ -391,6 +481,67 @@ function HomePage() {
             </CardContent>
           </Card>
         )}
+
+        {/* ── 드래프트 진행 중 알림 (주장 전용, 관리자는 보이지 않음) ── */}
+        {activeDraft && activeDraft.myCode && (() => {
+          const currentTeam = (() => {
+            if (activeDraft.status !== 'active') return null;
+            const n = activeDraft.pickOrder.length;
+            if (n === 0) return null;
+            const round = Math.floor(activeDraft.currentPickIdx / n);
+            const posInRound = activeDraft.currentPickIdx % n;
+            const reversed = activeDraft.snake && round % 2 === 1;
+            return reversed ? activeDraft.pickOrder[n - 1 - posInRound] : activeDraft.pickOrder[posInRound];
+          })();
+          const isMyTurn = activeDraft.status === 'active' && activeDraft.myCode && currentTeam === activeDraft.myCode;
+          const reviewMode = activeDraft.status === 'review';
+          return (
+            <Card sx={{
+              mb: 2, borderRadius: 3, boxShadow: 4, overflow: 'hidden',
+              border: isMyTurn ? '3px solid #FF6F00' : '2px solid #7B1FA2',
+              background: isMyTurn
+                ? 'linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%)'
+                : 'linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%)',
+              animation: isMyTurn ? 'draftTurnPulse 1.5s ease-in-out infinite' : 'none',
+              '@keyframes draftTurnPulse': {
+                '0%, 100%': { boxShadow: '0 0 0 0 rgba(255,111,0,0.4)' },
+                '50%': { boxShadow: '0 0 0 12px rgba(255,111,0,0)' },
+              },
+            }}>
+              <CardContent sx={{ pb: '16px !important' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                  <ShieldIcon sx={{ color: isMyTurn ? '#FF6F00' : '#7B1FA2', fontSize: 24 }} />
+                  <Typography sx={{ fontWeight: 900, fontSize: '1.1rem', color: isMyTurn ? '#E65100' : '#4A148C', flex: 1 }}>
+                    {isMyTurn ? '🔥 내 픽 차례!' : reviewMode ? '드래프트 검토 단계' : '드래프트 진행 중'}
+                  </Typography>
+                  <Chip
+                    label={activeDraft.myCode ? `${activeDraft.myCode}팀 주장` : '관리자'}
+                    size="small"
+                    sx={{ bgcolor: '#7B1FA2', color: 'white', fontWeight: 800, fontSize: '0.72rem' }}
+                  />
+                </Box>
+                <Typography sx={{ fontSize: '0.88rem', color: '#555', mb: 1.5 }}>
+                  {activeDraft.status === 'active' && !isMyTurn &&
+                    `${activeDraft.captains[currentTeam]} (${currentTeam}팀) 차례를 기다리는 중...`}
+                  {isMyTurn && '선수 풀에서 픽할 선수를 선택하세요.'}
+                  {reviewMode && '팀 구성을 검토하고 트레이드/재시작/확정을 진행하세요.'}
+                </Typography>
+                <Button
+                  fullWidth variant="contained" size="medium"
+                  endIcon={<ArrowForwardIcon />}
+                  onClick={() => navigate(`/draft/${activeDraft.date}`)}
+                  sx={{
+                    borderRadius: 2, fontWeight: 900, py: 1.1,
+                    bgcolor: isMyTurn ? '#FF6F00' : '#7B1FA2',
+                    '&:hover': { bgcolor: isMyTurn ? '#E65100' : '#4A148C' },
+                  }}
+                >
+                  {isMyTurn ? '지금 픽하러 가기' : '드래프트 입장'}
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* ── 다음 경기 ── */}
         {nextMatch && (
@@ -510,6 +661,105 @@ function HomePage() {
                   );
                 })()}
               </Box>
+              {/* 주장 전용: 포메이션 설정 + 재드래프트 요청 (관리자는 홈에서 안 보임) */}
+              {myCaptainCode && !activeDraft && (() => {
+                const confirmedDraft = draftSession?.status === 'confirmed';
+                const codes = draftSession?.pickOrder || [];
+                const reDraftReq = draftSession?.reDraftRequests || {};
+                const agreedCount = codes.filter((c) => reDraftReq[c]).length;
+                const myRequested = myCaptainCode && reDraftReq[myCaptainCode];
+                return (
+                  <Box sx={{ mt: 1.2, pt: 1.2, borderTop: '1px dashed #E0E0E0' }}>
+                    <Typography sx={{ fontSize: '0.7rem', color: '#E65100', fontWeight: 800, mb: 0.7, letterSpacing: 0.3 }}>
+                      🎖 {myCaptainCode ? `${myCaptainCode}팀 주장 권한` : '관리자 권한'}
+                    </Typography>
+                    {/* 포메이션 설정 */}
+                    {myCaptainCode && (
+                      <Button
+                        fullWidth variant="outlined" size="small"
+                        startIcon={<ShieldIcon sx={{ fontSize: '18px !important' }} />}
+                        onClick={() => navigate(`/player-select?date=${nextMatch.date}`)}
+                        sx={{
+                          borderRadius: 2, fontWeight: 'bold', py: 0.8, mb: 0.7,
+                          borderColor: '#FF6F00', color: '#E65100', borderWidth: 2,
+                          bgcolor: '#FFF8E1',
+                          '&:hover': { bgcolor: '#FFECB3', borderColor: '#E65100', borderWidth: 2 },
+                        }}
+                      >
+                        ⚽ 내 팀 포메이션 설정
+                      </Button>
+                    )}
+                    {/* 재드래프트 요청 (confirmed 상태일 때만) */}
+                    {confirmedDraft && codes.length > 0 && (
+                      <Box sx={{
+                        p: 1, borderRadius: 2, bgcolor: '#F3E5F5', border: '1px solid #E1BEE7',
+                      }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.7 }}>
+                          <Typography sx={{ fontSize: '0.75rem', fontWeight: 800, color: '#6A1B9A', flex: 1 }}>
+                            🔄 재드래프트 요청
+                          </Typography>
+                          {agreedCount > 0 && (
+                            <Chip label={`${agreedCount}/${codes.length} 동의`} size="small"
+                              sx={{ height: 18, fontSize: '0.65rem', bgcolor: '#7B1FA2', color: 'white', fontWeight: 700 }} />
+                          )}
+                        </Box>
+                        {/* 주장별 동의 상태 */}
+                        <Box sx={{ display: 'flex', gap: 0.3, mb: 0.7 }}>
+                          {codes.map((c) => {
+                            const agreed = reDraftReq[c];
+                            return (
+                              <Chip key={c}
+                                label={`${c}${agreed ? ' ✓' : ''}`}
+                                size="small"
+                                sx={{
+                                  height: 18, fontSize: '0.62rem', px: 0.2,
+                                  bgcolor: agreed ? '#2E7D32' : '#EEEEEE',
+                                  color: agreed ? 'white' : '#888',
+                                  fontWeight: 700,
+                                }} />
+                            );
+                          })}
+                        </Box>
+                        <Stack direction="row" spacing={0.5}>
+                          {myCaptainCode && (
+                            myRequested ? (
+                              <Button size="small" variant="outlined"
+                                onClick={handleCancelReDraftRequest}
+                                sx={{
+                                  fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 'auto',
+                                  borderColor: '#999', color: '#666',
+                                }}>
+                                요청 취소
+                              </Button>
+                            ) : (
+                              <Button size="small" variant="contained"
+                                onClick={() => handleReDraftRequest(false)}
+                                sx={{
+                                  fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 'auto', fontWeight: 700,
+                                  bgcolor: '#7B1FA2',
+                                  '&:hover': { bgcolor: '#6A1B9A' },
+                                }}>
+                                동의
+                              </Button>
+                            )
+                          )}
+                          {canAdmin && (
+                            <Button size="small" variant="contained"
+                              onClick={() => handleReDraftRequest(true)}
+                              sx={{
+                                fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 'auto', fontWeight: 700,
+                                bgcolor: '#E65100',
+                                '&:hover': { bgcolor: '#BF360C' },
+                              }}>
+                              즉시 재시작 (admin)
+                            </Button>
+                          )}
+                        </Stack>
+                      </Box>
+                    )}
+                  </Box>
+                );
+              })()}
             </CardContent>
           </Card>
         )}

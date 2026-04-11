@@ -1,9 +1,15 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';
 import { ref, get } from 'firebase/database';
 import { auth, db } from '../config/firebase';
 import { getSafeEmailKey } from '../utils/format';
 import { APP_CONFIG } from '../config/app.config';
+
+// ── Dev 전용: 로그인 없이 자동으로 admin@test.com 진입 ──
+// .env의 REACT_APP_DEV_AUTO_LOGIN=true 설정 시 활성화 (emulator 전제)
+const DEV_AUTO_LOGIN =
+  process.env.NODE_ENV === 'development' && process.env.REACT_APP_DEV_AUTO_LOGIN === 'true';
+let devAutoLoginAttempted = false;
 
 const AuthContext = createContext(null);
 
@@ -22,6 +28,19 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Dev 자동 로그인: 유저가 없으면 1회 시도
+      if (!firebaseUser && DEV_AUTO_LOGIN && !devAutoLoginAttempted) {
+        devAutoLoginAttempted = true;
+        try {
+          await signInWithEmailAndPassword(auth, 'admin@test.com', 'test1234');
+          // eslint-disable-next-line no-console
+          console.log('%c🧪 Dev 자동 로그인: admin@test.com (이순신)', 'color:#E91E63;font-weight:bold');
+          return; // onAuthStateChanged가 다시 트리거됨
+        } catch (e) {
+          console.warn('Dev 자동 로그인 실패:', e.message);
+        }
+      }
+
       setUser(firebaseUser);
       setAuthReady(true);
 

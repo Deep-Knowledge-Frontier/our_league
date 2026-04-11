@@ -8,6 +8,12 @@ import {
   DialogActions, Chip, Select, MenuItem, FormControl, InputLabel,
   Divider, Alert
 } from '@mui/material';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { MobileTimePicker } from '@mui/x-date-pickers/MobileTimePicker';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs from 'dayjs';
+import 'dayjs/locale/ko';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -284,6 +290,27 @@ export default function AdminPage() {
     setMatchForm({ date: '', time: '', location: '', address: '' });
     setLocationPreset('custom');
     setMatchDialog(true);
+  };
+
+  // 다음(Kakao) 우편번호 검색 — 건물명을 자동으로 장소명으로 사용
+  const openDaumSearch = () => {
+    if (!window.daum || !window.daum.Postcode) {
+      alert('주소 검색 서비스를 불러오지 못했습니다.');
+      return;
+    }
+    new window.daum.Postcode({
+      oncomplete: (data) => {
+        const addr = data.roadAddress || data.jibunAddress || data.address || '';
+        // 건물명 우선, 없으면 시군구+법정동, 최종 fallback은 주소 마지막 단어
+        const name =
+          (data.buildingName && data.buildingName.trim()) ||
+          [data.sigungu, data.bname].filter(Boolean).join(' ') ||
+          addr.split(' ').pop() ||
+          '새 장소';
+        setMatchForm((f) => ({ ...f, location: name, address: addr }));
+        setLocationPreset('custom');
+      },
+    }).open();
   };
 
   const addPermission = async () => {
@@ -1912,93 +1939,146 @@ export default function AdminPage() {
           <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>
             일정
           </Typography>
-          <Box sx={{ display: 'flex', gap: 1.5, mb: 2.5 }}>
-            <TextField
-              label="날짜" type="date" size="small" fullWidth required
-              value={matchForm.date}
-              onChange={e => setMatchForm(f => ({ ...f, date: e.target.value }))}
-              slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <CalendarTodayIcon sx={{ color: '#2D336B', mr: 0.5, fontSize: 18 }} /> } }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-            <TextField
-              label="시간" type="time" size="small" fullWidth
-              value={matchForm.time}
-              onChange={e => setMatchForm(f => ({ ...f, time: e.target.value }))}
-              slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <AccessTimeIcon sx={{ color: '#2D336B', mr: 0.5, fontSize: 18 }} /> } }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-          </Box>
+          <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="ko">
+            <Box sx={{ display: 'flex', gap: 1.5, mb: 2.5 }}>
+              <DatePicker
+                label="날짜 *"
+                value={matchForm.date ? dayjs(matchForm.date) : null}
+                onChange={(v) => setMatchForm((f) => ({ ...f, date: v ? v.format('YYYY-MM-DD') : '' }))}
+                format="YYYY년 MM월 DD일"
+                slotProps={{
+                  textField: {
+                    size: 'small', fullWidth: true,
+                    sx: { '& .MuiOutlinedInput-root': { borderRadius: 2 } },
+                  },
+                }}
+              />
+              <MobileTimePicker
+                label="시간"
+                value={matchForm.time ? dayjs(`2000-01-01T${matchForm.time}`) : null}
+                onChange={(v) => setMatchForm((f) => ({ ...f, time: v ? v.format('HH:mm') : '' }))}
+                minutesStep={30}
+                ampm={false}
+                views={['hours', 'minutes']}
+                format="HH:mm"
+                slotProps={{
+                  textField: {
+                    size: 'small', fullWidth: true,
+                    sx: { '& .MuiOutlinedInput-root': { borderRadius: 2 } },
+                  },
+                }}
+              />
+            </Box>
+          </LocalizationProvider>
 
           {/* 장소 */}
           <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>
             장소
           </Typography>
+
+          {/* 자주 쓰는 장소 (프리셋) */}
           {locationPresets.length > 0 && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8, mb: 1.5 }}>
-              {locationPresets.map(p => (
-                <Chip
-                  key={p.name} label={p.name} size="small"
-                  onClick={() => { setLocationPreset(p.name); setMatchForm(f => ({ ...f, location: p.name, address: p.address })); }}
-                  sx={{
-                    borderRadius: 2, fontWeight: 600, fontSize: '0.82rem',
-                    bgcolor: locationPreset === p.name ? '#2D336B' : '#F0F2F5',
-                    color: locationPreset === p.name ? 'white' : '#555',
-                    '&:hover': { bgcolor: locationPreset === p.name ? '#1A1D4E' : '#E0E0E0' },
-                  }}
-                />
-              ))}
-              <Chip
-                label="직접 입력" size="small"
-                onClick={() => { setLocationPreset('custom'); setMatchForm(f => ({ ...f, location: '', address: '' })); }}
-                sx={{
-                  borderRadius: 2, fontWeight: 600, fontSize: '0.82rem',
-                  bgcolor: locationPreset === 'custom' ? '#2D336B' : '#F0F2F5',
-                  color: locationPreset === 'custom' ? 'white' : '#555',
-                  '&:hover': { bgcolor: locationPreset === 'custom' ? '#1A1D4E' : '#E0E0E0' },
-                }}
-              />
+            <Box sx={{ mb: 1.2 }}>
+              <Typography sx={{ fontSize: '0.7rem', color: '#bbb', mb: 0.6, fontWeight: 600 }}>
+                자주 쓰는 장소
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6 }}>
+                {locationPresets.map((p) => {
+                  const active = matchForm.location === p.name && matchForm.address === p.address;
+                  return (
+                    <Chip
+                      key={p.name}
+                      label={p.name}
+                      size="small"
+                      onClick={() => {
+                        setLocationPreset(p.name);
+                        setMatchForm((f) => ({ ...f, location: p.name, address: p.address }));
+                      }}
+                      sx={{
+                        borderRadius: 2, height: 30, px: 0.5,
+                        fontWeight: 700, fontSize: '0.8rem',
+                        bgcolor: active ? '#2D336B' : '#F0F2F5',
+                        color: active ? 'white' : '#555',
+                        border: active ? '2px solid #2D336B' : '1px solid transparent',
+                        transition: 'all 0.15s',
+                        transform: active ? 'scale(1.02)' : 'scale(1)',
+                        '&:hover': { bgcolor: active ? '#1A1D4E' : '#E3E5E8' },
+                      }}
+                    />
+                  );
+                })}
+              </Box>
             </Box>
           )}
-          {(locationPreset === 'custom' || locationPresets.length === 0) && (
-            <TextField
-              label="장소 이름" size="small" fullWidth
-              value={matchForm.location}
-              onChange={e => setMatchForm(f => ({ ...f, location: e.target.value }))}
-              sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-              slotProps={{ input: { startAdornment: <PlaceIcon sx={{ color: '#2D336B', mr: 0.5, fontSize: 18 }} /> } }}
-            />
-          )}
 
-          {/* 주소 검색 */}
-          <Box sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
-            <TextField
-              label="주소" size="small" fullWidth
-              value={matchForm.address}
-              onChange={e => setMatchForm(f => ({ ...f, address: e.target.value }))}
-              placeholder="주소 검색 버튼을 눌러 검색하세요"
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-              slotProps={{ input: { startAdornment: <PlaceIcon sx={{ color: '#999', mr: 0.5, fontSize: 18 }} /> } }}
-            />
+          {/* 선택된 장소 카드 OR 검색 버튼 */}
+          {matchForm.address ? (
+            <Box sx={{
+              display: 'flex', alignItems: 'center', gap: 1.2,
+              p: 1.5, mb: 0.5, borderRadius: 2,
+              bgcolor: '#FAFBFF',
+              border: '2px solid #E8EAF6',
+              transition: 'all 0.2s',
+            }}>
+              <Box sx={{
+                width: 44, height: 44, borderRadius: '50%',
+                background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
+                color: 'white', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 3px 8px rgba(45,51,107,0.25)',
+              }}>
+                <PlaceIcon sx={{ fontSize: 24 }} />
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{
+                  fontWeight: 800, fontSize: '0.95rem', color: '#222',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  lineHeight: 1.3,
+                }}>
+                  {matchForm.location || '이름 없음'}
+                </Typography>
+                <Typography sx={{
+                  fontSize: '0.74rem', color: '#888', mt: 0.2,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>
+                  📍 {matchForm.address}
+                </Typography>
+              </Box>
+              <Button
+                size="small" variant="outlined"
+                startIcon={<SearchIcon sx={{ fontSize: '14px !important' }} />}
+                onClick={openDaumSearch}
+                sx={{
+                  borderRadius: 2, fontSize: '0.72rem', fontWeight: 700,
+                  minWidth: 'auto', px: 1.3, flexShrink: 0,
+                  borderColor: '#2D336B', color: '#2D336B',
+                  '&:hover': { borderColor: '#1A1D4E', bgcolor: '#F0F2F5' },
+                }}
+              >
+                변경
+              </Button>
+            </Box>
+          ) : (
             <Button
-              variant="outlined" size="small"
+              fullWidth
+              variant="outlined"
               startIcon={<SearchIcon />}
-              onClick={() => {
-                if (window.daum && window.daum.Postcode) {
-                  new window.daum.Postcode({
-                    oncomplete: (data) => {
-                      const addr = data.roadAddress || data.jibunAddress || data.address;
-                      setMatchForm(f => ({ ...f, address: addr }));
-                    },
-                  }).open();
-                } else {
-                  alert('주소 검색 서비스를 불러오지 못했습니다.');
-                }
+              onClick={openDaumSearch}
+              sx={{
+                py: 1.8, borderRadius: 2,
+                borderColor: '#2D336B', color: '#2D336B',
+                borderWidth: 2, borderStyle: 'dashed',
+                fontWeight: 800, fontSize: '0.9rem',
+                mb: 0.5,
+                '&:hover': {
+                  borderColor: '#1A1D4E', borderWidth: 2, borderStyle: 'dashed',
+                  bgcolor: '#F0F2F5',
+                },
               }}
-              sx={{ whiteSpace: 'nowrap', borderRadius: 2, flexShrink: 0, borderColor: '#2D336B', color: '#2D336B', minWidth: 'auto', px: 1.5 }}
             >
-              검색
+              주소 검색으로 장소 추가
             </Button>
-          </Box>
+          )}
 
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5, gap: 1 }}>
@@ -2119,23 +2199,37 @@ export default function AdminPage() {
           <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>
             리그 기간
           </Typography>
-          <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-            <TextField
-              label="시작일" type="date" size="small" fullWidth required
-              value={leagueForm.startDate}
-              onChange={e => setLeagueForm(f => ({ ...f, startDate: e.target.value }))}
-              slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <CalendarTodayIcon sx={{ color: '#1565C0', mr: 0.5, fontSize: 18 }} /> } }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-            <Typography sx={{ color: '#bbb', fontWeight: 'bold', flexShrink: 0 }}>~</Typography>
-            <TextField
-              label="종료일" type="date" size="small" fullWidth required
-              value={leagueForm.endDate}
-              onChange={e => setLeagueForm(f => ({ ...f, endDate: e.target.value }))}
-              slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <CalendarTodayIcon sx={{ color: '#1565C0', mr: 0.5, fontSize: 18 }} /> } }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-          </Box>
+          <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="ko">
+            <Box sx={{ display: 'flex', gap: 1.2, alignItems: 'center' }}>
+              <DatePicker
+                label="시작일 *"
+                value={leagueForm.startDate ? dayjs(leagueForm.startDate) : null}
+                onChange={(v) => setLeagueForm((f) => ({ ...f, startDate: v ? v.format('YYYY-MM-DD') : '' }))}
+                format="YYYY년 MM월 DD일"
+                maxDate={leagueForm.endDate ? dayjs(leagueForm.endDate) : undefined}
+                slotProps={{
+                  textField: {
+                    size: 'small', fullWidth: true,
+                    sx: { '& .MuiOutlinedInput-root': { borderRadius: 2 } },
+                  },
+                }}
+              />
+              <Typography sx={{ color: '#bbb', fontWeight: 'bold', flexShrink: 0, fontSize: '1.1rem' }}>~</Typography>
+              <DatePicker
+                label="종료일 *"
+                value={leagueForm.endDate ? dayjs(leagueForm.endDate) : null}
+                onChange={(v) => setLeagueForm((f) => ({ ...f, endDate: v ? v.format('YYYY-MM-DD') : '' }))}
+                format="YYYY년 MM월 DD일"
+                minDate={leagueForm.startDate ? dayjs(leagueForm.startDate) : undefined}
+                slotProps={{
+                  textField: {
+                    size: 'small', fullWidth: true,
+                    sx: { '& .MuiOutlinedInput-root': { borderRadius: 2 } },
+                  },
+                }}
+              />
+            </Box>
+          </LocalizationProvider>
 
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5, gap: 1 }}>

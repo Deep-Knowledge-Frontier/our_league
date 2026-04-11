@@ -141,7 +141,8 @@ export default function MatchDetailPage() {
   const [teamAPlayers, setTeamAPlayers] = useState([]);
   const [teamBPlayers, setTeamBPlayers] = useState([]);
   const [playerStats, setPlayerStats] = useState({});
-  const [winnerStars, setWinnerStars] = useState({});
+  // 해당 경기일 우승 주장 이름 (별 표시용)
+  const [winningCaptain, setWinningCaptain] = useState(null);
 
   // 포메이션 연동
   const [teamFormations, setTeamFormations] = useState({});
@@ -251,77 +252,58 @@ export default function MatchDetailPage() {
     }).catch(() => {});
   }, [clubName]);
 
-  // Load winner star data from previous match date
+  // 해당 경기일의 우승팀 주장 찾기 (별 표시용)
+  // - DailyResultsBackup에서 오늘 매치 결과로 승점 계산 → 우승팀 결정
+  // - TeamCaptains에서 해당 코드의 주장 이름 조회
+  // - 팀명 → 코드 매핑은 TeamNames 참고
   useEffect(() => {
+    if (!date || !clubName) { setWinningCaptain(null); return; }
     (async () => {
       try {
-        // 1. 모든 경기 날짜 가져오기
-        const allDatesSnap = await get(ref(db, `${clubName}`));
-        if (!allDatesSnap.exists()) return;
+        const [resultsSnap, captainsSnap, teamNamesSnap] = await Promise.all([
+          get(ref(db, `DailyResultsBackup/${clubName}/${date}`)),
+          get(ref(db, `PlayerSelectionByDate/${clubName}/${date}/TeamCaptains`)),
+          get(ref(db, `PlayerSelectionByDate/${clubName}/${date}/TeamNames`)),
+        ]);
+        if (!resultsSnap.exists() || !captainsSnap.exists()) return;
 
-        const allDates = [];
-        allDatesSnap.forEach(child => {
-          // 날짜 형식인 키만 필터 (예: 2025-03-15)
-          if (/^\d{4}-\d{2}-\d{2}$/.test(child.key)) {
-            allDates.push(child.key);
-          }
+        const matches = resultsSnap.val().matches || [];
+        if (matches.length === 0) return;
+
+        // 승점 집계 (승=3, 무=1, 패=0)
+        const pts = {}, gd = {}, gs = {};
+        (Array.isArray(matches) ? matches : Object.values(matches)).forEach((m) => {
+          const t1 = m.team1, t2 = m.team2;
+          const s1 = Number(m.score1) || 0, s2 = Number(m.score2) || 0;
+          gs[t1] = (gs[t1] || 0) + s1; gs[t2] = (gs[t2] || 0) + s2;
+          gd[t1] = (gd[t1] || 0) + (s1 - s2); gd[t2] = (gd[t2] || 0) + (s2 - s1);
+          pts[t1] = (pts[t1] || 0) + (s1 > s2 ? 3 : s1 === s2 ? 1 : 0);
+          pts[t2] = (pts[t2] || 0) + (s2 > s1 ? 3 : s1 === s2 ? 1 : 0);
         });
-        allDates.sort();
+        const winnerName = Object.keys(pts).sort((a, b) =>
+          (pts[b] || 0) - (pts[a] || 0) ||
+          (gd[b] || 0) - (gd[a] || 0) ||
+          (gs[b] || 0) - (gs[a] || 0)
+        )[0];
+        if (!winnerName) return;
 
-        // 2. 현재 날짜의 이전 경기일 찾기
-        const currentIdx = allDates.indexOf(date);
-        if (currentIdx <= 0) return;
-        const prevDate = allDates[currentIdx - 1];
-
-        // 3. 이전 날짜의 모든 게임에서 우승팀 찾기
-        const prevSnap = await get(ref(db, `${clubName}/${prevDate}`));
-        if (!prevSnap.exists()) return;
-
-        // 각 게임의 승리팀 이름과 게임 정보 수집
-        const winCounts = {}; // 팀별 승리 횟수
-        const teamGames = {}; // 팀별 게임키/팀번호 기록
-        prevSnap.forEach(gameChild => {
-          if (!gameChild.key.startsWith('game')) return;
-          const g = gameChild.val();
-          const s1 = g.goalCount1 || 0;
-          const s2 = g.goalCount2 || 0;
-          const t1 = g.team1_name || '';
-          const t2 = g.team2_name || '';
-
-          // 각 팀의 게임 참여 기록
-          if (t1) {
-            if (!teamGames[t1]) teamGames[t1] = [];
-            teamGames[t1].push({ gameKey: gameChild.key, teamSide: 'team1', name: t1 });
-          }
-          if (t2) {
-            if (!teamGames[t2]) teamGames[t2] = [];
-            teamGames[t2].push({ gameKey: gameChild.key, teamSide: 'team2', name: t2 });
-          }
-
-          if (s1 > s2) { winCounts[t1] = (winCounts[t1] || 0) + 1; }
-          else if (s2 > s1) { winCounts[t2] = (winCounts[t2] || 0) + 1; }
-        });
-
-        // 가장 많이 이긴 팀 = 일별 우승팀
-        const sortedTeams = Object.entries(winCounts).sort((a, b) => b[1] - a[1]);
-        if (sortedTeams.length === 0) return;
-        const dailyWinnerName = sortedTeams[0][0];
-        const winnerGames = teamGames[dailyWinnerName] || [];
-
-        if (winnerGames.length === 0) return;
-
-        // 4. 우승팀의 선수 명단 가져오기 (해당 팀이 참여한 첫 번째 게임에서)
-        const starMap = {};
-        const w = winnerGames[0]; // 첫 게임의 로스터 사용
-        const rosterSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${prevDate}/${w.gameKey}`));
-        if (rosterSnap.exists()) {
-          const players = extractTeamRoster(rosterSnap.val(), w.name, w.teamSide);
-          players.forEach(name => { starMap[name] = 1; });
+        // 우승 팀명을 A/B/C 코드로 매핑
+        const teamNames = teamNamesSnap.exists() ? teamNamesSnap.val() : {};
+        const captains = captainsSnap.val() || {};
+        let winnerCode = null;
+        for (const c of ['A', 'B', 'C']) {
+          if (teamNames[c] === winnerName || c === winnerName) { winnerCode = c; break; }
         }
-
-        setWinnerStars(starMap);
+        if (!winnerCode && winnerName) {
+          // 매핑 실패 시 간단한 이름 비교 (예: "팀 A" → "A")
+          const clean = String(winnerName).replace(/^(팀\s*|Team\s*)/i, '').trim();
+          if (['A', 'B', 'C'].includes(clean)) winnerCode = clean;
+        }
+        if (winnerCode && captains[winnerCode]) {
+          setWinningCaptain(captains[winnerCode]);
+        }
       } catch (e) {
-        console.error('Winner star load error:', e);
+        console.error('우승 주장 로드 실패:', e);
       }
     })();
   }, [date, clubName]);
@@ -514,7 +496,7 @@ export default function MatchDetailPage() {
 
           {/* Players */}
           {allPositions.map((pos, idx) => {
-            const stars = winnerStars[pos.name] || 0;
+            const isWinningCaptain = !!winningCaptain && pos.name === winningCaptain;
             return (
               <Box
                 key={`${pos.name}-${idx}`}
@@ -531,18 +513,18 @@ export default function MatchDetailPage() {
                   },
                 }}
               >
-                {/* Star badge */}
-                {stars > 0 && (
-                  <img
-                    src="/star.png"
-                    alt="star"
-                    style={{
-                      width: 16,
-                      height: 16,
-                      display: 'block',
-                      margin: '0 auto -2px',
+                {/* 우승 주장 별 */}
+                {isWinningCaptain && (
+                  <Typography
+                    component="span"
+                    sx={{
+                      fontSize: '1.1rem', lineHeight: 1,
+                      display: 'block', textAlign: 'center', mb: '-2px',
+                      filter: 'drop-shadow(0 1px 2px rgba(255,193,7,0.6))',
                     }}
-                  />
+                  >
+                    ⭐
+                  </Typography>
                 )}
                 {/* Uniform */}
                 <Box sx={{ position: 'relative', display: 'inline-block' }}>
