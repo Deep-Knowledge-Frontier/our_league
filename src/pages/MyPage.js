@@ -1011,7 +1011,7 @@ export default function MyPage() {
     <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
       <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
 
-        {/* -- 헤더 카드 -- (컴팩트 horizontal 레이아웃) */}
+        {/* -- 헤더 카드 -- (프로필 + 빠른 액션) */}
         <Card sx={{
           mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
           background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
@@ -1041,6 +1041,33 @@ export default function MyPage() {
                       }} />
                   )}
                 </Box>
+              </Box>
+              {/* 빠른 액션 아이콘 */}
+              <Box sx={{ display: 'flex', gap: 0.3, flexShrink: 0 }}>
+                <IconButton
+                  size="small"
+                  onClick={() => setProfileEditOpen(true)}
+                  sx={{
+                    color: 'rgba(255,255,255,0.7)',
+                    bgcolor: 'rgba(255,255,255,0.1)',
+                    width: 34, height: 34,
+                    '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
+                  }}
+                >
+                  <EditIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  onClick={() => setHelpOpen(true)}
+                  sx={{
+                    color: 'rgba(255,255,255,0.7)',
+                    bgcolor: 'rgba(255,255,255,0.1)',
+                    width: 34, height: 34,
+                    '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
+                  }}
+                >
+                  <HelpOutlineIcon sx={{ fontSize: 16 }} />
+                </IconButton>
               </Box>
             </Box>
           </CardContent>
@@ -1868,39 +1895,30 @@ export default function MyPage() {
 
           return (
             <>
-              {/* 일반 메뉴 그룹 */}
-              <Paper sx={{
-                borderRadius: 3, mb: 1.5, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-                overflow: 'hidden', border: '1px solid #F0F0F0',
-              }}>
-                <SettingsRow
-                  icon={<EditIcon sx={{ fontSize: 18, color: '#1565C0' }} />}
-                  iconColor="#1565C0"
-                  label="개인정보 수정"
-                  onClick={() => setProfileEditOpen(true)}
-                />
-                <SettingsRow
-                  icon={<HelpOutlineIcon sx={{ fontSize: 18, color: '#7B1FA2' }} />}
-                  iconColor="#7B1FA2"
-                  label="도움말 / Q&A"
-                  onClick={() => setHelpOpen(true)}
-                />
-                {canAdmin && (
+              {/* 가이드 & 도움 그룹 (해당 역할에게만 표시) */}
+              {(canAdmin) && (
+                <Paper sx={{
+                  borderRadius: 3, mb: 1.5, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                  overflow: 'hidden', border: '1px solid #F0F0F0',
+                }}>
+                  {canAdmin && (
+                    <SettingsRow
+                      icon={<SchoolIcon sx={{ fontSize: 18, color: '#1565C0' }} />}
+                      iconColor="#1565C0"
+                      label="관리자 가이드"
+                      onClick={() => setReplayTour('admin')}
+                      isLast={!canAdmin}
+                    />
+                  )}
                   <SettingsRow
-                    icon={<SchoolIcon sx={{ fontSize: 18, color: '#1565C0' }} />}
-                    iconColor="#1565C0"
-                    label="관리자 가이드"
-                    onClick={() => setReplayTour('admin')}
+                    icon={<SchoolIcon sx={{ fontSize: 18, color: '#EF6C00' }} />}
+                    iconColor="#EF6C00"
+                    label="주장 가이드"
+                    onClick={() => setReplayTour('captain')}
+                    isLast
                   />
-                )}
-                <SettingsRow
-                  icon={<SchoolIcon sx={{ fontSize: 18, color: '#EF6C00' }} />}
-                  iconColor="#EF6C00"
-                  label="주장 가이드"
-                  onClick={() => setReplayTour('captain')}
-                  isLast
-                />
-              </Paper>
+                </Paper>
+              )}
 
               {/* 계정 액션 그룹 */}
               <Paper sx={{
