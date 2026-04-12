@@ -778,11 +778,24 @@ export default function PlayerSelectPage() {
                           sx={{
                             bgcolor: movingPlayer?.name === name && movingPlayer?.from === code ? '#FFE082' : isCaptain ? '#FFF3E0' : 'white',
                             border: movingPlayer?.name === name && movingPlayer?.from === code ? '2px solid #F57C00' : isCaptain ? '2px solid #FF9800' : '1px solid rgba(0,0,0,0.08)',
-                            borderRadius: 1, px: 0.5, py: 0.5, mb: 0.3, display: 'flex', gap: 0.3, alignItems: 'center', justifyContent: 'center',
+                            borderRadius: 1, px: 0.5, py: 0.5, mb: 0.3, display: 'flex', gap: 0.4, alignItems: 'center',
                             cursor: canEdit ? 'pointer' : 'default', transition: 'all 0.15s',
                           }}>
-                          <Typography sx={{ fontWeight: 700, fontSize: '0.75rem', color: '#888' }}>{idx + 1}.</Typography>
-                          <Typography sx={{ fontWeight: isCaptain ? 800 : 600, fontSize: '0.82rem', color: isCaptain ? '#E65100' : 'inherit' }}>{name}</Typography>
+                          <Typography sx={{ fontWeight: 700, fontSize: '0.7rem', color: '#aaa', flexShrink: 0 }}>{idx + 1}.</Typography>
+                          <Typography sx={{
+                            fontWeight: isCaptain ? 800 : 600, fontSize: '0.8rem',
+                            color: isCaptain ? '#E65100' : 'inherit',
+                            flex: 1, textAlign: 'center',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>{name}</Typography>
+                          {(() => {
+                            const ability = statsMap[name]?.abilityScore || 0;
+                            return ability > 0 ? (
+                              <Typography sx={{ fontSize: '0.65rem', color: '#999', fontWeight: 600, flexShrink: 0 }}>
+                                {Math.round(ability)}
+                              </Typography>
+                            ) : null;
+                          })()}
                         </Box>
                       );
                     });

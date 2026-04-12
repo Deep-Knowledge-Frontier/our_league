@@ -33,7 +33,9 @@
     "seed": "node scripts/seed-emulator.js",
     "sync-prod": "node scripts/sync-from-prod.js",
     "deploy": "npm run build && firebase deploy --only hosting:uri-league",
-    "backup-db": "firebase database:get // --project football-92492 --output \"backups/prod-snapshot-$(date +%Y%m%d-%H%M%S).json\""
+    "deploy-rules": "firebase deploy --only database --project football-92492",
+    "backup-db": "firebase database:get // --project football-92492 --output \"backups/prod-snapshot-$(date +%Y%m%d-%H%M%S).json\"",
+    "backup-rules": "MSYS_NO_PATHCONV=1 firebase database:profile --project football-92492 --duration 1 > /dev/null 2>&1; echo '⚠️ Firebase Console에서 현재 규칙을 수동으로 백업해주세요: https://console.firebase.google.com/project/football-92492/database/football-92492-default-rtdb/rules'"
   },
   "eslintConfig": {
     "extends": [

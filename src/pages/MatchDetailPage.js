@@ -503,7 +503,7 @@ export default function MatchDetailPage() {
                 sx={{
                   position: 'absolute',
                   left: pos.x - 30,
-                  top: pos.y - 20,
+                  top: pos.y - 22,
                   width: 60,
                   textAlign: 'center',
                   animation: `dropIn 0.5s ease-out ${idx * 0.05}s both`,
@@ -513,19 +513,6 @@ export default function MatchDetailPage() {
                   },
                 }}
               >
-                {/* 우승 주장 별 */}
-                {isWinningCaptain && (
-                  <Typography
-                    component="span"
-                    sx={{
-                      fontSize: '1.1rem', lineHeight: 1,
-                      display: 'block', textAlign: 'center', mb: '-2px',
-                      filter: 'drop-shadow(0 1px 2px rgba(255,193,7,0.6))',
-                    }}
-                  >
-                    ⭐
-                  </Typography>
-                )}
                 {/* Uniform */}
                 <Box sx={{ position: 'relative', display: 'inline-block' }}>
                   <img
@@ -533,6 +520,22 @@ export default function MatchDetailPage() {
                     alt={pos.name}
                     style={{ width: 36, height: 36, objectFit: 'contain' }}
                   />
+                  {/* 우승 주장 별 — 유니폼 오른쪽 위에 겹쳐서 표시 (레이아웃 안 건드림) */}
+                  {isWinningCaptain && (
+                    <Typography
+                      component="span"
+                      sx={{
+                        position: 'absolute',
+                        top: -6,
+                        right: -6,
+                        fontSize: '0.72rem',
+                        lineHeight: 1,
+                        filter: 'drop-shadow(0 1px 2px rgba(255,193,7,0.8))',
+                      }}
+                    >
+                      ⭐
+                    </Typography>
+                  )}
                   {pos.posLabel && (
                     <Box sx={{
                       position: 'absolute', bottom: -1, left: '50%', transform: 'translateX(-50%)',

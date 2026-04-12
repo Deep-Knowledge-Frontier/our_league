@@ -1,0 +1,158 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "Users": {
+      ".read": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())",
+
+      "$emailKey": {
+        ".read": "auth != null && $emailKey == auth.token.email.replace('.', ',')",
+        ".write": "auth != null && $emailKey == auth.token.email.replace('.', ',')"
+      }
+    },
+
+    "AllowedUsers": {
+      ".read": "auth != null",
+      "admin": {
+        ".write": "auth != null && root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists()"
+      },
+      "moderator": {
+        ".write": "auth != null && root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists()"
+      }
+    },
+
+    "clubs": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "ClubRequests": {
+      ".read": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())",
+
+      "$requestKey": {
+        ".write": "auth != null && (!data.exists() || root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "LocationPresets": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "registeredPlayers": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "MatchDates": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "PlayerSelectionByDate": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null"
+      }
+    },
+
+    "PlayerSelectionByDateBackup": {
+      ".read": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())",
+      ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+    },
+
+    "DailyResultsBackup": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "PlayerStatsBackup": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "PlayerStatsBackup_6m": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "PlayerStatsBackup_season": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "PlayerDetailStats": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "PlayerWeeklyStandings": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "PlayerNetworkGraph": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "PlayerStateBackup": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "LeagueMaker": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "banners": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+    },
+
+    "MemberInfo": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
+    "system": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+    },
+
+    "$clubDataRoot": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+    }
+  }
+}
