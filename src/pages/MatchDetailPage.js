@@ -143,6 +143,8 @@ export default function MatchDetailPage() {
   const [playerStats, setPlayerStats] = useState({});
   // 해당 경기일 우승 주장 이름 (별 표시용)
   const [winningCaptain, setWinningCaptain] = useState(null);
+  // 현재 우승 주장이 해당 날짜까지 누적한 총 우승 횟수
+  const [winningCaptainTotalWins, setWinningCaptainTotalWins] = useState(0);
 
   // 포메이션 연동
   const [teamFormations, setTeamFormations] = useState({});
@@ -307,6 +309,80 @@ export default function MatchDetailPage() {
       }
     })();
   }, [date, clubName]);
+
+  // 우승 주장의 해당 날짜까지 누적 우승 횟수 계산 (3진법 승급 표시용)
+  useEffect(() => {
+    if (!clubName || !date || !winningCaptain) {
+      setWinningCaptainTotalWins(0);
+      return;
+    }
+    (async () => {
+      try {
+        const [resultsSnap, selectionsSnap] = await Promise.all([
+          get(ref(db, `DailyResultsBackup/${clubName}`)),
+          get(ref(db, `PlayerSelectionByDate/${clubName}`)),
+        ]);
+        if (!resultsSnap.exists()) { setWinningCaptainTotalWins(1); return; }
+        const allResults = resultsSnap.val() || {};
+        const allSelections = selectionsSnap.exists() ? (selectionsSnap.val() || {}) : {};
+
+        // 현재 날짜까지의 경기일 정렬
+        const dates = Object.keys(allResults).filter((d) => d <= date).sort();
+        let count = 0;
+
+        for (const d of dates) {
+          const matches = allResults[d]?.matches;
+          if (!matches) continue;
+          const matchArr = Array.isArray(matches) ? matches : Object.values(matches);
+          if (matchArr.length === 0) continue;
+
+          // 승점 집계
+          const points = {}, gd = {}, gf = {};
+          matchArr.forEach((m) => {
+            const t1 = m.team1, t2 = m.team2;
+            const s1 = Number(m.score1) || 0, s2 = Number(m.score2) || 0;
+            if (t1) {
+              gf[t1] = (gf[t1] || 0) + s1;
+              gd[t1] = (gd[t1] || 0) + (s1 - s2);
+              points[t1] = (points[t1] || 0) + (s1 > s2 ? 3 : s1 === s2 ? 1 : 0);
+            }
+            if (t2) {
+              gf[t2] = (gf[t2] || 0) + s2;
+              gd[t2] = (gd[t2] || 0) + (s2 - s1);
+              points[t2] = (points[t2] || 0) + (s2 > s1 ? 3 : s1 === s2 ? 1 : 0);
+            }
+          });
+          const sortedTeams = Object.entries(points).sort((a, b) =>
+            (b[1] - a[1]) ||
+            ((gd[b[0]] || 0) - (gd[a[0]] || 0)) ||
+            ((gf[b[0]] || 0) - (gf[a[0]] || 0))
+          );
+          if (sortedTeams.length === 0) continue;
+          const winnerName = sortedTeams[0][0];
+
+          // 해당 날짜의 주장/팀명 매핑
+          const sel = allSelections[d] || {};
+          const captains = sel.TeamCaptains || {};
+          const teamNames = sel.TeamNames || {};
+          let winnerCode = null;
+          for (const code of ['A', 'B', 'C']) {
+            if (teamNames[code] === winnerName) { winnerCode = code; break; }
+          }
+          if (!winnerCode) {
+            const clean = String(winnerName).replace(/^(팀\s*|Team\s*)/i, '').trim();
+            if (['A', 'B', 'C'].includes(clean)) winnerCode = clean;
+          }
+          if (winnerCode && captains[winnerCode] === winningCaptain) {
+            count++;
+          }
+        }
+        setWinningCaptainTotalWins(count);
+      } catch (e) {
+        console.error('누적 우승 카운트 실패:', e);
+        setWinningCaptainTotalWins(1);
+      }
+    })();
+  }, [clubName, date, winningCaptain]);
 
   // Load match on mount and game change
   useEffect(() => {
@@ -520,22 +596,57 @@ export default function MatchDetailPage() {
                     alt={pos.name}
                     style={{ width: 36, height: 36, objectFit: 'contain' }}
                   />
-                  {/* 우승 주장 별 — 유니폼 오른쪽 위에 겹쳐서 표시 (레이아웃 안 건드림) */}
-                  {isWinningCaptain && (
-                    <Typography
-                      component="span"
-                      sx={{
-                        position: 'absolute',
-                        top: -6,
-                        right: -6,
-                        fontSize: '0.72rem',
-                        lineHeight: 1,
-                        filter: 'drop-shadow(0 1px 2px rgba(255,193,7,0.8))',
-                      }}
-                    >
-                      ⭐
-                    </Typography>
-                  )}
+                  {/* 우승 주장 별 — 유니폼 위 가운데, 누적 승수에 따라 3진법 승급 표시
+                      Tier 0 (골드, 1~2승): ★ #FFC107
+                      Tier 1 (블루, 3승 = 1개): ★ #29B6F6   (3번 모이면 Tier 2로)
+                      Tier 2 (퍼플, 9승 = 1개): ★ #AB47BC   (3번 모이면 Tier 3로)
+                      Tier 3 (핑크, 27승 = 1개): ★ #E91E63  (최상위, 4+ 승급은 무시)
+                  */}
+                  {isWinningCaptain && winningCaptainTotalWins > 0 && (() => {
+                    let n = winningCaptainTotalWins;
+                    const t3 = Math.min(Math.floor(n / 27), 9); n -= t3 * 27;
+                    const t2 = Math.floor(n / 9);              n -= t2 * 9;
+                    const t1 = Math.floor(n / 3);              n -= t1 * 3;
+                    const t0 = n;
+                    const tiers = [
+                      { n: t3, color: '#E91E63', glow: '233,30,99' },
+                      { n: t2, color: '#AB47BC', glow: '171,71,188' },
+                      { n: t1, color: '#29B6F6', glow: '41,182,246' },
+                      { n: t0, color: '#FFC107', glow: '255,193,7' },
+                    ];
+                    return (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: -9,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          display: 'flex',
+                          gap: '0px',
+                          pointerEvents: 'none',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {tiers.flatMap((tier, ti) =>
+                          Array.from({ length: tier.n }).map((_, i) => (
+                            <Typography
+                              key={`${ti}-${i}`}
+                              component="span"
+                              sx={{
+                                fontSize: '0.7rem',
+                                lineHeight: 1,
+                                color: tier.color,
+                                filter: `drop-shadow(0 0 2px rgba(${tier.glow}, 0.9))`,
+                                WebkitTextStroke: '0.3px rgba(0,0,0,0.5)',
+                              }}
+                            >
+                              ★
+                            </Typography>
+                          ))
+                        )}
+                      </Box>
+                    );
+                  })()}
                   {pos.posLabel && (
                     <Box sx={{
                       position: 'absolute', bottom: -1, left: '50%', transform: 'translateX(-50%)',
