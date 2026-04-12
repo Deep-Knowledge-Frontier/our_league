@@ -26,7 +26,10 @@ export default function BottomNav() {
 
   return (
     <Box sx={{
-      position: 'fixed', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1200,
+      position: 'fixed',
+      /* iOS Safe Area: 홈 인디케이터 위에 배치 (노치 있는 아이폰) */
+      bottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+      left: '50%', transform: 'translateX(-50%)', zIndex: 1200,
       width: 'calc(100% - 24px)', maxWidth: 'calc(600px - 24px)',
       bgcolor: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       borderRadius: '20px', boxShadow: '0 4px 24px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.06)',

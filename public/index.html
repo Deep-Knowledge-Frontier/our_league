@@ -4,8 +4,13 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <link rel="icon" type="image/svg+xml" href="%PUBLIC_URL%/logo192.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#2D336B" />
+    <!-- iOS PWA: 홈 화면 추가 시 풀스크린 + 상태바 스타일 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="우리들의 리그" />
+    <!-- Android PWA: 자동 theme-color는 위의 theme-color 사용 -->
     <meta name="description" content="투표부터 MVP까지, 우리 팀의 모든 것 - 우리들의 리그" />
 
     <!-- Open Graph (카카오톡, 페이스북 등 링크 미리보기) -->

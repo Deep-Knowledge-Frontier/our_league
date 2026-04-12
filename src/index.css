@@ -5,9 +5,55 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* iOS: 바운스 스크롤 제거 (당겨서 새로고침 방지) */
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+
+  /* 모바일: 텍스트 크기 자동 조정 방지 (가로/세로 전환 시) */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  /* 터치 최적화: 300ms 탭 지연 제거 */
+  touch-action: manipulation;
+
+  /* iOS Safe Area: 노치/Dynamic Island/홈 인디케이터 영역 패딩 */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* iOS: input/textarea/select 터치 시 자동 확대 방지 (font-size >= 16px 강제) */
+input, textarea, select {
+  font-size: 16px !important;
+}
+
+/* MUI TextField의 내부 input도 적용 */
+.MuiInputBase-input {
+  font-size: 16px !important;
+}
+
+/* 모바일: 인터랙티브 요소에서 텍스트 선택 방지 */
+button, [role="button"], .MuiChip-root, .MuiBottomNavigation-root, .MuiTab-root {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 전체적으로 tap highlight 제거 (Android Chrome) */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS PWA standalone 모드에서 상태바 영역 */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    min-height: 100vh;
+    min-height: 100dvh; /* Dynamic Viewport Height — Android 주소창 대응 */
+  }
 }
