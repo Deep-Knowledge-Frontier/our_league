@@ -162,11 +162,19 @@ export default function TeamViewPage() {
             {title}
           </Box>
           <Box sx={{ p: 0.8, display: "flex", flexDirection: "column", gap: 0.5 }}>
-            {players.length === 0 ? (
-              <Typography sx={{ color: "text.secondary", textAlign: "center", py: 2, fontSize: "0.85rem" }}>없음</Typography>
-            ) : (
-              players.map((name, idx) => {
-                const isCaptain = teamCaptains[code] === name;
+            {(() => {
+              if (players.length === 0) {
+                return (
+                  <Typography sx={{ color: "text.secondary", textAlign: "center", py: 2, fontSize: "0.85rem" }}>없음</Typography>
+                );
+              }
+              // 주장을 맨 위(1번)로 정렬 — 표시 순서만, 원본 배열은 유지
+              const cap = teamCaptains[code];
+              const sorted = cap && players.includes(cap)
+                ? [cap, ...players.filter((p) => p !== cap)]
+                : players;
+              return sorted.map((name, idx) => {
+                const isCaptain = cap === name;
                 const isMe = name === userName;
                 const ability = playerAbility[name];
                 return (
@@ -176,14 +184,9 @@ export default function TeamViewPage() {
                     borderRadius: 1.5, px: 0.8, py: 0.5,
                     display: "flex", alignItems: "center", gap: 0.4,
                   }}>
-                    {isCaptain && (
-                      <Box sx={{ width: 16, height: 16, borderRadius: '50%', bgcolor: '#FF9800', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Typography sx={{ fontSize: '0.55rem', fontWeight: 900, color: 'white' }}>C</Typography>
-                      </Box>
-                    )}
                     <Typography sx={{ fontSize: "0.72rem", color: "#aaa", fontWeight: 600, flexShrink: 0 }}>{idx + 1}</Typography>
                     <Typography sx={{
-                      fontWeight: isMe ? 800 : isCaptain ? 700 : 500, fontSize: "0.85rem", flex: 1,
+                      fontWeight: isMe ? 800 : isCaptain ? 800 : 500, fontSize: "0.85rem", flex: 1,
                       color: isMe ? '#1565C0' : isCaptain ? "#E65100" : "#333",
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>{name}</Typography>
@@ -194,8 +197,8 @@ export default function TeamViewPage() {
                     )}
                   </Box>
                 );
-              })
-            )}
+              });
+            })()}
           </Box>
         </Box>
       </Box>
