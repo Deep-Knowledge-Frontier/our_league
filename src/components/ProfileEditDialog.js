@@ -1,44 +1,51 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Dialog, Box, Typography, IconButton, TextField, Button,
-  FormControl, InputLabel, Select, MenuItem, Stack, Alert, CircularProgress,
+  Dialog, Box, Typography, IconButton, TextField, Button, Chip,
+  Stack, Alert, CircularProgress, Divider,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
+import PersonIcon from '@mui/icons-material/Person';
+import CakeIcon from '@mui/icons-material/Cake';
+import HeightIcon from '@mui/icons-material/Height';
+import FitnessCenterIcon from '@mui/icons-material/FitnessCenter';
+import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import GroupsIcon from '@mui/icons-material/Groups';
 import { ref, get, update } from 'firebase/database';
 import { db } from '../config/firebase';
+import PositionAvatar from './PositionAvatar';
 
 const POSITIONS = [
-  { value: 'GK', label: 'GK (골키퍼)' },
-  { value: 'DF', label: 'DF (수비수)' },
-  { value: 'DM', label: 'DM (수비형 미드)' },
-  { value: 'MF', label: 'MF (미드필더)' },
-  { value: 'AM', label: 'AM (공격형 미드)' },
-  { value: 'FW', label: 'FW (공격수)' },
+  { value: 'GK', emoji: '🧤', label: 'GK', desc: '골키퍼', color: '#F9A825' },
+  { value: 'DF', emoji: '🛡️', label: 'DF', desc: '수비수', color: '#1565C0' },
+  { value: 'DM', emoji: '⚓', label: 'DM', desc: '수비형 미드', color: '#00838F' },
+  { value: 'MF', emoji: '⚙️', label: 'MF', desc: '미드필더', color: '#2E7D32' },
+  { value: 'AM', emoji: '🎯', label: 'AM', desc: '공격형 미드', color: '#EF6C00' },
+  { value: 'FW', emoji: '⚡', label: 'FW', desc: '공격수', color: '#C62828' },
 ];
 
-const SKILLS = ['상', '상-중', '중', '중-하', '하', '하하'];
+const SKILLS = [
+  { value: '상', label: '상', color: '#D32F2F', desc: '프로급', width: '100%' },
+  { value: '상-중', label: '상중', color: '#E65100', desc: '상급', width: '83%' },
+  { value: '중', label: '중', color: '#F57C00', desc: '평균', width: '66%' },
+  { value: '중-하', label: '중하', color: '#1976D2', desc: '중하급', width: '50%' },
+  { value: '하', label: '하', color: '#42A5F5', desc: '초보', width: '33%' },
+  { value: '하하', label: '하하', color: '#90CAF9', desc: '입문', width: '16%' },
+];
 
-// 생년 선택 옵션 (1950~현재)
 const CURRENT_YEAR = new Date().getFullYear();
-const BIRTH_YEARS = Array.from({ length: CURRENT_YEAR - 1950 + 1 }, (_, i) => String(CURRENT_YEAR - i));
 
 export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [form, setForm] = useState({
-    name: '',
-    birthYear: '',
-    height: '',
-    weight: '',
-    position: '',
-    skill: '',
-    club: '',
+    name: '', birthYear: '', height: '', weight: '',
+    position: '', skill: '', club: '',
   });
 
-  // 열릴 때마다 현재 DB 값 로드
   useEffect(() => {
     if (!open || !emailKey) return;
     setLoading(true);
@@ -48,13 +55,9 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
         if (snap.exists()) {
           const d = snap.val();
           setForm({
-            name: d.name || '',
-            birthYear: d.birthYear || '',
-            height: d.height || '',
-            weight: d.weight || '',
-            position: d.position || '',
-            skill: d.skill || '',
-            club: d.club || '',
+            name: d.name || '', birthYear: d.birthYear || '',
+            height: d.height || '', weight: d.weight || '',
+            position: d.position || '', skill: d.skill || '', club: d.club || '',
           });
         }
       })
@@ -62,20 +65,15 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
       .finally(() => setLoading(false));
   }, [open, emailKey]);
 
-  const handleChange = (field) => (e) => {
-    setForm((f) => ({ ...f, [field]: e.target.value }));
-  };
+  const handleChange = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  const setField = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
   const handleSave = async () => {
     if (!emailKey) return;
-    if (!form.name.trim()) {
-      setError('이름은 필수입니다.');
-      return;
-    }
+    if (!form.name.trim()) { setError('이름은 필수입니다.'); return; }
     setSaving(true);
     setError(null);
     try {
-      // 숫자 필드는 Number로 저장 (기존 타입 유지)
       const payload = {
         name: form.name.trim(),
         birthYear: form.birthYear,
@@ -87,7 +85,6 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
         updatedAt: Date.now(),
       };
       await update(ref(db, `Users/${emailKey}`), payload);
-      // 부모에 저장 완료 알림 (데이터 리프레시용)
       if (onSaved) onSaved(payload);
       onClose();
     } catch (e) {
@@ -97,120 +94,234 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
     }
   };
 
+  const selectedSkill = SKILLS.find((s) => s.value === form.skill);
+
   return (
     <Dialog
       open={open}
       onClose={saving ? undefined : onClose}
       fullWidth
       maxWidth="xs"
-      PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', maxHeight: '92vh' } }}
     >
-      {/* 헤더 */}
+      {/* 헤더 + 아바타 미리보기 */}
       <Box sx={{
-        background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 100%)',
-        color: 'white', px: 2.5, py: 2,
-        display: 'flex', alignItems: 'center', gap: 1,
+        background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
+        color: 'white', px: 2.5, pt: 2, pb: 2.5,
       }}>
-        <EditIcon sx={{ fontSize: 24 }} />
-        <Typography sx={{ fontWeight: 900, fontSize: '1.1rem', flex: 1 }}>
-          개인정보 수정
-        </Typography>
-        <IconButton size="small" onClick={onClose} disabled={saving} sx={{ color: 'white' }}>
-          <CloseIcon />
-        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <EditIcon sx={{ fontSize: 22 }} />
+          <Typography sx={{ fontWeight: 900, fontSize: '1.05rem', flex: 1 }}>
+            개인정보 수정
+          </Typography>
+          <IconButton size="small" onClick={onClose} disabled={saving} sx={{ color: 'white' }}>
+            <CloseIcon />
+          </IconButton>
+        </Box>
+        {/* 미리보기 */}
+        {!loading && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <PositionAvatar position={form.position} size={48} showLabel />
+            <Box sx={{ flex: 1 }}>
+              <Typography sx={{ fontWeight: 800, fontSize: '1.1rem', lineHeight: 1.2 }}>
+                {form.name || '이름'}
+              </Typography>
+              <Typography sx={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.6)' }}>
+                {form.club || '클럽'} · {form.position || '포지션'} · {form.skill || '실력'}
+              </Typography>
+            </Box>
+          </Box>
+        )}
       </Box>
 
-      <Box sx={{ p: 2.5 }}>
+      <Box sx={{ p: 2.5, overflowY: 'auto' }}>
         {loading ? (
           <Box sx={{ textAlign: 'center', py: 3 }}>
             <CircularProgress size={28} />
           </Box>
         ) : (
-          <Stack spacing={1.8}>
-            {error && <Alert severity="error">{error}</Alert>}
+          <Stack spacing={2}>
+            {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
 
-            <TextField
-              label="이름 *"
-              size="small"
-              fullWidth
-              value={form.name}
-              onChange={handleChange('name')}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-
-            <FormControl size="small" fullWidth>
-              <InputLabel>생년</InputLabel>
-              <Select
-                label="생년"
-                value={form.birthYear}
-                onChange={handleChange('birthYear')}
-                sx={{ borderRadius: 2 }}
-              >
-                <MenuItem value="">선택 안 함</MenuItem>
-                {BIRTH_YEARS.map((y) => (
-                  <MenuItem key={y} value={y}>{y}년</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <Stack direction="row" spacing={1.5}>
+            {/* ── 기본 정보 ── */}
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 1.2 }}>
+                <PersonIcon sx={{ fontSize: 18, color: '#1565C0' }} />
+                <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#1565C0', letterSpacing: 0.3 }}>
+                  기본 정보
+                </Typography>
+              </Box>
               <TextField
-                label="키 (cm)"
+                label="이름 *"
                 size="small"
-                type="number"
-                value={form.height}
-                onChange={handleChange('height')}
-                sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                fullWidth
+                value={form.name}
+                onChange={handleChange('name')}
+                sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
               />
+              <Stack direction="row" spacing={1.2}>
+                <Box sx={{ flex: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                    <CakeIcon sx={{ fontSize: 14, color: '#888' }} />
+                    <Typography sx={{ fontSize: '0.7rem', color: '#888', fontWeight: 600 }}>생년</Typography>
+                  </Box>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    type="number"
+                    placeholder="1990"
+                    value={form.birthYear}
+                    onChange={handleChange('birthYear')}
+                    inputProps={{ min: 1950, max: CURRENT_YEAR }}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                  />
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                    <HeightIcon sx={{ fontSize: 14, color: '#888' }} />
+                    <Typography sx={{ fontSize: '0.7rem', color: '#888', fontWeight: 600 }}>키 (cm)</Typography>
+                  </Box>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    type="number"
+                    placeholder="175"
+                    value={form.height}
+                    onChange={handleChange('height')}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                  />
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                    <FitnessCenterIcon sx={{ fontSize: 14, color: '#888' }} />
+                    <Typography sx={{ fontSize: '0.7rem', color: '#888', fontWeight: 600 }}>몸무게</Typography>
+                  </Box>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    type="number"
+                    placeholder="75"
+                    value={form.weight}
+                    onChange={handleChange('weight')}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                  />
+                </Box>
+              </Stack>
+            </Box>
+
+            <Divider />
+
+            {/* ── 포지션 ── */}
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 1 }}>
+                <SportsSoccerIcon sx={{ fontSize: 18, color: '#2E7D32' }} />
+                <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#2E7D32', letterSpacing: 0.3 }}>
+                  포지션
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6 }}>
+                {POSITIONS.map((p) => {
+                  const active = form.position === p.value;
+                  return (
+                    <Chip
+                      key={p.value}
+                      label={`${p.emoji} ${p.label}`}
+                      onClick={() => setField('position', active ? '' : p.value)}
+                      sx={{
+                        fontWeight: active ? 900 : 600,
+                        fontSize: '0.82rem',
+                        height: 34,
+                        bgcolor: active ? p.color : '#F5F5F5',
+                        color: active ? 'white' : '#333',
+                        border: active ? `2px solid ${p.color}` : '1px solid transparent',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                        transform: active ? 'scale(1.05)' : 'scale(1)',
+                        boxShadow: active ? `0 3px 8px ${p.color}55` : 'none',
+                        '&:hover': { bgcolor: active ? p.color : '#E0E0E0' },
+                      }}
+                    />
+                  );
+                })}
+              </Box>
+            </Box>
+
+            <Divider />
+
+            {/* ── 실력 ── */}
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 1 }}>
+                <BarChartIcon sx={{ fontSize: 18, color: '#F57C00' }} />
+                <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#F57C00', letterSpacing: 0.3 }}>
+                  실력
+                </Typography>
+                {selectedSkill && (
+                  <Typography sx={{ fontSize: '0.68rem', color: '#999', ml: 'auto' }}>
+                    {selectedSkill.desc}
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ display: 'flex', gap: 0.5 }}>
+                {SKILLS.map((s) => {
+                  const active = form.skill === s.value;
+                  return (
+                    <Box
+                      key={s.value}
+                      onClick={() => setField('skill', active ? '' : s.value)}
+                      sx={{
+                        flex: 1, py: 0.8, textAlign: 'center',
+                        borderRadius: 1.5, cursor: 'pointer',
+                        bgcolor: active ? s.color : '#F5F5F5',
+                        color: active ? 'white' : '#666',
+                        fontWeight: active ? 900 : 600,
+                        fontSize: '0.72rem',
+                        border: active ? `2px solid ${s.color}` : '1px solid transparent',
+                        transition: 'all 0.15s',
+                        transform: active ? 'scale(1.08)' : 'scale(1)',
+                        boxShadow: active ? `0 3px 8px ${s.color}55` : 'none',
+                        '&:hover': { bgcolor: active ? s.color : '#E0E0E0' },
+                      }}
+                    >
+                      {s.label}
+                    </Box>
+                  );
+                })}
+              </Box>
+              {/* 시각적 바 */}
+              {selectedSkill && (
+                <Box sx={{ mt: 0.8, height: 4, borderRadius: 2, bgcolor: '#E0E0E0', overflow: 'hidden' }}>
+                  <Box sx={{
+                    width: selectedSkill.width,
+                    height: '100%',
+                    borderRadius: 2,
+                    bgcolor: selectedSkill.color,
+                    transition: 'width 0.3s ease',
+                  }} />
+                </Box>
+              )}
+            </Box>
+
+            <Divider />
+
+            {/* ── 클럽 ── */}
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 0.8 }}>
+                <GroupsIcon sx={{ fontSize: 18, color: '#7B1FA2' }} />
+                <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#7B1FA2', letterSpacing: 0.3 }}>
+                  클럽
+                </Typography>
+              </Box>
               <TextField
-                label="몸무게 (kg)"
                 size="small"
-                type="number"
-                value={form.weight}
-                onChange={handleChange('weight')}
-                sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                fullWidth
+                value={form.club}
+                onChange={handleChange('club')}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
               />
-            </Stack>
-
-            <FormControl size="small" fullWidth>
-              <InputLabel>포지션</InputLabel>
-              <Select
-                label="포지션"
-                value={form.position}
-                onChange={handleChange('position')}
-                sx={{ borderRadius: 2 }}
-              >
-                <MenuItem value="">선택 안 함</MenuItem>
-                {POSITIONS.map((p) => (
-                  <MenuItem key={p.value} value={p.value}>{p.label}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl size="small" fullWidth>
-              <InputLabel>실력</InputLabel>
-              <Select
-                label="실력"
-                value={form.skill}
-                onChange={handleChange('skill')}
-                sx={{ borderRadius: 2 }}
-              >
-                <MenuItem value="">선택 안 함</MenuItem>
-                {SKILLS.map((s) => (
-                  <MenuItem key={s} value={s}>{s}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <TextField
-              label="클럽"
-              size="small"
-              fullWidth
-              value={form.club}
-              onChange={handleChange('club')}
-              helperText="⚠ 클럽 변경 시 기존 경기 기록은 이전 클럽에 남습니다"
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
+              <Typography sx={{ fontSize: '0.68rem', color: '#999', mt: 0.5, pl: 0.5 }}>
+                ⚠ 클럽 변경 시 기존 경기 기록은 이전 클럽에 남습니다
+              </Typography>
+            </Box>
 
             {/* 액션 */}
             <Box sx={{ display: 'flex', gap: 1, pt: 0.5 }}>
@@ -218,7 +329,7 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
                 fullWidth variant="outlined"
                 onClick={onClose}
                 disabled={saving}
-                sx={{ borderRadius: 2 }}
+                sx={{ borderRadius: 2, color: '#666', borderColor: '#ccc' }}
               >
                 취소
               </Button>
@@ -229,7 +340,8 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
                 disabled={saving}
                 sx={{
                   borderRadius: 2, fontWeight: 800,
-                  background: 'linear-gradient(135deg, #1565C0, #0D47A1)',
+                  background: 'linear-gradient(135deg, #2D336B, #1A1D4E)',
+                  '&:hover': { background: 'linear-gradient(135deg, #1A1D4E, #0D1030)' },
                 }}
               >
                 {saving ? '저장 중...' : '저장'}

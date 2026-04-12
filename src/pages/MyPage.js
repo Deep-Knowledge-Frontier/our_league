@@ -24,6 +24,8 @@ import AccountDeleteDialog from '../components/AccountDeleteDialog';
 import OnboardingModal from '../components/OnboardingModal';
 import PositionAvatar from '../components/PositionAvatar';
 import SchoolIcon from '@mui/icons-material/School';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { signOut } from 'firebase/auth';
 import { Radar, Line } from 'react-chartjs-2';
 import {
@@ -1830,102 +1832,99 @@ export default function MyPage() {
           </Paper>
         )}
 
-        {/* -- 계정 관리 섹션 -- */}
-        <Paper sx={{ borderRadius: 3, p: 2, mb: 2, boxShadow: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-            <SettingsIcon sx={{ color: '#2D336B', fontSize: 22 }} />
-            <Typography sx={{ fontWeight: 900, fontSize: '1rem', color: '#2D336B' }}>
-              계정 관리
-            </Typography>
-          </Box>
-
-          {/* 상단 액션 버튼들 */}
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<EditIcon />}
-              onClick={() => setProfileEditOpen(true)}
+        {/* -- 계정 관리 섹션 (iOS Settings / Material You 스타일) -- */}
+        {(() => {
+          // 설정 row 렌더 헬퍼
+          const SettingsRow = ({ icon, iconColor, label, onClick, isLast, danger }) => (
+            <Box
+              onClick={onClick}
               sx={{
-                borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start',
-                borderColor: '#1565C0', color: '#1565C0',
-                '&:hover': { borderColor: '#0D47A1', bgcolor: '#E3F2FD' },
+                display: 'flex', alignItems: 'center', gap: 1.2,
+                py: 1.3, px: 1.5,
+                cursor: 'pointer',
+                borderBottom: isLast ? 'none' : '1px solid #F0F0F0',
+                transition: 'background 0.15s',
+                '&:hover': { bgcolor: danger ? '#FFF5F5' : '#F8F9FA' },
+                '&:active': { bgcolor: danger ? '#FFEBEE' : '#EEEFF1' },
               }}
             >
-              개인정보 수정
-            </Button>
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<HelpOutlineIcon />}
-              onClick={() => setHelpOpen(true)}
-              sx={{
-                borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start',
-                borderColor: '#7B1FA2', color: '#7B1FA2',
-                '&:hover': { borderColor: '#4A148C', bgcolor: '#F3E5F5' },
-              }}
-            >
-              도움말 / Q&amp;A
-            </Button>
+              <Box sx={{
+                width: 32, height: 32, borderRadius: 2,
+                bgcolor: danger ? '#FFEBEE' : `${iconColor}12`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                {icon}
+              </Box>
+              <Typography sx={{
+                flex: 1, fontWeight: 600, fontSize: '0.88rem',
+                color: danger ? '#C62828' : '#333',
+              }}>
+                {label}
+              </Typography>
+              {!danger && <ChevronRightIcon sx={{ fontSize: 20, color: '#BDBDBD' }} />}
+            </Box>
+          );
 
-            {/* 튜토리얼 다시 보기 */}
-            {canAdmin && (
-              <Button
-                fullWidth
-                variant="outlined"
-                startIcon={<SchoolIcon />}
-                onClick={() => setReplayTour('admin')}
-                sx={{
-                  borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start',
-                  borderColor: '#1565C0', color: '#1565C0',
-                  '&:hover': { borderColor: '#0D47A1', bgcolor: '#E3F2FD' },
-                }}
-              >
-                📖 관리자 튜토리얼 다시 보기
-              </Button>
-            )}
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<SchoolIcon />}
-              onClick={() => setReplayTour('captain')}
-              sx={{
-                borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start',
-                borderColor: '#7B1FA2', color: '#7B1FA2',
-                '&:hover': { borderColor: '#4A148C', bgcolor: '#F3E5F5' },
-              }}
-            >
-              🎖 주장 튜토리얼 다시 보기
-            </Button>
-            <Button
-              fullWidth
-              variant="outlined"
-              color="error"
-              startIcon={<LogoutIcon />}
-              onClick={handleLogout}
-              sx={{ borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start' }}
-            >
-              로그아웃
-            </Button>
-          </Box>
+          return (
+            <>
+              {/* 일반 메뉴 그룹 */}
+              <Paper sx={{
+                borderRadius: 3, mb: 1.5, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                overflow: 'hidden', border: '1px solid #F0F0F0',
+              }}>
+                <SettingsRow
+                  icon={<EditIcon sx={{ fontSize: 18, color: '#1565C0' }} />}
+                  iconColor="#1565C0"
+                  label="개인정보 수정"
+                  onClick={() => setProfileEditOpen(true)}
+                />
+                <SettingsRow
+                  icon={<HelpOutlineIcon sx={{ fontSize: 18, color: '#7B1FA2' }} />}
+                  iconColor="#7B1FA2"
+                  label="도움말 / Q&A"
+                  onClick={() => setHelpOpen(true)}
+                />
+                {canAdmin && (
+                  <SettingsRow
+                    icon={<SchoolIcon sx={{ fontSize: 18, color: '#1565C0' }} />}
+                    iconColor="#1565C0"
+                    label="관리자 가이드"
+                    onClick={() => setReplayTour('admin')}
+                  />
+                )}
+                <SettingsRow
+                  icon={<SchoolIcon sx={{ fontSize: 18, color: '#EF6C00' }} />}
+                  iconColor="#EF6C00"
+                  label="주장 가이드"
+                  onClick={() => setReplayTour('captain')}
+                  isLast
+                />
+              </Paper>
 
-          <Divider sx={{ my: 1.5 }} />
-
-          {/* 위험 구역 */}
-          <Button
-            fullWidth
-            variant="text"
-            startIcon={<DeleteForeverIcon sx={{ fontSize: '18px !important' }} />}
-            onClick={() => setAccountDeleteOpen(true)}
-            sx={{
-              borderRadius: 2, py: 0.8, fontWeight: 600, fontSize: '0.82rem',
-              color: '#999',
-              '&:hover': { bgcolor: '#FFEBEE', color: '#C62828' },
-            }}
-          >
-            회원 탈퇴
-          </Button>
-        </Paper>
+              {/* 계정 액션 그룹 */}
+              <Paper sx={{
+                borderRadius: 3, mb: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                overflow: 'hidden', border: '1px solid #F0F0F0',
+              }}>
+                <SettingsRow
+                  icon={<LogoutIcon sx={{ fontSize: 18, color: '#546E7A' }} />}
+                  iconColor="#546E7A"
+                  label="로그아웃"
+                  onClick={handleLogout}
+                />
+                <SettingsRow
+                  icon={<WarningAmberIcon sx={{ fontSize: 18, color: '#C62828' }} />}
+                  iconColor="#C62828"
+                  label="회원 탈퇴"
+                  onClick={() => setAccountDeleteOpen(true)}
+                  danger
+                  isLast
+                />
+              </Paper>
+            </>
+          );
+        })()}
       </Container>
 
       {/* 다이얼로그들 */}
