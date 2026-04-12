@@ -35,11 +35,20 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_CONFIG } from '../config/app.config';
+import OnboardingModal from '../components/OnboardingModal';
+import { useOnboarding } from '../hooks/useOnboarding';
 
 export default function AdminPage() {
   const navigate = useNavigate();
   const { clubName, isAdmin, isModerator, isMaster, user, emailKey, loading: authLoading, authReady } = useAuth();
   const canAccess = isAdmin || isModerator || isMaster;
+
+  // 관리자 온보딩 투어 (첫 방문 시 자동 표시)
+  const adminOnboarding = useOnboarding({
+    role: 'admin',
+    emailKey,
+    enabled: (isAdmin || isModerator) && authReady && !!emailKey,
+  });
 
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState('');
@@ -2296,6 +2305,14 @@ export default function AdminPage() {
           <Button onClick={() => setClubAdminDialog(false)} variant="outlined">닫기</Button>
         </DialogActions>
       </Dialog>
+
+      {/* 관리자 온보딩 튜토리얼 (첫 방문 시 자동) */}
+      <OnboardingModal
+        open={adminOnboarding.shouldShow}
+        role="admin"
+        onComplete={adminOnboarding.markSeen}
+        onSkip={adminOnboarding.markSeen}
+      />
 
     </Box>
   );

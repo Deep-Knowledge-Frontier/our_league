@@ -19,6 +19,7 @@ import GroupsIcon from '@mui/icons-material/Groups';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import StopCircleIcon from '@mui/icons-material/StopCircle';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getFormations } from '../config/formations';
@@ -68,6 +69,8 @@ export default function ScoreRecordPage() {
   const [editIdx2, setEditIdx2] = useState(-1);
   const [selectedMvp, setSelectedMvp] = useState(null);
   const [endDialog, setEndDialog] = useState(false);
+  // 경기 중단(그만하기) 다이얼로그
+  const [stopDialog, setStopDialog] = useState(false);
   const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
   const [customMatchOrder, setCustomMatchOrder] = useState(null);
 
@@ -571,7 +574,27 @@ export default function ScoreRecordPage() {
             <ArrowBackIcon />
           </IconButton>
           <Typography sx={{ fontWeight: 900, fontSize: '1.15rem', color: 'white', flex: 1 }}>점수 기록</Typography>
-          <Chip label={dateParam} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 600 }} />
+          <Chip label={dateParam} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 600, mr: 0.8 }} />
+          {canEdit && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<StopCircleIcon sx={{ fontSize: '16px !important' }} />}
+              onClick={() => setStopDialog(true)}
+              sx={{
+                color: 'white',
+                borderColor: 'rgba(255,255,255,0.5)',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                py: 0.3,
+                px: 1,
+                minWidth: 'auto',
+                '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' },
+              }}
+            >
+              그만하기
+            </Button>
+          )}
         </Box>
 
         {/* 경기 네비게이션 */}
@@ -1077,6 +1100,43 @@ export default function ScoreRecordPage() {
           <Button variant="contained" startIcon={<EmojiEventsIcon />}
             onClick={() => canEdit ? saveToFirebase(goalList1, goalList2, () => navigate('/results')) : navigate('/results')}>
             예
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 경기 중단(그만하기) 다이얼로그 */}
+      <Dialog open={stopDialog} onClose={() => setStopDialog(false)}>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <StopCircleIcon sx={{ color: '#F57C00' }} />
+            경기 그만하기
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: '0.9rem', mb: 1 }}>
+            지금까지 기록한 <b>{gameNumber}경기</b>까지의 결과를 저장하고 나가시겠습니까?
+          </Typography>
+          <Typography sx={{ fontSize: '0.78rem', color: '#666' }}>
+            • 현재 입력한 골/어시스트는 자동 저장됩니다<br />
+            • 나머지 경기는 나중에 이어서 기록할 수 있어요<br />
+            • 경기운영 화면으로 돌아갑니다
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStopDialog(false)}>계속 기록</Button>
+          <Button
+            variant="contained"
+            color="warning"
+            startIcon={<StopCircleIcon />}
+            onClick={() => {
+              if (canEdit) {
+                saveToFirebase(goalList1, goalList2, () => navigate(`/player-select?date=${dateParam}`));
+              } else {
+                navigate(`/player-select?date=${dateParam}`);
+              }
+            }}
+          >
+            저장하고 나가기
           </Button>
         </DialogActions>
       </Dialog>

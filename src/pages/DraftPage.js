@@ -20,6 +20,8 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import FormationField from '../components/FormationField';
+import OnboardingModal from '../components/OnboardingModal';
+import { useOnboarding } from '../hooks/useOnboarding';
 import { getFormations, getDefaultFormation } from '../config/formations';
 
 // 간단 자동 배치 (공격 → 미드 → 수비 → GK 순으로 주어진 팀원을 채움)
@@ -61,7 +63,7 @@ const TEAM_THEME = {
 export default function DraftPage() {
   const { date } = useParams();
   const navigate = useNavigate();
-  const { clubName, userName, isAdmin, isModerator, authReady, user } = useAuth();
+  const { clubName, userName, emailKey, isAdmin, isModerator, authReady, user } = useAuth();
   const canAdmin = isAdmin || isModerator;
 
   const [loading, setLoading] = useState(true);
@@ -151,6 +153,13 @@ export default function DraftPage() {
   }, [draft, userName, devCaptainOverride]);
 
   const isMyTurn = status === 'active' && myTeamCode && currentTeamCode === myTeamCode;
+
+  // 주장 온보딩 투어 — 처음 주장이 된 유저에게 자동 표시 (impersonate 시에는 표시 안 함)
+  const captainOnboarding = useOnboarding({
+    role: 'captain',
+    emailKey,
+    enabled: authReady && !!emailKey && !!myTeamCode && !devCaptainOverride,
+  });
 
   // ── 셋업 단계 액션 ──
   // 최대 3명까지만 주장으로 선정 가능 (A/B/C 팀)
@@ -985,6 +994,12 @@ export default function DraftPage() {
             🛡 관리자 모드 (주장 재선정)
           </Button>
         )}
+        <OnboardingModal
+          open={captainOnboarding.shouldShow}
+          role="captain"
+          onComplete={captainOnboarding.markSeen}
+          onSkip={captainOnboarding.markSeen}
+        />
       </Container>
     );
   }
@@ -1506,6 +1521,12 @@ export default function DraftPage() {
             <Button onClick={confirmDraft} variant="contained">확정</Button>
           </DialogActions>
         </Dialog>
+        <OnboardingModal
+          open={captainOnboarding.shouldShow}
+          role="captain"
+          onComplete={captainOnboarding.markSeen}
+          onSkip={captainOnboarding.markSeen}
+        />
       </Container>
     );
   }
@@ -1805,6 +1826,12 @@ export default function DraftPage() {
           🛡 관리자 모드 (주장 재선정/취소)
         </Button>
       )}
+      <OnboardingModal
+        open={captainOnboarding.shouldShow}
+        role="captain"
+        onComplete={captainOnboarding.markSeen}
+        onSkip={captainOnboarding.markSeen}
+      />
     </Container>
   );
 }

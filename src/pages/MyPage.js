@@ -14,6 +14,15 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import StarIcon from '@mui/icons-material/Star';
 import MilitaryTechIcon from '@mui/icons-material/MilitaryTech';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
+import EditIcon from '@mui/icons-material/Edit';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
+import SettingsIcon from '@mui/icons-material/Settings';
+import HelpDialog from '../components/HelpDialog';
+import ProfileEditDialog from '../components/ProfileEditDialog';
+import AccountDeleteDialog from '../components/AccountDeleteDialog';
+import OnboardingModal from '../components/OnboardingModal';
+import SchoolIcon from '@mui/icons-material/School';
 import { signOut } from 'firebase/auth';
 import { Radar, Line } from 'react-chartjs-2';
 import {
@@ -49,11 +58,18 @@ function extractTeamRoster(rosterData, teamName, fallbackKey) {
 
 export default function MyPage() {
   const navigate = useNavigate();
-  const { clubName, userName, emailKey, user, isMaster, viewingClub, setViewingClub, realClubName, authReady, isDemoGuest } = useAuth();
+  const { clubName, userName, emailKey, user, isAdmin, isModerator, isMaster, viewingClub, setViewingClub, realClubName, authReady, isDemoGuest } = useAuth();
+  const canAdmin = isAdmin || isModerator;
 
   const [loading, setLoading] = useState(true);
   const [clubList, setClubList] = useState([]);
   const [userInfo, setUserInfo] = useState(null);
+  // 계정 관리 다이얼로그 state
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [accountDeleteOpen, setAccountDeleteOpen] = useState(false);
+  // 튜토리얼 재생 (null | 'admin' | 'captain')
+  const [replayTour, setReplayTour] = useState(null);
   const [memberInfo, setMemberInfo] = useState(null);
   const [allMembers, setAllMembers] = useState({});
   const [clickedBox, setClickedBox] = useState(null); // 프로필 박스 클릭 상태
@@ -1798,18 +1814,129 @@ export default function MyPage() {
           </Paper>
         )}
 
-        {/* -- 로그아웃 -- */}
-        <Button
-          fullWidth
-          variant="outlined"
-          color="error"
-          startIcon={<LogoutIcon />}
-          onClick={handleLogout}
-          sx={{ borderRadius: 2, py: 1.2, fontWeight: 'bold', mb: 2 }}
-        >
-          로그아웃
-        </Button>
+        {/* -- 계정 관리 섹션 -- */}
+        <Paper sx={{ borderRadius: 3, p: 2, mb: 2, boxShadow: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <SettingsIcon sx={{ color: '#2D336B', fontSize: 22 }} />
+            <Typography sx={{ fontWeight: 900, fontSize: '1rem', color: '#2D336B' }}>
+              계정 관리
+            </Typography>
+          </Box>
+
+          {/* 상단 액션 버튼들 */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<EditIcon />}
+              onClick={() => setProfileEditOpen(true)}
+              sx={{
+                borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start',
+                borderColor: '#1565C0', color: '#1565C0',
+                '&:hover': { borderColor: '#0D47A1', bgcolor: '#E3F2FD' },
+              }}
+            >
+              개인정보 수정
+            </Button>
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<HelpOutlineIcon />}
+              onClick={() => setHelpOpen(true)}
+              sx={{
+                borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start',
+                borderColor: '#7B1FA2', color: '#7B1FA2',
+                '&:hover': { borderColor: '#4A148C', bgcolor: '#F3E5F5' },
+              }}
+            >
+              도움말 / Q&amp;A
+            </Button>
+
+            {/* 튜토리얼 다시 보기 */}
+            {canAdmin && (
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<SchoolIcon />}
+                onClick={() => setReplayTour('admin')}
+                sx={{
+                  borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start',
+                  borderColor: '#1565C0', color: '#1565C0',
+                  '&:hover': { borderColor: '#0D47A1', bgcolor: '#E3F2FD' },
+                }}
+              >
+                📖 관리자 튜토리얼 다시 보기
+              </Button>
+            )}
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<SchoolIcon />}
+              onClick={() => setReplayTour('captain')}
+              sx={{
+                borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start',
+                borderColor: '#7B1FA2', color: '#7B1FA2',
+                '&:hover': { borderColor: '#4A148C', bgcolor: '#F3E5F5' },
+              }}
+            >
+              🎖 주장 튜토리얼 다시 보기
+            </Button>
+            <Button
+              fullWidth
+              variant="outlined"
+              color="error"
+              startIcon={<LogoutIcon />}
+              onClick={handleLogout}
+              sx={{ borderRadius: 2, py: 1.1, fontWeight: 700, justifyContent: 'flex-start' }}
+            >
+              로그아웃
+            </Button>
+          </Box>
+
+          <Divider sx={{ my: 1.5 }} />
+
+          {/* 위험 구역 */}
+          <Button
+            fullWidth
+            variant="text"
+            startIcon={<DeleteForeverIcon sx={{ fontSize: '18px !important' }} />}
+            onClick={() => setAccountDeleteOpen(true)}
+            sx={{
+              borderRadius: 2, py: 0.8, fontWeight: 600, fontSize: '0.82rem',
+              color: '#999',
+              '&:hover': { bgcolor: '#FFEBEE', color: '#C62828' },
+            }}
+          >
+            회원 탈퇴
+          </Button>
+        </Paper>
       </Container>
+
+      {/* 다이얼로그들 */}
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <ProfileEditDialog
+        open={profileEditOpen}
+        onClose={() => setProfileEditOpen(false)}
+        emailKey={emailKey}
+        onSaved={() => {
+          // 저장 후 페이지 새로고침하여 프로필 반영
+          window.location.reload();
+        }}
+      />
+      <AccountDeleteDialog
+        open={accountDeleteOpen}
+        onClose={() => setAccountDeleteOpen(false)}
+        emailKey={emailKey}
+        userName={userName}
+        clubName={clubName}
+      />
+      {/* 튜토리얼 다시 보기 */}
+      <OnboardingModal
+        open={replayTour !== null}
+        role={replayTour || 'admin'}
+        onComplete={() => setReplayTour(null)}
+        onSkip={() => setReplayTour(null)}
+      />
 
     </Box>
   );

@@ -14,6 +14,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ShieldIcon from '@mui/icons-material/Shield';
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { db } from '../config/firebase';
@@ -225,6 +226,8 @@ export default function PlayerSelectPage() {
   const [editingTeamName, setEditingTeamName] = useState(null); // 'A' | 'B' | 'C' | null
   const [teamCaptains, setTeamCaptains] = useState({ A: '', B: '', C: '' });
   const [matchOrder, setMatchOrder] = useState([]);  // [['A','B'], ['A','C'], ['B','C']]
+  // 해당 경기일에 이미 기록된 경기 결과가 있는지 (DailyResultsBackup 체크)
+  const [hasMatchResults, setHasMatchResults] = useState(false);
   const [swapMatch, setSwapMatch] = useState(null);  // index of match being swapped
 
   // 포메이션 관리
@@ -244,6 +247,20 @@ export default function PlayerSelectPage() {
       setRegisteredPlayers(Object.values(v).map(p => p.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko')));
     });
   }, [clubName]);
+
+  // 해당 경기일에 이미 기록된 경기 결과가 있는지 체크 (실시간)
+  useEffect(() => {
+    if (!clubName || !dateParam) return;
+    return onValue(ref(db, `DailyResultsBackup/${clubName}/${dateParam}`), (snap) => {
+      if (!snap.exists()) { setHasMatchResults(false); return; }
+      const v = snap.val();
+      const matches = v?.matches;
+      const hasAny = Array.isArray(matches)
+        ? matches.length > 0
+        : matches && Object.keys(matches).length > 0;
+      setHasMatchResults(!!hasAny);
+    });
+  }, [clubName, dateParam]);
 
   useEffect(() => {
     return onValue(ref(db, `PlayerStatsBackup_6m/${clubName}`), snap => {
@@ -521,7 +538,19 @@ export default function PlayerSelectPage() {
     catch (e) { alert('저장 실패: ' + e.message); }
   }, [clubName, dateParam, teamCount, matchOrder]);
 
+  // 경기 기록이 있으면 MatchDetailPage(경기 1)로, 없으면 ScoreRecordPage(새 기록)로
   const goToScoreRecord = useCallback(() => {
+    saveTeams(teams, keyPop, () => {
+      if (hasMatchResults) {
+        navigate(`/match/${dateParam}/1`);
+      } else {
+        navigate(`/score-record?date=${dateParam}&teamCount=${teamCount}&matchesPerTeam=${MATCHES_PER_TEAM}&game=1`);
+      }
+    });
+  }, [teams, keyPop, saveTeams, navigate, dateParam, teamCount, hasMatchResults]);
+
+  // 기록 수정 (편집 모드) — 기록이 있을 때 별도로 접근
+  const goToScoreEdit = useCallback(() => {
     saveTeams(teams, keyPop, () => {
       navigate(`/score-record?date=${dateParam}&teamCount=${teamCount}&matchesPerTeam=${MATCHES_PER_TEAM}&game=1`);
     });
@@ -964,12 +993,41 @@ export default function PlayerSelectPage() {
           )}
 
           {canEdit && !editMode && (
-            <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-              <Button variant="outlined" fullWidth startIcon={<SaveIcon />} onClick={() => saveTeams(teams, keyPop)}
-                sx={{ borderRadius: 2, fontWeight: 'bold' }}>저장만 하기</Button>
-              <Button variant="contained" fullWidth startIcon={<PlayArrowIcon />} onClick={goToScoreRecord}
-                sx={{ borderRadius: 2, fontWeight: 'bold', bgcolor: '#1565C0' }}>게임 진행</Button>
-            </Box>
+            <>
+              <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                <Button variant="outlined" fullWidth startIcon={<SaveIcon />} onClick={() => saveTeams(teams, keyPop)}
+                  sx={{ borderRadius: 2, fontWeight: 'bold' }}>저장만 하기</Button>
+                <Button
+                  variant="contained"
+                  fullWidth
+                  startIcon={hasMatchResults ? <EmojiEventsIcon /> : <PlayArrowIcon />}
+                  onClick={goToScoreRecord}
+                  sx={{
+                    borderRadius: 2, fontWeight: 'bold',
+                    bgcolor: hasMatchResults ? '#2E7D32' : '#1565C0',
+                    '&:hover': { bgcolor: hasMatchResults ? '#1B5E20' : '#0D47A1' },
+                  }}
+                >
+                  {hasMatchResults ? '경기별 점수 보기' : '게임 진행'}
+                </Button>
+              </Box>
+              {hasMatchResults && (
+                <Button
+                  fullWidth
+                  variant="text"
+                  size="small"
+                  startIcon={<EditIcon sx={{ fontSize: '16px !important' }} />}
+                  onClick={goToScoreEdit}
+                  sx={{
+                    mt: 0.8, borderRadius: 2, fontSize: '0.78rem', fontWeight: 600,
+                    color: '#666',
+                    '&:hover': { bgcolor: '#F0F2F5' },
+                  }}
+                >
+                  기록 수정 (편집 모드)
+                </Button>
+              )}
+            </>
           )}
         </Paper>
       )}
