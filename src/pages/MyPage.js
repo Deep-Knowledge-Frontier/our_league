@@ -22,6 +22,7 @@ import HelpDialog from '../components/HelpDialog';
 import ProfileEditDialog from '../components/ProfileEditDialog';
 import AccountDeleteDialog from '../components/AccountDeleteDialog';
 import OnboardingModal from '../components/OnboardingModal';
+import PositionAvatar from '../components/PositionAvatar';
 import SchoolIcon from '@mui/icons-material/School';
 import { signOut } from 'firebase/auth';
 import { Radar, Line } from 'react-chartjs-2';
@@ -1008,23 +1009,38 @@ export default function MyPage() {
     <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
       <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
 
-        {/* -- 헤더 카드 -- */}
-        <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
-          background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)' }}>
-          <CardContent sx={{ py: 3, textAlign: 'center' }}>
-            <Avatar sx={{ width: 60, height: 60, mx: 'auto', mb: 1, bgcolor: 'rgba(255,255,255,0.2)' }}>
-              <PersonIcon sx={{ fontSize: 35 }} />
-            </Avatar>
-            <Typography variant="h5" sx={{ color: 'white', fontWeight: 900 }}>
-              {userName}
-            </Typography>
-            <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', mt: 0.3 }}>
-              {clubName}
-            </Typography>
-            {memberInfo?.no && (
-              <Chip label={`#${memberInfo.no}`} size="small"
-                sx={{ mt: 1, bgcolor: 'rgba(255,255,255,0.15)', color: 'white', fontWeight: 'bold' }} />
-            )}
+        {/* -- 헤더 카드 -- (컴팩트 horizontal 레이아웃) */}
+        <Card sx={{
+          mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
+          background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)',
+        }}>
+          <CardContent sx={{ py: 1.8, px: 2.5, '&:last-child': { pb: 1.8 } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.8 }}>
+              <PositionAvatar position={userInfo?.position} size={58} showLabel />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{
+                  color: 'white', fontWeight: 900, fontSize: '1.25rem', lineHeight: 1.2,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {userName}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mt: 0.4 }}>
+                  <Typography sx={{
+                    color: 'rgba(255,255,255,0.6)', fontSize: '0.8rem',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {clubName}
+                  </Typography>
+                  {memberInfo?.no && (
+                    <Chip label={`#${memberInfo.no}`} size="small"
+                      sx={{
+                        bgcolor: 'rgba(255,255,255,0.15)', color: 'white',
+                        fontWeight: 700, fontSize: '0.68rem', height: 18, px: 0.3,
+                      }} />
+                  )}
+                </Box>
+              </Box>
+            </Box>
           </CardContent>
         </Card>
 
