@@ -85,7 +85,8 @@ export function AuthProvider({ children }) {
 
   const userName = isDemoGuest ? '체험 사용자' : (userData?.name || user?.displayName || user?.email?.split('@')[0] || '');
   const realClubName = userData?.club || '';
-  const isMaster = !!(user?.email && APP_CONFIG.masterEmails?.includes(user.email));
+  // 이메일 비교는 소문자 정규화 (masterEmails는 이미 소문자로 파싱됨)
+  const isMaster = !!(user?.email && APP_CONFIG.masterEmails?.includes(user.email.toLowerCase()));
 
   // 마스터 전용: 다른 클럽 조회
   const [viewingClub, setViewingClub] = useState('');

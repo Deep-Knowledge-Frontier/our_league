@@ -1,0 +1,7 @@
+{
+  "_comment": "⚠️ 이 파일은 Firebase EMULATOR 전용입니다. 프로덕션 DB에 절대 배포되지 않습니다. 프로덕션 DB 규칙은 Firebase Console에서 관리하세요.",
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}

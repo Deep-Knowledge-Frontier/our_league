@@ -31,12 +31,12 @@
       { "source": "**", "destination": "/index.html" }
     ]
   },
-  "database": {
-    "rules": "database.rules.json"
-  },
   "emulators": {
     "auth": { "port": 9099 },
-    "database": { "port": 9000 },
+    "database": {
+      "port": 9000,
+      "rules": "database.rules.emulator.json"
+    },
     "ui": { "enabled": true, "port": 4000 },
     "singleProjectMode": true
   }

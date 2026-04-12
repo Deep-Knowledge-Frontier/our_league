@@ -1,4 +1,16 @@
 // 클럽 설정 - 이 파일만 수정하면 다른 클럽도 사용 가능
+
+// 마스터 관리자 이메일을 환경변수에서 파싱 (.env REACT_APP_MASTER_EMAILS)
+// 쉼표로 여러 개 구분 가능. 환경변수가 없으면 빈 배열.
+// 이렇게 하면 소스 코드에 실제 이메일이 하드코딩되지 않습니다.
+const parseMasterEmails = () => {
+  const raw = process.env.REACT_APP_MASTER_EMAILS || '';
+  return raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+};
+
 export const APP_CONFIG = {
   clubName: '한강FC',
   appTitle: '우리들의 리그',
@@ -26,6 +38,6 @@ export const APP_CONFIG = {
   timeSlotMinutes: 30,
   timeWindowMinutes: 120,
 
-  // 마스터 관리자 이메일 (전체 팀 관리 권한)
-  masterEmails: ['idisyun@gmail.com'],
+  // 마스터 관리자 이메일 (전체 팀 관리 권한) - 환경변수에서 로드
+  masterEmails: parseMasterEmails(),
 };
