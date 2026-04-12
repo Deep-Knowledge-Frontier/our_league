@@ -73,6 +73,8 @@ export default function ScoreRecordPage() {
   const [stopDialog, setStopDialog] = useState(false);
   const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
   const [customMatchOrder, setCustomMatchOrder] = useState(null);
+  // 6개월 능력치 (abilityScore) 맵 — 무승부 시 MVP 선정용
+  const [statsMap, setStatsMap] = useState({});
 
   // 포메이션 관련 상태
   const [showLineup, setShowLineup] = useState(false);
@@ -155,6 +157,20 @@ export default function ScoreRecordPage() {
     });
   }, [clubName, dateParam, gameNumber]);
 
+  // 6개월 능력치 로드 (무승부 MVP 선정용)
+  useEffect(() => {
+    if (!clubName) return;
+    get(ref(db, `PlayerStatsBackup_6m/${clubName}`)).then((snap) => {
+      if (!snap.exists()) { setStatsMap({}); return; }
+      const v = snap.val() || {};
+      const map = {};
+      Object.entries(v).forEach(([name, data]) => {
+        map[name] = Number(data?.abilityScore || 0);
+      });
+      setStatsMap(map);
+    }).catch(() => setStatsMap({}));
+  }, [clubName]);
+
   // 포메이션 + 클럽 타입 로드
   useEffect(() => {
     if (!clubName) return;
@@ -202,47 +218,188 @@ export default function ScoreRecordPage() {
     return [...tp, ...registeredPlayers.filter(p => !tp.includes(p))];
   }, [teamSelections, currentMatch, registeredPlayers]);
 
+  // 경기 MVP 선정
+  // - 승부 있음: 우승팀 선수 중 공격 포인트(골+어시스트) 1위
+  // - 무승부: 양팀 참여 선수 중 6개월 능력치(abilityScore) 1위
   const computeMvp = useCallback((list1, list2) => {
-    if (list1.length === 0 && list2.length === 0) return NO_MVP;
+    const winTeam = list1.length > list2.length ? 1 : list2.length > list1.length ? 2 : 0;
+
+    // ── 무승부 또는 양팀 무득점 → 6개월 평점 최고 선수 ──
+    if (winTeam === 0) {
+      // 현재 경기에 참여 중인 양팀 로스터 수집 (자책골 라벨 제외)
+      const roster1 = (teamSelections[currentMatch[0]] || []).filter((p) => p !== OWN_GOAL_LABEL);
+      const roster2 = (teamSelections[currentMatch[1]] || []).filter((p) => p !== OWN_GOAL_LABEL);
+      const allPlayers = [...roster1, ...roster2];
+      if (allPlayers.length === 0) return NO_MVP;
+
+      // 능력치 내림차순 정렬 → 동률 시 이름순
+      const sorted = [...allPlayers].sort((a, b) => {
+        const sa = statsMap[a] || 0;
+        const sb = statsMap[b] || 0;
+        return sb - sa || a.localeCompare(b, 'ko');
+      });
+      return sorted[0] || NO_MVP;
+    }
+
+    // ── 승부 있음 → 우승팀 선수 중 공격 포인트 1위 ──
+    const winnerList = winTeam === 1 ? list1 : list2;
     const stats = {};
-    const count = (list, team) => list.forEach(r => {
+    winnerList.forEach((r) => {
       const parts = r.split(' | ');
       if (parts.length < 2) return;
       const names = parts[1].split(' - ');
       const scorer = names[0]?.trim();
       const assister = names[1]?.trim();
-      if (scorer && scorer !== OWN_GOAL_LABEL) { stats[scorer] = stats[scorer] || { goals: 0, assists: 0, team }; stats[scorer].goals++; }
-      if (assister && assister !== OWN_GOAL_LABEL) { stats[assister] = stats[assister] || { goals: 0, assists: 0, team }; stats[assister].assists++; }
+      // 자책골은 우승팀 득점으로 기록되지만 자책 선수는 패배팀 소속이므로 제외
+      if (scorer && scorer !== OWN_GOAL_LABEL) {
+        stats[scorer] = stats[scorer] || { goals: 0, assists: 0 };
+        stats[scorer].goals++;
+      }
+      if (assister && assister !== OWN_GOAL_LABEL) {
+        stats[assister] = stats[assister] || { goals: 0, assists: 0 };
+        stats[assister].assists++;
+      }
     });
-    count(list1, 1); count(list2, 2);
-    const winTeam = list1.length > list2.length ? 1 : list2.length > list1.length ? 2 : 0;
+
+    // 우승팀 선수 중 공격 포인트(골+어시스트) 가장 많은 선수 → 동률 시 골 많은 선수
     const sorted = Object.entries(stats).sort((a, b) => {
-      if (winTeam > 0) { const d = (b[1].team === winTeam ? 1 : 0) - (a[1].team === winTeam ? 1 : 0); if (d) return d; }
-      const d2 = (b[1].goals + b[1].assists) - (a[1].goals + a[1].assists); if (d2) return d2;
+      const d = (b[1].goals + b[1].assists) - (a[1].goals + a[1].assists);
+      if (d) return d;
       return b[1].goals - a[1].goals;
     });
     return sorted.length > 0 ? sorted[0][0] : NO_MVP;
-  }, []);
+  }, [teamSelections, currentMatch, statsMap]);
 
   const isTeam1Player = useCallback(n => (teamSelections[currentMatch[0]] || []).includes(n), [teamSelections, currentMatch]);
   const isTeam2Player = useCallback(n => (teamSelections[currentMatch[1]] || []).includes(n), [teamSelections, currentMatch]);
 
+  // 일일 우승팀 계산 + 해당 팀 선수 중 총 공격 포인트 1위를 일일 MVP로 선정
   const syncDailyResultsBackup = useCallback(async () => {
-    const snapshot = await get(ref(db, `${clubName}/${dateParam}`));
-    if (!snapshot.exists()) return;
+    const [gamesSnap, rosterSnap, teamNamesSnap] = await Promise.all([
+      get(ref(db, `${clubName}/${dateParam}`)),
+      get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`)),
+      get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamNames`)),
+    ]);
+    if (!gamesSnap.exists()) return;
+
     const matchesArr = [];
-    const mvpVotes = {};
-    snapshot.forEach(gameSnap => {
+    const points = {};   // { teamName: 승점 }
+    const gd = {};       // { teamName: 골득실 }
+    const gf = {};       // { teamName: 총 득점 }
+    const dailyStats = {}; // { playerName: { goals, assists } } — 일일 누적 공격 포인트
+
+    // 골 리스트에서 공격 포인트 집계 (자책골 라벨 제외)
+    const countForDaily = (list) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((entry) => {
+        const parts = String(entry).split(' | ');
+        if (parts.length < 2) return;
+        const names = parts[1].split(' - ');
+        const scorer = (names[0] || '').trim();
+        const assister = (names[1] || '').trim();
+        if (scorer && scorer !== OWN_GOAL_LABEL) {
+          dailyStats[scorer] = dailyStats[scorer] || { goals: 0, assists: 0 };
+          dailyStats[scorer].goals++;
+        }
+        if (assister && assister !== OWN_GOAL_LABEL) {
+          dailyStats[assister] = dailyStats[assister] || { goals: 0, assists: 0 };
+          dailyStats[assister].assists++;
+        }
+      });
+    };
+
+    gamesSnap.forEach((gameSnap) => {
       if (!String(gameSnap.key).startsWith('game')) return;
-      const gd = gameSnap.val() || {};
+      const g = gameSnap.val() || {};
       const gi = parseInt(String(gameSnap.key).replace('game', ''), 10);
-      const mvp = gd.mvp || NO_MVP;
-      matchesArr.push({ gameNumber: `${gi}경기`, team1: gd.team1_name || '', team2: gd.team2_name || '', score1: gd.goalCount1 || 0, score2: gd.goalCount2 || 0, mvp });
-      if (mvp && mvp !== NO_MVP) mvpVotes[mvp] = (mvpVotes[mvp] || 0) + 1;
+      const t1 = g.team1_name || '';
+      const t2 = g.team2_name || '';
+      const s1 = Number(g.goalCount1) || 0;
+      const s2 = Number(g.goalCount2) || 0;
+      const mvp = g.mvp || NO_MVP;
+
+      matchesArr.push({ gameNumber: `${gi}경기`, team1: t1, team2: t2, score1: s1, score2: s2, mvp });
+
+      // 승점 집계
+      if (t1) {
+        gf[t1] = (gf[t1] || 0) + s1;
+        gd[t1] = (gd[t1] || 0) + (s1 - s2);
+        points[t1] = (points[t1] || 0) + (s1 > s2 ? 3 : s1 === s2 ? 1 : 0);
+      }
+      if (t2) {
+        gf[t2] = (gf[t2] || 0) + s2;
+        gd[t2] = (gd[t2] || 0) + (s2 - s1);
+        points[t2] = (points[t2] || 0) + (s2 > s1 ? 3 : s1 === s2 ? 1 : 0);
+      }
+
+      // 일일 누적 공격 포인트 (양팀 모두)
+      countForDaily(g.goalList1);
+      countForDaily(g.goalList2);
     });
-    const dailyMvp = Object.keys(mvpVotes).length > 0 ? Object.entries(mvpVotes).sort((a, b) => b[1] - a[1])[0][0] : NO_MVP;
+
+    // 일일 우승팀 결정 (승점 → 골득실 → 득점 순)
+    const teamEntries = Object.entries(points);
+    let dailyWinnerName = null;
+    if (teamEntries.length > 0) {
+      teamEntries.sort((a, b) =>
+        (b[1] - a[1]) ||
+        ((gd[b[0]] || 0) - (gd[a[0]] || 0)) ||
+        ((gf[b[0]] || 0) - (gf[a[0]] || 0))
+      );
+      dailyWinnerName = teamEntries[0][0];
+    }
+
+    // 일일 우승팀 로스터 매핑 (TeamNames 커스텀명 → 기본 A/B/C → prefix 제거)
+    const roster = rosterSnap.exists() ? rosterSnap.val() : {};
+    const teamNames = teamNamesSnap.exists() ? teamNamesSnap.val() : {};
+    const toArr = (v) => (Array.isArray(v) ? v.filter(Boolean)
+                         : v && typeof v === 'object' ? Object.values(v).filter(Boolean)
+                         : []);
+
+    let dailyWinnerRoster = [];
+    if (dailyWinnerName) {
+      for (const code of ['A', 'B', 'C']) {
+        if (teamNames[code] === dailyWinnerName) {
+          dailyWinnerRoster = toArr(roster[code]);
+          break;
+        }
+      }
+      if (dailyWinnerRoster.length === 0 && ['A', 'B', 'C'].includes(dailyWinnerName)) {
+        dailyWinnerRoster = toArr(roster[dailyWinnerName]);
+      }
+      if (dailyWinnerRoster.length === 0) {
+        const clean = String(dailyWinnerName).replace(/^(팀\s*|Team\s*)/i, '').trim();
+        if (['A', 'B', 'C'].includes(clean)) {
+          dailyWinnerRoster = toArr(roster[clean]);
+        }
+      }
+    }
+
+    // 일일 MVP 선정:
+    // 1) 일일 우승팀 선수 중
+    // 2) 총 공격 포인트(골+어시스트) 최다 → 골 수 → 6개월 평점 → 이름순
+    let dailyMvp = NO_MVP;
+    if (dailyWinnerRoster.length > 0) {
+      const candidates = dailyWinnerRoster.map((name) => ({
+        name,
+        goals: dailyStats[name]?.goals || 0,
+        assists: dailyStats[name]?.assists || 0,
+        ability: statsMap[name] || 0,
+      }));
+      // 기여(골/어시스트)가 있는 선수만 1차 대상. 없으면 평점 최고.
+      const contributors = candidates.filter((p) => p.goals + p.assists > 0);
+      const pool = contributors.length > 0 ? contributors : candidates;
+      pool.sort((a, b) =>
+        (b.goals + b.assists) - (a.goals + a.assists) ||
+        b.goals - a.goals ||
+        b.ability - a.ability ||
+        a.name.localeCompare(b.name, 'ko')
+      );
+      if (pool.length > 0) dailyMvp = pool[0].name;
+    }
+
     await set(ref(db, `DailyResultsBackup/${clubName}/${dateParam}`), { matches: matchesArr, dailyMvp });
-  }, [clubName, dateParam]);
+  }, [clubName, dateParam, statsMap]);
 
   const saveToFirebase = useCallback(async (list1, list2, cb) => {
     if (!canEdit) return;
