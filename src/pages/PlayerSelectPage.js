@@ -1118,9 +1118,20 @@ export default function PlayerSelectPage() {
             </Box>
           )}
 
-          {/* ──────────── 축구 2팀 쿼터 좌우 포메이션 ──────────── */}
+          {/* ──────────── 축구 2팀 쿼터 포메이션 (팀 탭 + 단일 필드) ──────────── */}
           {useQuarterSystem && quarterCount > 1 && !editMode && (() => {
-            const fieldW = Math.min(160, (window.innerWidth - 60) / 2);
+            const activeTeamCode = expandFormation === 'B' ? 'B' : 'A';
+            const fieldW = Math.min(280, window.innerWidth - 80);
+            const code = activeTeamCode;
+            const th = theme[code] || theme.A;
+            const teamPlayers = displayTeams[code] || [];
+            const tf = quarterFormations?.[code]?.[activeQuarterTab] || teamFormations[code] || {};
+            const fmId = tf.formationId || clubFormation || getDefaultFormation(clubType);
+            const fmDef = getFormations(clubType)[fmId];
+            const assignedPlayers = tf.players || {};
+            const unassigned = teamPlayers.filter((p) => !Object.values(assignedPlayers).includes(p));
+            const canEditThis = canEditTeamFormation(code);
+
             return (
               <Box sx={{ mt: 2 }}>
                 <Divider sx={{ mb: 1.5 }} />
@@ -1129,148 +1140,140 @@ export default function PlayerSelectPage() {
                   {activeQuarterTab} 포메이션
                 </Typography>
 
-                {/* A팀 / B팀 좌우 배치 */}
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  {['A', 'B'].map((code) => {
-                    const th = theme[code] || theme.A;
-                    const teamPlayers = displayTeams[code] || [];
-                    // 쿼터별 포메이션 → fallback to TeamFormation
-                    const tf = quarterFormations?.[code]?.[activeQuarterTab] || teamFormations[code] || {};
-                    const fmId = tf.formationId || clubFormation || getDefaultFormation(clubType);
-                    const fmDef = getFormations(clubType)[fmId];
-                    const assignedPlayers = tf.players || {};
-                    const unassigned = teamPlayers.filter((p) => !Object.values(assignedPlayers).includes(p));
-                    const canEditThis = canEditTeamFormation(code);
-
+                {/* 팀 선택 탭 (좌우 배치) */}
+                <Box sx={{ display: 'flex', gap: 0.5, mb: 1.5 }}>
+                  {['A', 'B'].map((c) => {
+                    const t = theme[c] || theme.A;
+                    const active = activeTeamCode === c;
+                    const cTf = quarterFormations?.[c]?.[activeQuarterTab] || teamFormations[c] || {};
+                    const cFmId = cTf.formationId || '';
                     return (
-                      <Box key={code} sx={{ flex: 1, minWidth: 0 }}>
-                        {/* 팀 헤더 + 포메이션 프리셋 */}
-                        <Box sx={{
-                          bgcolor: th.light, borderRadius: '8px 8px 0 0',
-                          border: `1px solid ${th.border}`, borderBottom: 'none',
-                          p: 0.8, textAlign: 'center',
-                        }}>
-                          <Typography sx={{ fontWeight: 900, fontSize: '0.8rem', color: th.bg, mb: 0.5 }}>
-                            {getTeamLabel(code)}
+                      <Box
+                        key={c}
+                        onClick={() => { setExpandFormation(c); setSelectedPos(null); }}
+                        sx={{
+                          flex: 1, py: 1.2, textAlign: 'center',
+                          borderRadius: 2, cursor: 'pointer',
+                          bgcolor: active ? t.bg : t.light,
+                          color: active ? 'white' : t.bg,
+                          fontWeight: 900, fontSize: '0.9rem',
+                          border: `2px solid ${active ? t.bg : t.border}`,
+                          boxShadow: active ? `0 4px 12px ${t.bg}44` : 'none',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {getTeamLabel(c)}
+                        {cFmId && (
+                          <Typography component="span" sx={{ fontSize: '0.65rem', ml: 0.5, opacity: 0.7 }}>
+                            {cFmId}
                           </Typography>
-                          {/* 팀별 독립 포메이션 선택 */}
-                          {canEditThis && fmDef && (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.3, justifyContent: 'center' }}>
-                              {Object.entries(getFormations(clubType)).map(([key, fm]) => (
-                                <Chip key={key} label={fm.name} size="small"
-                                  onClick={async () => {
-                                    const newFmDef = getFormations(clubType)[key];
-                                    const autoPlayers = newFmDef ? autoAssignPlayers(newFmDef.positions, teamPlayers, statsMap) : {};
-                                    const tfData = { formationId: key, players: autoPlayers };
-                                    setTeamFormations(prev => ({ ...prev, [code]: tfData }));
-                                    setSelectedPos(null);
-                                    await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
-                                    const newQf = { ...quarterFormations };
-                                    if (!newQf[code]) newQf[code] = {};
-                                    newQf[code][activeQuarterTab] = tfData;
-                                    setQuarterFormations(newQf);
-                                    await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
-                                  }}
-                                  sx={{
-                                    fontSize: '0.58rem', height: 20, fontWeight: 600,
-                                    bgcolor: fmId === key ? th.bg : '#F0F2F5',
-                                    color: fmId === key ? 'white' : '#777',
-                                    cursor: 'pointer',
-                                  }} />
-                              ))}
-                            </Box>
-                          )}
-                        </Box>
-
-                        {/* 필드 */}
-                        {fmDef && (
-                          <Box sx={{
-                            display: 'flex', justifyContent: 'center',
-                            border: `1px solid ${th.border}`, borderTop: 'none',
-                            bgcolor: 'white', py: 0.5,
-                          }}>
-                            <FormationField
-                              clubType={clubType}
-                              positions={fmDef.positions}
-                              players={assignedPlayers}
-                              selectedPos={(expandFormation === code) ? selectedPos : null}
-                              onPositionClick={canEditThis ? async (posId) => {
-                                if (!selectedPos) { setSelectedPos(posId); setExpandFormation(code); return; }
-                                if (selectedPos === posId && expandFormation === code) { setSelectedPos(null); return; }
-                                // 포지션 스왑
-                                const newPlayers = { ...assignedPlayers };
-                                const a = newPlayers[selectedPos];
-                                const b = newPlayers[posId];
-                                if (a) newPlayers[posId] = a; else delete newPlayers[posId];
-                                if (b) newPlayers[selectedPos] = b; else delete newPlayers[selectedPos];
-                                const tfData = { formationId: fmId, players: newPlayers };
-                                setTeamFormations(prev => ({ ...prev, [code]: tfData }));
-                                setSelectedPos(null);
-                                await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
-                                const newQf = { ...quarterFormations };
-                                if (!newQf[code]) newQf[code] = {};
-                                newQf[code][activeQuarterTab] = tfData;
-                                setQuarterFormations(newQf);
-                                await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
-                              } : undefined}
-                              readOnly={!canEditThis}
-                              width={fieldW}
-                            />
-                          </Box>
-                        )}
-
-                        {/* 미배치 선수 (탭해서 선택된 포지션에 배치) */}
-                        {canEditThis && unassigned.length > 0 && (
-                          <Box sx={{
-                            border: `1px solid ${th.border}`, borderTop: 'none',
-                            borderRadius: '0 0 8px 8px', p: 0.5, bgcolor: '#FAFAFA',
-                          }}>
-                            <Typography sx={{ fontSize: '0.6rem', color: '#999', mb: 0.3, textAlign: 'center' }}>
-                              {selectedPos && expandFormation === code ? '탭해서 배치' : '포지션 먼저 탭'}
-                            </Typography>
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.3, justifyContent: 'center' }}>
-                              {unassigned.map((name) => (
-                                <Chip key={name} label={name} size="small"
-                                  onClick={async () => {
-                                    if (!selectedPos || expandFormation !== code) return;
-                                    const newPlayers = { ...assignedPlayers, [selectedPos]: name };
-                                    // 같은 선수가 다른 포지션에 있으면 제거
-                                    Object.keys(newPlayers).forEach((p) => {
-                                      if (newPlayers[p] === name && p !== selectedPos) delete newPlayers[p];
-                                    });
-                                    const tfData = { formationId: fmId, players: newPlayers };
-                                    setTeamFormations(prev => ({ ...prev, [code]: tfData }));
-                                    setSelectedPos(null);
-                                    await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
-                                    const newQf = { ...quarterFormations };
-                                    if (!newQf[code]) newQf[code] = {};
-                                    newQf[code][activeQuarterTab] = tfData;
-                                    setQuarterFormations(newQf);
-                                    await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
-                                  }}
-                                  sx={{
-                                    fontSize: '0.62rem', height: 22, fontWeight: 600,
-                                    cursor: selectedPos && expandFormation === code ? 'pointer' : 'default',
-                                    bgcolor: selectedPos && expandFormation === code ? '#FFF8E1' : '#F5F5F5',
-                                    color: selectedPos && expandFormation === code ? '#F57F17' : '#999',
-                                    border: selectedPos && expandFormation === code ? '1px solid #FFD600' : '1px solid #E0E0E0',
-                                  }} />
-                              ))}
-                            </Box>
-                          </Box>
-                        )}
-                        {unassigned.length === 0 && (
-                          <Box sx={{
-                            border: `1px solid ${th.border}`, borderTop: 'none',
-                            borderRadius: '0 0 8px 8px', p: 0.5, bgcolor: '#FAFAFA', textAlign: 'center',
-                          }}>
-                            <Typography sx={{ fontSize: '0.62rem', color: '#2E7D32', fontWeight: 700 }}>✓ 모두 배치됨</Typography>
-                          </Box>
                         )}
                       </Box>
                     );
                   })}
                 </Box>
+
+                {/* 선택된 팀의 포메이션 프리셋 */}
+                {canEditThis && (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1, justifyContent: 'center' }}>
+                    {Object.entries(getFormations(clubType)).map(([key, fm]) => (
+                      <Chip key={key} label={fm.name} size="small"
+                        onClick={async () => {
+                          const newFmDef = getFormations(clubType)[key];
+                          const autoPlayers = newFmDef ? autoAssignPlayers(newFmDef.positions, teamPlayers, statsMap) : {};
+                          const tfData = { formationId: key, players: autoPlayers };
+                          setTeamFormations(prev => ({ ...prev, [code]: tfData }));
+                          setSelectedPos(null);
+                          await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
+                          const newQf = { ...quarterFormations };
+                          if (!newQf[code]) newQf[code] = {};
+                          newQf[code][activeQuarterTab] = tfData;
+                          setQuarterFormations(newQf);
+                          await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
+                        }}
+                        sx={{
+                          fontSize: '0.72rem', fontWeight: 600,
+                          bgcolor: fmId === key ? th.bg : '#F0F2F5',
+                          color: fmId === key ? 'white' : '#555',
+                          cursor: 'pointer',
+                        }} />
+                    ))}
+                  </Box>
+                )}
+
+                {/* 필드 (선택된 팀만 풀사이즈) */}
+                {fmDef && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
+                    <FormationField
+                      clubType={clubType}
+                      positions={fmDef.positions}
+                      players={assignedPlayers}
+                      selectedPos={selectedPos}
+                      onPositionClick={canEditThis ? async (posId) => {
+                        if (!selectedPos) { setSelectedPos(posId); return; }
+                        if (selectedPos === posId) { setSelectedPos(null); return; }
+                        const newPlayers = { ...assignedPlayers };
+                        const a = newPlayers[selectedPos];
+                        const b = newPlayers[posId];
+                        if (a) newPlayers[posId] = a; else delete newPlayers[posId];
+                        if (b) newPlayers[selectedPos] = b; else delete newPlayers[selectedPos];
+                        const tfData = { formationId: fmId, players: newPlayers };
+                        setTeamFormations(prev => ({ ...prev, [code]: tfData }));
+                        setSelectedPos(null);
+                        await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
+                        const newQf = { ...quarterFormations };
+                        if (!newQf[code]) newQf[code] = {};
+                        newQf[code][activeQuarterTab] = tfData;
+                        setQuarterFormations(newQf);
+                        await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
+                      } : undefined}
+                      readOnly={!canEditThis}
+                      width={fieldW}
+                    />
+                  </Box>
+                )}
+
+                {/* 안내 + 미배치 선수 */}
+                {canEditThis && selectedPos && fmDef && (
+                  <Typography sx={{ fontSize: '0.75rem', color: '#FF6F00', fontWeight: 700, mb: 0.5, textAlign: 'center' }}>
+                    📍 {fmDef.positions.find((p) => p.id === selectedPos)?.label || selectedPos} 선택됨 — 아래 선수 또는 다른 포지션 탭
+                  </Typography>
+                )}
+                {canEditThis && unassigned.length > 0 && (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4, justifyContent: 'center', mb: 1 }}>
+                    {unassigned.map((name) => (
+                      <Chip key={name} label={name} size="small"
+                        onClick={async () => {
+                          if (!selectedPos) return;
+                          const newPlayers = { ...assignedPlayers, [selectedPos]: name };
+                          Object.keys(newPlayers).forEach((p) => {
+                            if (newPlayers[p] === name && p !== selectedPos) delete newPlayers[p];
+                          });
+                          const tfData = { formationId: fmId, players: newPlayers };
+                          setTeamFormations(prev => ({ ...prev, [code]: tfData }));
+                          setSelectedPos(null);
+                          await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
+                          const newQf = { ...quarterFormations };
+                          if (!newQf[code]) newQf[code] = {};
+                          newQf[code][activeQuarterTab] = tfData;
+                          setQuarterFormations(newQf);
+                          await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
+                        }}
+                        sx={{
+                          fontSize: '0.75rem', fontWeight: 600,
+                          cursor: selectedPos ? 'pointer' : 'default',
+                          bgcolor: selectedPos ? '#FFF8E1' : '#F5F5F5',
+                          color: selectedPos ? '#F57F17' : '#999',
+                          border: selectedPos ? '1px solid #FFD600' : '1px solid #E0E0E0',
+                        }} />
+                    ))}
+                  </Box>
+                )}
+                {unassigned.length === 0 && canEditThis && (
+                  <Typography sx={{ fontSize: '0.75rem', color: '#2E7D32', fontWeight: 700, textAlign: 'center', mb: 1 }}>
+                    ✓ 모든 선수 배치 완료
+                  </Typography>
+                )}
               </Box>
             );
           })()}
