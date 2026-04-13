@@ -136,6 +136,9 @@ export default function MatchDetailPage() {
   const [score2, setScore2] = useState(0);
   const [goalList1, setGoalList1] = useState([]);
   const [goalList2, setGoalList2] = useState([]);
+  // 🆕 쿼터 데이터
+  const [quarterData, setQuarterData] = useState(null); // { Q1: { score1, score2, goalList1, goalList2 }, ... }
+  const [matchQuarterCount, setMatchQuarterCount] = useState(0);
 
   // Players on field
   const [teamAPlayers, setTeamAPlayers] = useState([]);
@@ -171,6 +174,15 @@ export default function MatchDetailPage() {
       setTeam2Name(scoreData.team2_name || 'Team B');
       setScore1(scoreData.goalCount1 || 0);
       setScore2(scoreData.goalCount2 || 0);
+
+      // 🆕 쿼터 데이터 로드
+      if (scoreData.quarters && scoreData.quarterCount >= 2) {
+        setQuarterData(scoreData.quarters);
+        setMatchQuarterCount(scoreData.quarterCount);
+      } else {
+        setQuarterData(null);
+        setMatchQuarterCount(0);
+      }
 
       // Goal lists
       const gl1 = scoreData.goalList1 ? Object.values(scoreData.goalList1) : [];
@@ -521,6 +533,50 @@ export default function MatchDetailPage() {
             </Box>
           </Box>
         </Box>
+
+        {/* 🆕 쿼터 스코어 브레이크다운 */}
+        {quarterData && matchQuarterCount >= 2 && (
+          <Box sx={{
+            mb: 2, p: 1.5, borderRadius: 2,
+            bgcolor: '#FAFAFA', border: '1px solid #E0E0E0',
+          }}>
+            <Typography sx={{ fontSize: '0.72rem', color: '#888', fontWeight: 700, mb: 1, textAlign: 'center' }}>
+              ⏱ 쿼터별 점수
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+              {Array.from({ length: matchQuarterCount }).map((_, i) => {
+                const qKey = `Q${i + 1}`;
+                const qd = quarterData[qKey] || {};
+                return (
+                  <Box key={qKey} sx={{
+                    flex: 1, maxWidth: 80, textAlign: 'center',
+                    p: 0.8, borderRadius: 1.5,
+                    bgcolor: 'white', border: '1px solid #E0E0E0',
+                  }}>
+                    <Typography sx={{ fontSize: '0.62rem', color: '#999', fontWeight: 700 }}>
+                      {qKey}
+                    </Typography>
+                    <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#333' }}>
+                      {qd.score1 || 0}:{qd.score2 || 0}
+                    </Typography>
+                  </Box>
+                );
+              })}
+              <Box sx={{
+                flex: 1, maxWidth: 80, textAlign: 'center',
+                p: 0.8, borderRadius: 1.5,
+                bgcolor: '#2D336B', border: 'none',
+              }}>
+                <Typography sx={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.7)', fontWeight: 700 }}>
+                  합계
+                </Typography>
+                <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: 'white' }}>
+                  {score1}:{score2}
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+        )}
 
         {/* Goal/Assist List */}
         {(goalList1.length > 0 || goalList2.length > 0) && (
