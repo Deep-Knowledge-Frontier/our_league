@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ref, set, onValue, update } from 'firebase/database';
+import { ref, set, get, onValue, update, remove } from 'firebase/database';
 import {
   Container, Box, Typography, CircularProgress, Paper, Button,
-  Chip, IconButton, ToggleButton, ToggleButtonGroup, Divider
+  Chip, IconButton, ToggleButton, ToggleButtonGroup, Divider,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
@@ -15,6 +16,8 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ShieldIcon from '@mui/icons-material/Shield';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
+import RestoreIcon from '@mui/icons-material/Restore';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { db } from '../config/firebase';
@@ -649,6 +652,67 @@ export default function PlayerSelectPage() {
     });
   }, [teams, keyPop, saveTeams, navigate, dateParam, teamCount, effectiveMatchesPerTeam]);
 
+  // 🆕 경기 기록 삭제 + 복구
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [hasDeletedBackup, setHasDeletedBackup] = useState(false);
+
+  // 삭제: 백업 후 삭제
+  const deleteMatchRecords = async () => {
+    if (deleteConfirmText !== dateParam) return;
+    try {
+      // 1) 백업 저장 (복구용)
+      const [gameSnap, dailySnap] = await Promise.all([
+        get(ref(db, `${clubName}/${dateParam}`)),
+        get(ref(db, `DailyResultsBackup/${clubName}/${dateParam}`)),
+      ]);
+      const backup = {};
+      if (gameSnap.exists()) backup.games = gameSnap.val();
+      if (dailySnap.exists()) backup.daily = dailySnap.val();
+      backup.deletedAt = Date.now();
+      backup.deletedBy = userName || 'admin';
+      await set(ref(db, `DeletedRecords/${clubName}/${dateParam}`), backup);
+
+      // 2) 실제 삭제
+      await Promise.all([
+        remove(ref(db, `${clubName}/${dateParam}`)),
+        remove(ref(db, `DailyResultsBackup/${clubName}/${dateParam}`)),
+      ]);
+      setHasMatchResults(false);
+      setHasDeletedBackup(true);
+      setDeleteDialog(false);
+      setDeleteConfirmText('');
+    } catch (e) {
+      alert('삭제 실패: ' + e.message);
+    }
+  };
+
+  // 복구
+  const restoreMatchRecords = async () => {
+    try {
+      const backupSnap = await get(ref(db, `DeletedRecords/${clubName}/${dateParam}`));
+      if (!backupSnap.exists()) { alert('복구할 백업이 없습니다.'); return; }
+      const backup = backupSnap.val();
+      const updates = {};
+      if (backup.games) updates[`${clubName}/${dateParam}`] = backup.games;
+      if (backup.daily) updates[`DailyResultsBackup/${clubName}/${dateParam}`] = backup.daily;
+      await update(ref(db), updates);
+      await remove(ref(db, `DeletedRecords/${clubName}/${dateParam}`));
+      setHasMatchResults(true);
+      setHasDeletedBackup(false);
+    } catch (e) {
+      alert('복구 실패: ' + e.message);
+    }
+  };
+
+  // 백업 존재 여부 체크
+  useEffect(() => {
+    if (!clubName || !dateParam) return;
+    get(ref(db, `DeletedRecords/${clubName}/${dateParam}`)).then(snap => {
+      setHasDeletedBackup(snap.exists());
+    }).catch(() => {});
+  }, [clubName, dateParam]);
+
   const startEdit = useCallback(() => {
     setEditTeams({ A: [...teams.A], B: [...teams.B], C: [...teams.C] });
     setEditMode(true);
@@ -1235,6 +1299,13 @@ export default function PlayerSelectPage() {
                       : qCount < quarterCount * 0.5 ? '#F57C00' : th.bg;
                     const isClickable = canEditThis && !!selectedPos;
 
+                    // 각 쿼터별 출전 여부 (세그먼트 블록용)
+                    const quarterSlots = [];
+                    for (let q = 1; q <= quarterCount; q++) {
+                      const qf = quarterFormations?.[code]?.[`Q${q}`];
+                      quarterSlots.push(qf?.players && Object.values(qf.players).includes(name));
+                    }
+
                     return (
                       <Box
                         key={name}
@@ -1255,9 +1326,9 @@ export default function PlayerSelectPage() {
                           await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
                         }}
                         sx={{
-                          position: 'relative', overflow: 'hidden',
-                          borderRadius: 2, minWidth: 72, height: 34,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          borderRadius: 2, minWidth: 80,
+                          display: 'flex', flexDirection: 'column', alignItems: 'center',
+                          px: 0.8, py: 0.5,
                           border: isPlaced
                             ? `2px solid ${th.bg}`
                             : isClickable ? '1.5px dashed #FFB300' : '1px solid #DDD',
@@ -1267,26 +1338,34 @@ export default function PlayerSelectPage() {
                           '&:hover': isClickable ? { bgcolor: '#FFF8E1', borderColor: '#FFB300' } : {},
                         }}
                       >
-                        {/* 출전 fill 바 (하단) */}
-                        <Box sx={{
-                          position: 'absolute', left: 0, bottom: 0,
-                          width: `${pct}%`, height: 3,
-                          bgcolor: fillColor, transition: 'width 0.3s',
-                        }} />
-                        {/* 선수명 + 포지션/카운트 */}
+                        {/* 선수명 + 포지션 */}
                         <Typography sx={{
-                          position: 'relative', zIndex: 1,
                           fontSize: '0.65rem', fontWeight: isPlaced ? 800 : 600,
-                          color: isPlaced ? th.bg : '#666',
+                          color: isPlaced ? th.bg : '#555', lineHeight: 1.2,
                         }}>
                           {name}
-                          <Typography component="span" sx={{
-                            fontSize: '0.55rem', fontWeight: 700, ml: 0.3,
-                            color: isPlaced ? th.bg : '#BBB',
-                          }}>
-                            {isPlaced ? posLabel : `${qCount}/${quarterCount}`}
-                          </Typography>
+                          {isPlaced && (
+                            <Typography component="span" sx={{ fontSize: '0.55rem', ml: 0.3, color: th.bg, fontWeight: 700 }}>
+                              {posLabel}
+                            </Typography>
+                          )}
                         </Typography>
+                        {/* 쿼터 세그먼트 블록 ■■□□ */}
+                        <Box sx={{ display: 'flex', gap: '2px', mt: 0.3 }}>
+                          {quarterSlots.map((played, qi) => (
+                            <Box
+                              key={qi}
+                              sx={{
+                                width: 10, height: 6, borderRadius: 0.5,
+                                bgcolor: played
+                                  ? (qCount === quarterCount ? '#2E7D32' : qCount < quarterCount * 0.5 ? '#F57C00' : th.bg)
+                                  : '#E0E0E0',
+                                border: `Q${qi + 1}` === activeQuarterTab ? '1px solid #333' : 'none',
+                                transition: 'all 0.2s',
+                              }}
+                            />
+                          ))}
+                        </Box>
                       </Box>
                     );
                   })}
@@ -1499,10 +1578,67 @@ export default function PlayerSelectPage() {
                   기록 수정 (편집 모드)
                 </Button>
               )}
+              {/* 경기 기록 삭제 (관리자) */}
+              {hasMatchResults && canEdit && (
+                <Button fullWidth variant="text" size="small"
+                  startIcon={<DeleteForeverIcon sx={{ fontSize: '14px !important' }} />}
+                  onClick={() => setDeleteDialog(true)}
+                  sx={{ mt: 0.5, fontSize: '0.72rem', color: '#999', '&:hover': { color: '#C62828', bgcolor: '#FFEBEE' } }}
+                >
+                  경기 기록 전체 삭제
+                </Button>
+              )}
+              {/* 복구 버튼 */}
+              {!hasMatchResults && hasDeletedBackup && canEdit && (
+                <Button fullWidth variant="outlined" size="small"
+                  startIcon={<RestoreIcon />}
+                  onClick={restoreMatchRecords}
+                  sx={{ mt: 0.8, borderRadius: 2, fontSize: '0.78rem', fontWeight: 700, borderColor: '#2E7D32', color: '#2E7D32' }}
+                >
+                  삭제된 기록 복구
+                </Button>
+              )}
             </>
           )}
         </Paper>
       )}
+
+      {/* 경기 기록 삭제 다이얼로그 */}
+      <Dialog open={deleteDialog} onClose={() => { setDeleteDialog(false); setDeleteConfirmText(''); }}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#C62828' }}>
+          <DeleteForeverIcon /> 경기 기록 삭제
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: '0.88rem', mb: 1.5 }}>
+            <b>{dateParam}</b> 경기일의 <b>모든 경기 기록</b>(골/어시스트/MVP)이 삭제됩니다.
+          </Typography>
+          <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#E8F5E9', border: '1px solid #C8E6C9', mb: 2 }}>
+            <Typography sx={{ fontSize: '0.78rem', color: '#2E7D32', fontWeight: 700 }}>
+              ✅ 삭제 후에도 복구할 수 있습니다 (백업 자동 저장)
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: '0.8rem', color: '#666', mb: 1 }}>
+            확인을 위해 날짜를 입력하세요:
+          </Typography>
+          <TextField
+            fullWidth size="small"
+            placeholder={dateParam}
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setDeleteDialog(false); setDeleteConfirmText(''); }}>취소</Button>
+          <Button
+            variant="contained" color="error"
+            disabled={deleteConfirmText !== dateParam}
+            onClick={deleteMatchRecords}
+          >
+            삭제
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }
