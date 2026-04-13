@@ -930,69 +930,107 @@ export default function PlayerSelectPage() {
             </Box>
           )}
 
-          {/* 🆕 쿼터 설정 (축구 + 2팀일 때만) */}
-          {useQuarterSystem && !editMode && canEdit && (
+          {/* 🆕 쿼터 설정 + 탭 (축구 + 2팀일 때만) — 스테퍼 + 탭 통합 */}
+          {useQuarterSystem && !editMode && (
             <Box sx={{ mt: 2 }}>
               <Divider sx={{ mb: 1.5 }} />
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#333', flex: 1 }}>
-                  ⏱ 쿼터 설정
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', gap: 0.6 }}>
-                {[1, 2, 3, 4].map((q) => {
-                  const active = quarterCount === q;
-                  return (
+
+              {/* 쿼터 수 스테퍼 (−/+) — 컴팩트하고 "설정" 느낌 */}
+              {canEdit && (
+                <Box sx={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 1.5, mb: 1.5,
+                }}>
+                  <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#666' }}>
+                    ⏱ 쿼터 수
+                  </Typography>
+                  <Box sx={{
+                    display: 'flex', alignItems: 'center',
+                    bgcolor: '#F0F2F5', borderRadius: 2, overflow: 'hidden',
+                    border: '1px solid #E0E0E0',
+                  }}>
                     <Box
-                      key={q}
                       onClick={async () => {
-                        setQuarterCount(q);
-                        setActiveQuarterTab('Q1');
-                        await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterConfig`), { count: q });
+                        if (quarterCount <= 1) return;
+                        const newCount = quarterCount - 1;
+                        setQuarterCount(newCount);
+                        if (parseInt(activeQuarterTab.replace('Q', '')) > newCount) setActiveQuarterTab(`Q${newCount}`);
+                        await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterConfig`), { count: newCount });
                       }}
                       sx={{
-                        flex: 1, py: 1, textAlign: 'center',
-                        borderRadius: 2, cursor: 'pointer',
-                        bgcolor: active ? '#1565C0' : '#F5F5F5',
-                        color: active ? 'white' : '#555',
-                        fontWeight: active ? 900 : 600,
-                        fontSize: '0.85rem',
-                        border: active ? '2px solid #0D47A1' : '1px solid transparent',
-                        transition: 'all 0.15s',
-                        boxShadow: active ? '0 3px 8px rgba(21,101,192,0.3)' : 'none',
-                        '&:hover': { bgcolor: active ? '#1565C0' : '#E0E0E0' },
+                        width: 36, height: 36,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: quarterCount > 1 ? 'pointer' : 'default',
+                        color: quarterCount > 1 ? '#333' : '#CCC',
+                        fontWeight: 900, fontSize: '1.2rem',
+                        '&:hover': quarterCount > 1 ? { bgcolor: '#E0E0E0' } : {},
+                        '&:active': quarterCount > 1 ? { bgcolor: '#D0D0D0' } : {},
                       }}
                     >
-                      {q}쿼터
+                      −
                     </Box>
-                  );
-                })}
-              </Box>
-            </Box>
-          )}
+                    <Box sx={{
+                      width: 48, height: 36,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      bgcolor: 'white',
+                      fontWeight: 900, fontSize: '1.1rem', color: '#1565C0',
+                      borderLeft: '1px solid #E0E0E0',
+                      borderRight: '1px solid #E0E0E0',
+                    }}>
+                      {quarterCount}
+                    </Box>
+                    <Box
+                      onClick={async () => {
+                        if (quarterCount >= 4) return;
+                        const newCount = quarterCount + 1;
+                        setQuarterCount(newCount);
+                        await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterConfig`), { count: newCount });
+                      }}
+                      sx={{
+                        width: 36, height: 36,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: quarterCount < 4 ? 'pointer' : 'default',
+                        color: quarterCount < 4 ? '#333' : '#CCC',
+                        fontWeight: 900, fontSize: '1.2rem',
+                        '&:hover': quarterCount < 4 ? { bgcolor: '#E0E0E0' } : {},
+                        '&:active': quarterCount < 4 ? { bgcolor: '#D0D0D0' } : {},
+                      }}
+                    >
+                      +
+                    </Box>
+                  </Box>
+                </Box>
+              )}
 
-          {/* 🆕 쿼터 탭 (축구 + 2팀 + 2쿼터 이상) */}
-          {useQuarterSystem && quarterCount > 1 && !editMode && (
-            <Box sx={{ mt: 1.5, display: 'flex', gap: 0.5 }}>
-              {Array.from({ length: quarterCount }).map((_, i) => {
-                const qKey = `Q${i + 1}`;
-                const active = activeQuarterTab === qKey;
-                return (
-                  <Chip
-                    key={qKey}
-                    label={qKey}
-                    size="small"
-                    onClick={() => setActiveQuarterTab(qKey)}
-                    sx={{
-                      flex: 1, fontWeight: active ? 900 : 600, fontSize: '0.8rem',
-                      bgcolor: active ? '#2D336B' : '#E0E0E0',
-                      color: active ? 'white' : '#555',
-                      cursor: 'pointer',
-                      '&:hover': { bgcolor: active ? '#1A1D4E' : '#BDBDBD' },
-                    }}
-                  />
-                );
-              })}
+              {/* 쿼터 포메이션 탭 (2쿼터 이상) — "어느 쿼터를 편집" 느낌 */}
+              {quarterCount > 1 && (
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  {Array.from({ length: quarterCount }).map((_, i) => {
+                    const qKey = `Q${i + 1}`;
+                    const active = activeQuarterTab === qKey;
+                    return (
+                      <Box
+                        key={qKey}
+                        onClick={() => setActiveQuarterTab(qKey)}
+                        sx={{
+                          flex: 1, py: 0.8, textAlign: 'center',
+                          borderRadius: '8px 8px 0 0',
+                          cursor: 'pointer',
+                          bgcolor: active ? '#2D336B' : 'transparent',
+                          color: active ? 'white' : '#888',
+                          fontWeight: active ? 900 : 600,
+                          fontSize: '0.82rem',
+                          borderBottom: active ? '3px solid #2D336B' : '3px solid #E0E0E0',
+                          transition: 'all 0.15s',
+                          '&:hover': !active ? { color: '#555', borderBottomColor: '#999' } : {},
+                        }}
+                      >
+                        {qKey}
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
             </Box>
           )}
 
