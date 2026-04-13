@@ -76,11 +76,8 @@ export default function ScoreRecordPage() {
   // 6개월 능력치 (abilityScore) 맵 — 무승부 시 MVP 선정용
   const [statsMap, setStatsMap] = useState({});
 
-  // 🆕 쿼터 시스템 (축구 + 2팀)
-  const [quarterCount, setQuarterCount] = useState(0); // 0 = 쿼터제 아님
-  const [currentQuarter, setCurrentQuarter] = useState(1); // 현재 보고 있는 쿼터
-  const [quarterGoals, setQuarterGoals] = useState({}); // { Q1: { list1: [], list2: [] }, Q2: {...} }
-  const useQuarterMode = quarterCount >= 2; // 2쿼터 이상이면 쿼터 모드 활성화
+  // 🆕 쿼터 라벨 모드 (축구 + 2팀: "1경기" → "Q1")
+  const [isQuarterLabel, setIsQuarterLabel] = useState(false);
 
   // 포메이션 관련 상태
   const [showLineup, setShowLineup] = useState(false);
@@ -177,23 +174,21 @@ export default function ScoreRecordPage() {
     }).catch(() => setStatsMap({}));
   }, [clubName]);
 
-  // 포메이션 + 클럽 타입 + 쿼터 설정 로드
+  // 포메이션 + 클럽 타입 + 쿼터 라벨 로드
   useEffect(() => {
     if (!clubName) return;
     get(ref(db, `clubs/${clubName}`)).then(snap => {
-      if (snap.exists()) setClubType(snap.val().type || 'futsal');
-    }).catch(() => {});
-    // 쿼터 설정 로드
-    get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterConfig`)).then(snap => {
-      if (snap.exists() && snap.val()?.count >= 2) {
-        setQuarterCount(snap.val().count);
-        // 기존 쿼터별 골 데이터 로드
-        get(ref(db, `${clubName}/${dateParam}/game${gameParam}/quarters`)).then(qSnap => {
-          if (qSnap.exists()) setQuarterGoals(qSnap.val());
-        }).catch(() => {});
+      if (snap.exists()) {
+        setClubType(snap.val().type || 'futsal');
+        // 축구 + 2팀 + 쿼터 설정 있으면 라벨을 "QN"으로
+        if (snap.val().type === 'football' && teamCountParam === 2) {
+          get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterConfig`)).then(qSnap => {
+            if (qSnap.exists() && qSnap.val()?.count >= 2) setIsQuarterLabel(true);
+          }).catch(() => {});
+        }
       }
     }).catch(() => {});
-  }, [clubName, dateParam, gameParam]);
+  }, [clubName, dateParam, teamCountParam]);
 
   // 포메이션 로딩: game-level 우선, 없으면 date-level TeamFormation fallback
   useEffect(() => {
@@ -420,79 +415,28 @@ export default function ScoreRecordPage() {
   const saveToFirebase = useCallback(async (list1, list2, cb) => {
     if (!canEdit) return;
     setSaving(true);
+    const mvp = computeMvp(list1, list2);
+    setSelectedMvp(mvp === NO_MVP ? null : mvp);
     try {
-      if (useQuarterMode) {
-        // 🆕 쿼터 모드: 현재 쿼터 저장 + 전체 누적 계산
-        const qKey = `Q${currentQuarter}`;
-        const updatedQGoals = {
-          ...quarterGoals,
-          [qKey]: { list1, list2 },
-        };
-        setQuarterGoals(updatedQGoals);
-
-        // 전체 누적 골 리스트 & 스코어 계산
-        let allList1 = [], allList2 = [];
-        for (let q = 1; q <= quarterCount; q++) {
-          const k = `Q${q}`;
-          const qg = q === currentQuarter
-            ? { list1, list2 }
-            : (updatedQGoals[k] || {});
-          allList1 = [...allList1, ...(qg.list1 || [])];
-          allList2 = [...allList2, ...(qg.list2 || [])];
-        }
-
-        const mvp = computeMvp(allList1, allList2);
-        setSelectedMvp(mvp === NO_MVP ? null : mvp);
-
-        // 쿼터별 상세 + 누적 합계 저장
-        const quartersData = {};
-        for (let q = 1; q <= quarterCount; q++) {
-          const k = `Q${q}`;
-          const qg = updatedQGoals[k] || {};
-          quartersData[k] = {
-            goalList1: qg.list1 || [],
-            goalList2: qg.list2 || [],
-            score1: (qg.list1 || []).length,
-            score2: (qg.list2 || []).length,
-          };
-        }
-
-        await set(ref(db, `${clubName}/${dateParam}/game${gameNumber}`), {
-          team1_name: getTeamLabel(currentMatch[0]),
-          team2_name: getTeamLabel(currentMatch[1]),
-          gameNumber,
-          goalList1: allList1,
-          goalCount1: allList1.length,
-          goalList2: allList2,
-          goalCount2: allList2.length,
-          startTime: -1,
-          gameTime: 0,
-          mvp,
-          quarters: quartersData,
-          quarterCount,
-        });
-      } else {
-        // 기존 모드 (풋살/개별 경기)
-        const mvp = computeMvp(list1, list2);
-        setSelectedMvp(mvp === NO_MVP ? null : mvp);
-        await set(ref(db, `${clubName}/${dateParam}/game${gameNumber}`), {
-          team1_name: getTeamLabel(currentMatch[0]),
-          team2_name: getTeamLabel(currentMatch[1]),
-          gameNumber,
-          goalList1: list1,
-          goalCount1: list1.length,
-          goalList2: list2,
-          goalCount2: list2.length,
-          startTime: -1,
-          gameTime: 0,
-          mvp,
-        });
-      }
+      await set(ref(db, `${clubName}/${dateParam}/game${gameNumber}`), {
+        team1_name: getTeamLabel(currentMatch[0]),
+        team2_name: getTeamLabel(currentMatch[1]),
+        gameNumber,
+        goalList1: list1,
+        goalCount1: list1.length,
+        goalList2: list2,
+        goalCount2: list2.length,
+        startTime: -1,
+        gameTime: 0,
+        mvp,
+        // 축구 쿼터 모드면 쿼터 라벨 저장 (결과 표시용)
+        ...(isQuarterLabel ? { quarterLabel: `Q${gameNumber}` } : {}),
+      });
       await syncDailyResultsBackup();
       cb?.();
     } catch (e) { alert('저장 실패: ' + e.message); }
     setSaving(false);
-  }, [canEdit, currentMatch, gameNumber, clubName, dateParam, computeMvp, syncDailyResultsBackup, getTeamLabel, useQuarterMode, quarterCount, currentQuarter, quarterGoals]);
+  }, [canEdit, currentMatch, gameNumber, clubName, dateParam, computeMvp, syncDailyResultsBackup, getTeamLabel, isQuarterLabel]);
 
   const addGoal = useCallback((team) => {
     if (!canEdit) return;
@@ -836,7 +780,7 @@ export default function ScoreRecordPage() {
             <ArrowLeftIcon />
           </IconButton>
           <Box sx={{ textAlign: 'center' }}>
-            <Typography sx={{ fontWeight: 900, fontSize: '1.5rem', color: 'white' }}>{gameNumber}경기</Typography>
+            <Typography sx={{ fontWeight: 900, fontSize: '1.5rem', color: 'white' }}>{isQuarterLabel ? `Q${gameNumber}` : `${gameNumber}경기`}</Typography>
             <Typography sx={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)' }}>
               {getTeamLabel(currentMatch[0])} vs {getTeamLabel(currentMatch[1])}
             </Typography>
@@ -850,77 +794,8 @@ export default function ScoreRecordPage() {
       </Box>
 
       <Container maxWidth="sm" sx={{ mt: -2 }}>
-        {/* 🆕 쿼터 탭 (축구 2팀 쿼터 모드) */}
-        {useQuarterMode && (
-          <Box sx={{ display: 'flex', gap: 0.5, mb: 1.5 }}>
-            {Array.from({ length: quarterCount }).map((_, i) => {
-              const q = i + 1;
-              const active = currentQuarter === q;
-              const qGoals = quarterGoals[`Q${q}`] || {};
-              const qScore1 = (qGoals.list1 || []).length;
-              const qScore2 = (qGoals.list2 || []).length;
-              return (
-                <Box
-                  key={q}
-                  onClick={() => {
-                    // 현재 쿼터 저장 후 전환
-                    if (canEdit) {
-                      const qKey = `Q${currentQuarter}`;
-                      setQuarterGoals(prev => ({
-                        ...prev,
-                        [qKey]: { list1: goalList1, list2: goalList2 },
-                      }));
-                    }
-                    // 새 쿼터 로드
-                    const newGoals = quarterGoals[`Q${q}`] || {};
-                    setGoalList1(newGoals.list1 || []);
-                    setGoalList2(newGoals.list2 || []);
-                    setCurrentQuarter(q);
-                    setSelectedMvp(null);
-                    setScorer1(null); setAssist1(null);
-                    setScorer2(null); setAssist2(null);
-                    setEditIdx1(-1); setEditIdx2(-1);
-                  }}
-                  sx={{
-                    flex: 1, py: 0.8, textAlign: 'center',
-                    borderRadius: 2, cursor: 'pointer',
-                    bgcolor: active ? '#2D336B' : 'rgba(255,255,255,0.9)',
-                    color: active ? 'white' : '#555',
-                    fontWeight: active ? 900 : 600,
-                    fontSize: '0.78rem',
-                    boxShadow: active ? '0 3px 8px rgba(0,0,0,0.2)' : '0 1px 4px rgba(0,0,0,0.06)',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  Q{q}
-                  {(qScore1 > 0 || qScore2 > 0) && (
-                    <Typography component="span" sx={{ fontSize: '0.62rem', ml: 0.5, opacity: 0.7 }}>
-                      {qScore1}:{qScore2}
-                    </Typography>
-                  )}
-                </Box>
-              );
-            })}
-          </Box>
-        )}
-
         {/* 스코어보드 */}
         <Box sx={{ bgcolor: 'white', borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.08)', p: 2.5, mb: 2 }}>
-          {/* 쿼터 모드: 누적 스코어 표시 */}
-          {useQuarterMode && (
-            <Typography sx={{
-              textAlign: 'center', fontSize: '0.68rem', color: '#999', fontWeight: 600, mb: 0.5,
-            }}>
-              {currentQuarter}쿼터 · 누적 {(() => {
-                let t1 = 0, t2 = 0;
-                for (let q = 1; q <= quarterCount; q++) {
-                  if (q === currentQuarter) { t1 += goalList1.length; t2 += goalList2.length; }
-                  else { t1 += (quarterGoals[`Q${q}`]?.list1 || []).length; t2 += (quarterGoals[`Q${q}`]?.list2 || []).length; }
-                }
-                return `${t1}:${t2}`;
-              })()}
-            </Typography>
-          )}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
             {/* Team 1 */}
             <Box sx={{ flex: 1, textAlign: 'center' }}>

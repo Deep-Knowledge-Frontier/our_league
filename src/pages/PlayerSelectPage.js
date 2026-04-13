@@ -577,23 +577,26 @@ export default function PlayerSelectPage() {
     catch (e) { alert('저장 실패: ' + e.message); }
   }, [clubName, dateParam, teamCount, matchOrder]);
 
+  // 축구 2팀 쿼터 모드: matchesPerTeam = quarterCount (각 쿼터가 독립 경기)
+  const effectiveMatchesPerTeam = useQuarterSystem && quarterCount > 1 ? quarterCount : MATCHES_PER_TEAM;
+
   // 경기 기록이 있으면 MatchDetailPage(경기 1)로, 없으면 ScoreRecordPage(새 기록)로
   const goToScoreRecord = useCallback(() => {
     saveTeams(teams, keyPop, () => {
       if (hasMatchResults) {
         navigate(`/match/${dateParam}/1`);
       } else {
-        navigate(`/score-record?date=${dateParam}&teamCount=${teamCount}&matchesPerTeam=${MATCHES_PER_TEAM}&game=1`);
+        navigate(`/score-record?date=${dateParam}&teamCount=${teamCount}&matchesPerTeam=${effectiveMatchesPerTeam}&game=1`);
       }
     });
-  }, [teams, keyPop, saveTeams, navigate, dateParam, teamCount, hasMatchResults]);
+  }, [teams, keyPop, saveTeams, navigate, dateParam, teamCount, hasMatchResults, effectiveMatchesPerTeam]);
 
   // 기록 수정 (편집 모드) — 기록이 있을 때 별도로 접근
   const goToScoreEdit = useCallback(() => {
     saveTeams(teams, keyPop, () => {
-      navigate(`/score-record?date=${dateParam}&teamCount=${teamCount}&matchesPerTeam=${MATCHES_PER_TEAM}&game=1`);
+      navigate(`/score-record?date=${dateParam}&teamCount=${teamCount}&matchesPerTeam=${effectiveMatchesPerTeam}&game=1`);
     });
-  }, [teams, keyPop, saveTeams, navigate, dateParam, teamCount]);
+  }, [teams, keyPop, saveTeams, navigate, dateParam, teamCount, effectiveMatchesPerTeam]);
 
   const startEdit = useCallback(() => {
     setEditTeams({ A: [...teams.A], B: [...teams.B], C: [...teams.C] });
