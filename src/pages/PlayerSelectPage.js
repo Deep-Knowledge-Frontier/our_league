@@ -1034,90 +1034,6 @@ export default function PlayerSelectPage() {
             </Box>
           )}
 
-          {/* 🆕 선수별 출전 카운팅 — 버튼 fill 방식 (축구 + 2팀 + 2쿼터 이상) */}
-          {useQuarterSystem && quarterCount > 1 && !editMode && (
-            <Box sx={{ mt: 1.5 }}>
-              {['A', 'B'].map((code) => {
-                const th = theme[code] || theme.A;
-                const teamPlayers = displayTeams[code] || [];
-                if (teamPlayers.length === 0) return null;
-                return (
-                  <Box key={code} sx={{ mb: 1.5 }}>
-                    <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, color: th.bg, mb: 0.6 }}>
-                      {getTeamLabel(code)} 선수별 출전
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {teamPlayers.map((name) => {
-                        let count = 0;
-                        for (let q = 1; q <= quarterCount; q++) {
-                          const qf = quarterFormations?.[code]?.[`Q${q}`];
-                          if (qf?.players && Object.values(qf.players).includes(name)) count++;
-                        }
-                        const pct = Math.round((count / quarterCount) * 100);
-                        const fillColor = count === quarterCount ? '#2E7D32'
-                          : count === 0 ? '#E0E0E0'
-                          : count < quarterCount * 0.5 ? '#F57C00' : th.bg;
-                        return (
-                          <Box
-                            key={name}
-                            sx={{
-                              position: 'relative',
-                              overflow: 'hidden',
-                              borderRadius: 2,
-                              border: `1.5px solid ${count > 0 ? fillColor : '#DDD'}`,
-                              bgcolor: '#F5F5F5',
-                              minWidth: 70,
-                              height: 30,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            {/* fill 배경 (좌→우 채워짐) */}
-                            <Box sx={{
-                              position: 'absolute',
-                              left: 0, top: 0, bottom: 0,
-                              width: `${pct}%`,
-                              bgcolor: fillColor,
-                              opacity: count > 0 ? 0.2 : 0,
-                              transition: 'width 0.4s ease, opacity 0.3s',
-                            }} />
-                            {/* 하단 fill 바 (두꺼운 인디케이터) */}
-                            <Box sx={{
-                              position: 'absolute',
-                              left: 0, bottom: 0,
-                              width: `${pct}%`,
-                              height: 3,
-                              bgcolor: fillColor,
-                              borderRadius: '0 2px 0 0',
-                              transition: 'width 0.4s ease',
-                            }} />
-                            {/* 텍스트 */}
-                            <Typography sx={{
-                              position: 'relative', zIndex: 1,
-                              fontSize: '0.68rem',
-                              fontWeight: count === quarterCount ? 900 : 700,
-                              color: count === 0 ? '#BBB' : count === quarterCount ? '#2E7D32' : '#333',
-                              letterSpacing: '-0.02em',
-                            }}>
-                              {name}
-                              <Typography component="span" sx={{
-                                fontSize: '0.58rem', fontWeight: 800, ml: 0.4,
-                                color: count < quarterCount * 0.5 && count > 0 ? '#E65100' : '#999',
-                              }}>
-                                {count}/{quarterCount}
-                              </Typography>
-                            </Typography>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  </Box>
-                );
-              })}
-            </Box>
-          )}
-
           {/* ──────────── 축구 2팀 쿼터 포메이션 (팀 탭 + 단일 필드) ──────────── */}
           {useQuarterSystem && quarterCount > 1 && !editMode && (() => {
             const activeTeamCode = expandFormation === 'B' ? 'B' : 'A';
@@ -1277,6 +1193,54 @@ export default function PlayerSelectPage() {
               </Box>
             );
           })()}
+
+          {/* 선수별 출전 카운팅 — 포메이션 아래 (축구 + 2팀 + 2쿼터 이상) */}
+          {useQuarterSystem && quarterCount > 1 && !editMode && (
+            <Box sx={{ mt: 1.5 }}>
+              {['A', 'B'].map((code) => {
+                const th = theme[code] || theme.A;
+                const teamPlayers = displayTeams[code] || [];
+                if (teamPlayers.length === 0) return null;
+                return (
+                  <Box key={code} sx={{ mb: 1.5 }}>
+                    <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, color: th.bg, mb: 0.6 }}>
+                      {getTeamLabel(code)} 선수별 출전
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {teamPlayers.map((name) => {
+                        let count = 0;
+                        for (let q = 1; q <= quarterCount; q++) {
+                          const qf = quarterFormations?.[code]?.[`Q${q}`];
+                          if (qf?.players && Object.values(qf.players).includes(name)) count++;
+                        }
+                        const pct = Math.round((count / quarterCount) * 100);
+                        const fillColor = count === quarterCount ? '#2E7D32'
+                          : count === 0 ? '#E0E0E0'
+                          : count < quarterCount * 0.5 ? '#F57C00' : th.bg;
+                        return (
+                          <Box key={name} sx={{
+                            position: 'relative', overflow: 'hidden', borderRadius: 2,
+                            border: `1.5px solid ${count > 0 ? fillColor : '#DDD'}`,
+                            bgcolor: '#F5F5F5', minWidth: 70, height: 30,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, bgcolor: fillColor, opacity: count > 0 ? 0.2 : 0, transition: 'width 0.4s ease' }} />
+                            <Box sx={{ position: 'absolute', left: 0, bottom: 0, width: `${pct}%`, height: 3, bgcolor: fillColor, transition: 'width 0.4s ease' }} />
+                            <Typography sx={{ position: 'relative', zIndex: 1, fontSize: '0.68rem', fontWeight: count === quarterCount ? 900 : 700, color: count === 0 ? '#BBB' : count === quarterCount ? '#2E7D32' : '#333' }}>
+                              {name}
+                              <Typography component="span" sx={{ fontSize: '0.58rem', fontWeight: 800, ml: 0.4, color: count < quarterCount * 0.5 && count > 0 ? '#E65100' : '#999' }}>
+                                {count}/{quarterCount}
+                              </Typography>
+                            </Typography>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
 
           {/* ──────────── 기존 포메이션 (풋살/3팀/쿼터 없음) ──────────── */}
           {!(useQuarterSystem && quarterCount > 1) && !editMode && (
