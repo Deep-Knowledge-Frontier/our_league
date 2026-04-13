@@ -203,7 +203,7 @@ export default function PlayerSelectPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.get('date') || new Date().toISOString().slice(0, 10);
-  const { clubName, userName, isAdmin, isModerator } = useAuth();
+  const { clubName, userName, isAdmin, isModerator, isMaster } = useAuth();
   const canEdit = isAdmin || isModerator;
   // 주장은 자기 팀의 포메이션만 편집 가능 (선수 구성/경기순서는 admin 전용)
   const canEditTeamFormation = (code) => canEdit || (!!userName && teamCaptains?.[code] === userName);
@@ -655,9 +655,40 @@ export default function PlayerSelectPage() {
       </Box>
 
       <Paper sx={{ borderRadius: 3, p: 2, mb: 2, boxShadow: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, flexWrap: 'wrap', gap: 0.8 }}>
           <Typography sx={{ fontWeight: 'bold', fontSize: '1rem' }}>참여선수: {selectedCount}명</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            {/* 마스터 관리자: 클럽 종목 변경 */}
+            {isMaster && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {['futsal', 'football'].map((t) => {
+                  const active = clubType === t;
+                  return (
+                    <Chip
+                      key={t}
+                      label={t === 'futsal' ? '⚽ 풋살' : '🏟 축구'}
+                      size="small"
+                      onClick={async () => {
+                        setClubType(t);
+                        setClubFormation(getDefaultFormation(t));
+                        await update(ref(db), {
+                          [`clubs/${clubName}/type`]: t,
+                          [`clubs/${clubName}/formation`]: getDefaultFormation(t),
+                        });
+                      }}
+                      sx={{
+                        fontWeight: active ? 800 : 500,
+                        fontSize: '0.72rem',
+                        bgcolor: active ? '#2D336B' : '#F0F2F5',
+                        color: active ? 'white' : '#555',
+                        cursor: 'pointer',
+                        '&:hover': { bgcolor: active ? '#1A1D4E' : '#E0E0E0' },
+                      }}
+                    />
+                  );
+                })}
+              </Box>
+            )}
             <Typography sx={{ fontSize: '0.85rem', color: '#666' }}>팀수:</Typography>
             <ToggleButtonGroup value={teamCount} exclusive onChange={(e, v) => v && setTeamCount(v)} size="small">
               <ToggleButton value={2} sx={{ px: 1.5, py: 0.3, fontSize: '0.8rem' }}>2팀</ToggleButton>
@@ -965,7 +996,7 @@ export default function PlayerSelectPage() {
             </Box>
           )}
 
-          {/* 🆕 선수별 출전 카운팅 (축구 + 2팀 + 2쿼터 이상) */}
+          {/* 🆕 선수별 출전 카운팅 — 버튼 fill 방식 (축구 + 2팀 + 2쿼터 이상) */}
           {useQuarterSystem && quarterCount > 1 && !editMode && (
             <Box sx={{ mt: 1.5 }}>
               {['A', 'B'].map((code) => {
@@ -973,38 +1004,76 @@ export default function PlayerSelectPage() {
                 const teamPlayers = displayTeams[code] || [];
                 if (teamPlayers.length === 0) return null;
                 return (
-                  <Box key={code} sx={{ mb: 1 }}>
-                    <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, color: th.bg, mb: 0.5 }}>
+                  <Box key={code} sx={{ mb: 1.5 }}>
+                    <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, color: th.bg, mb: 0.6 }}>
                       {getTeamLabel(code)} 선수별 출전
                     </Typography>
-                    {teamPlayers.map((name) => {
-                      let count = 0;
-                      for (let q = 1; q <= quarterCount; q++) {
-                        const qf = quarterFormations?.[code]?.[`Q${q}`];
-                        if (qf?.players && Object.values(qf.players).includes(name)) count++;
-                      }
-                      const pct = Math.round((count / quarterCount) * 100);
-                      return (
-                        <Box key={name} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.3 }}>
-                          <Typography sx={{ fontSize: '0.68rem', fontWeight: 600, color: '#555', width: 50, textAlign: 'right' }}>
-                            {name}
-                          </Typography>
-                          <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: '#E0E0E0', overflow: 'hidden' }}>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {teamPlayers.map((name) => {
+                        let count = 0;
+                        for (let q = 1; q <= quarterCount; q++) {
+                          const qf = quarterFormations?.[code]?.[`Q${q}`];
+                          if (qf?.players && Object.values(qf.players).includes(name)) count++;
+                        }
+                        const pct = Math.round((count / quarterCount) * 100);
+                        const fillColor = count === quarterCount ? '#2E7D32'
+                          : count === 0 ? '#E0E0E0'
+                          : count < quarterCount * 0.5 ? '#F57C00' : th.bg;
+                        return (
+                          <Box
+                            key={name}
+                            sx={{
+                              position: 'relative',
+                              overflow: 'hidden',
+                              borderRadius: 2,
+                              border: `1.5px solid ${count > 0 ? fillColor : '#DDD'}`,
+                              bgcolor: '#F5F5F5',
+                              minWidth: 70,
+                              height: 30,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            {/* fill 배경 (좌→우 채워짐) */}
                             <Box sx={{
-                              width: `${pct}%`, height: '100%', borderRadius: 3,
-                              bgcolor: count === quarterCount ? '#2E7D32' : count === 0 ? '#E0E0E0' : th.bg,
-                              transition: 'width 0.3s',
+                              position: 'absolute',
+                              left: 0, top: 0, bottom: 0,
+                              width: `${pct}%`,
+                              bgcolor: fillColor,
+                              opacity: count > 0 ? 0.2 : 0,
+                              transition: 'width 0.4s ease, opacity 0.3s',
                             }} />
+                            {/* 하단 fill 바 (두꺼운 인디케이터) */}
+                            <Box sx={{
+                              position: 'absolute',
+                              left: 0, bottom: 0,
+                              width: `${pct}%`,
+                              height: 3,
+                              bgcolor: fillColor,
+                              borderRadius: '0 2px 0 0',
+                              transition: 'width 0.4s ease',
+                            }} />
+                            {/* 텍스트 */}
+                            <Typography sx={{
+                              position: 'relative', zIndex: 1,
+                              fontSize: '0.68rem',
+                              fontWeight: count === quarterCount ? 900 : 700,
+                              color: count === 0 ? '#BBB' : count === quarterCount ? '#2E7D32' : '#333',
+                              letterSpacing: '-0.02em',
+                            }}>
+                              {name}
+                              <Typography component="span" sx={{
+                                fontSize: '0.58rem', fontWeight: 800, ml: 0.4,
+                                color: count < quarterCount * 0.5 && count > 0 ? '#E65100' : '#999',
+                              }}>
+                                {count}/{quarterCount}
+                              </Typography>
+                            </Typography>
                           </Box>
-                          <Typography sx={{
-                            fontSize: '0.62rem', fontWeight: 700, width: 38, textAlign: 'right',
-                            color: count < quarterCount * 0.5 ? '#E65100' : '#666',
-                          }}>
-                            {count}/{quarterCount}Q
-                          </Typography>
-                        </Box>
-                      );
-                    })}
+                        );
+                      })}
+                    </Box>
                   </Box>
                 );
               })}
