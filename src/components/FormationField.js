@@ -116,16 +116,16 @@ export default function FormationField({
                 filter={isSelected ? 'url(#selectedGlow)' : undefined} />
 
               {/* 포지션 라벨 */}
-              <text x={px} y={py - (playerName ? 3 : 0)} textAnchor="middle" dominantBaseline="central"
-                fill={isSelected ? '#333' : 'white'} fontSize={playerName ? 9 : 11} fontWeight="bold" fontFamily="sans-serif"
+              <text x={px} y={py - (playerName ? 6 : 0)} textAnchor="middle" dominantBaseline="central"
+                fill={isSelected ? '#333' : 'white'} fontSize={playerName ? 8.5 : 11} fontWeight="bold" fontFamily="sans-serif"
                 style={{ pointerEvents: 'none' }}>
                 {pos.label}
               </text>
 
               {/* 선수 이름 */}
               {playerName && (
-                <text x={px} y={py + 9} textAnchor="middle" dominantBaseline="central"
-                  fill={isSelected ? '#333' : 'white'} fontSize={9.5} fontWeight="600" fontFamily="sans-serif"
+                <text x={px} y={py + 5} textAnchor="middle" dominantBaseline="central"
+                  fill={isSelected ? '#333' : 'white'} fontSize={9.5} fontWeight="700" fontFamily="sans-serif"
                   style={{ pointerEvents: 'none' }}>
                   {playerName.length > 3 ? playerName.slice(0, 3) : playerName}
                 </text>

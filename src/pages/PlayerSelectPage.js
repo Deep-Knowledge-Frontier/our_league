@@ -20,11 +20,13 @@ import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import RestoreIcon from '@mui/icons-material/Restore';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ShareIcon from '@mui/icons-material/Share';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { softmaxPercent } from '../utils/stats';
 import { getFormations, getDefaultFormation } from '../config/formations';
 import FormationField from '../components/FormationField';
+import { shareFormationImage } from '../utils/shareFormation';
 
 const DRAFT_HIGH_ATTEND_THRESHOLD = 3;
 const MATCHES_PER_TEAM = 6;
@@ -285,14 +287,27 @@ export default function PlayerSelectPage() {
   const useQuarterSystem = clubType === 'football' && teamCount === 2;
   const [quarterCount, setQuarterCount] = useState(1);
   const [quarterFormations, setQuarterFormations] = useState({}); // { A: { Q1: {...}, Q2: {...} }, B: {...} }
-  const [activeQuarterTab, setActiveQuarterTab] = useState('Q1'); // 현재 선택된 쿼터 탭
+  const [teamQuarterTab, setTeamQuarterTab] = useState({ A: 'Q1', B: 'Q1' }); // 팀별 쿼터 기억
+  const [networkData, setNetworkData] = useState(null);
+  const [aiOptimizing, setAiOptimizing] = useState(false);
+  const [isAiOptimized, setIsAiOptimized] = useState(false);
+  const [synergyScores, setSynergyScores] = useState(null);  // { A: { formationId, players }, B: ... }
+  const [selectedPos, setSelectedPos] = useState(null);
+  const [expandFormation, setExpandFormation] = useState(null); // 'A' | 'B' | 'C' | null
+
+  // expandFormation 선언 이후에 파생값 계산
+  const activeQuarterTab = teamQuarterTab[expandFormation === 'B' ? 'B' : 'A'] || 'Q1';
+  const setActiveQuarterTab = (qKey) => {
+    const teamCode = expandFormation === 'B' ? 'B' : 'A';
+    setTeamQuarterTab(prev => ({ ...prev, [teamCode]: qKey }));
+  };
 
   // 쿼터 탭 전환 시: 해당 쿼터의 포메이션을 TeamFormation 뷰에 반영
   useEffect(() => {
     if (!useQuarterSystem || quarterCount <= 1) return;
-    const qKey = activeQuarterTab;
     const newTf = {};
     ['A', 'B'].forEach((code) => {
+      const qKey = teamQuarterTab[code] || 'Q1';
       if (quarterFormations?.[code]?.[qKey]) {
         newTf[code] = quarterFormations[code][qKey];
       }
@@ -300,13 +315,7 @@ export default function PlayerSelectPage() {
     if (Object.keys(newTf).length > 0) {
       setTeamFormations((prev) => ({ ...prev, ...newTf }));
     }
-  }, [activeQuarterTab, useQuarterSystem, quarterCount, quarterFormations]);
-  const [networkData, setNetworkData] = useState(null);
-  const [aiOptimizing, setAiOptimizing] = useState(false);
-  const [isAiOptimized, setIsAiOptimized] = useState(false);
-  const [synergyScores, setSynergyScores] = useState(null);  // { A: { formationId, players }, B: ... }
-  const [selectedPos, setSelectedPos] = useState(null);
-  const [expandFormation, setExpandFormation] = useState(null); // 'A' | 'B' | 'C' | null
+  }, [teamQuarterTab, useQuarterSystem, quarterCount, quarterFormations]);
   // 선수별 등록 포지션 맵 { '테스트GK1': 'GK', '테스트DF1': 'DF', ... }
   const [playerPositions, setPlayerPositions] = useState({});
 
@@ -1071,7 +1080,14 @@ export default function PlayerSelectPage() {
                         if (quarterCount <= 1) return;
                         const newCount = quarterCount - 1;
                         setQuarterCount(newCount);
-                        if (parseInt(activeQuarterTab.replace('Q', '')) > newCount) setActiveQuarterTab(`Q${newCount}`);
+                        // 양 팀 모두 쿼터 범위 초과 시 조정
+                        setTeamQuarterTab(prev => {
+                          const next = { ...prev };
+                          ['A', 'B'].forEach(c => {
+                            if (parseInt((next[c] || 'Q1').replace('Q', '')) > newCount) next[c] = `Q${newCount}`;
+                          });
+                          return next;
+                        });
                         await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterConfig`), { count: newCount });
                       }}
                       sx={{
@@ -1119,35 +1135,6 @@ export default function PlayerSelectPage() {
                 </Box>
               )}
 
-              {/* 쿼터 포메이션 탭 (2쿼터 이상) — "어느 쿼터를 편집" 느낌 */}
-              {quarterCount > 1 && (
-                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                  {Array.from({ length: quarterCount }).map((_, i) => {
-                    const qKey = `Q${i + 1}`;
-                    const active = activeQuarterTab === qKey;
-                    return (
-                      <Box
-                        key={qKey}
-                        onClick={() => setActiveQuarterTab(qKey)}
-                        sx={{
-                          flex: 1, py: 0.8, textAlign: 'center',
-                          borderRadius: '8px 8px 0 0',
-                          cursor: 'pointer',
-                          bgcolor: active ? '#2D336B' : 'transparent',
-                          color: active ? 'white' : '#888',
-                          fontWeight: active ? 900 : 600,
-                          fontSize: '0.82rem',
-                          borderBottom: active ? '3px solid #2D336B' : '3px solid #E0E0E0',
-                          transition: 'all 0.15s',
-                          '&:hover': !active ? { color: '#555', borderBottomColor: '#999' } : {},
-                        }}
-                      >
-                        {qKey}
-                      </Box>
-                    );
-                  })}
-                </Box>
-              )}
             </Box>
           )}
 
@@ -1168,13 +1155,9 @@ export default function PlayerSelectPage() {
             return (
               <Box sx={{ mt: 2 }}>
                 <Divider sx={{ mb: 1.5 }} />
-                <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#333', mb: 1, textAlign: 'center' }}>
-                  <SportsSoccerIcon sx={{ fontSize: 18, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />
-                  {activeQuarterTab} 포메이션
-                </Typography>
 
-                {/* 팀 선택 탭 (좌우 배치) */}
-                <Box sx={{ display: 'flex', gap: 0.5, mb: 1.5 }}>
+                {/* 1️⃣ 팀 선택 탭 (좌우 — 먼저!) */}
+                <Box sx={{ display: 'flex', gap: 0.5, mb: 1 }}>
                   {['A', 'B'].map((c) => {
                     const t = theme[c] || theme.A;
                     const active = activeTeamCode === c;
@@ -1206,7 +1189,71 @@ export default function PlayerSelectPage() {
                   })}
                 </Box>
 
-                {/* 선택된 팀의 포메이션 프리셋 — 클릭 시 전체 쿼터 자동 배치 */}
+                {/* 2️⃣ 쿼터 탭 (팀 아래) */}
+                <Box sx={{ display: 'flex', gap: 0.5, mb: 1 }}>
+                  {Array.from({ length: quarterCount }).map((_, i) => {
+                    const qKey = `Q${i + 1}`;
+                    const active = activeQuarterTab === qKey;
+                    return (
+                      <Box
+                        key={qKey}
+                        onClick={() => setActiveQuarterTab(qKey)}
+                        sx={{
+                          flex: 1, py: 0.7, textAlign: 'center',
+                          borderRadius: '8px 8px 0 0',
+                          cursor: 'pointer',
+                          bgcolor: active ? '#2D336B' : 'transparent',
+                          color: active ? 'white' : '#888',
+                          fontWeight: active ? 900 : 600,
+                          fontSize: '0.82rem',
+                          borderBottom: active ? '3px solid #2D336B' : '3px solid #E0E0E0',
+                          transition: 'all 0.15s',
+                          '&:hover': !active ? { color: '#555', borderBottomColor: '#999' } : {},
+                        }}
+                      >
+                        {qKey}
+                      </Box>
+                    );
+                  })}
+                </Box>
+
+                {/* 3️⃣ 쿼터 포메이션 제목 + 공유 */}
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.8, gap: 0.5 }}>
+                  <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: '#444' }}>
+                    <SportsSoccerIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />
+                    {activeQuarterTab} 포메이션
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    onClick={async () => {
+                      try {
+                        const teamLabel = getTeamLabel(code);
+                        const blob = await shareFormationImage({
+                          clubType, teamLabel, date: dateParam, quarterCount,
+                          quarterFormations, teamFormations, teamCode: code,
+                        });
+                        const file = new File([blob], `${teamLabel}_formation.png`, { type: 'image/png' });
+                        if (navigator.share && navigator.canShare?.({ files: [file] })) {
+                          await navigator.share({ files: [file], title: `${teamLabel} 포메이션` });
+                        } else {
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `${teamLabel}_formation.png`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }
+                      } catch (e) {
+                        console.error('share error', e);
+                      }
+                    }}
+                    sx={{ color: '#888', '&:hover': { color: '#2D336B' } }}
+                  >
+                    <ShareIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Box>
+
+                {/* 선택된 팀의 포메이션 프리셋 — 현재 쿼터에만 적용 */}
                 {canEditThis && (
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1, justifyContent: 'center' }}>
                     {Object.entries(getFormations(clubType)).map(([key, fm]) => (
@@ -1214,23 +1261,19 @@ export default function PlayerSelectPage() {
                         onClick={async () => {
                           const newFmDef = getFormations(clubType)[key];
                           if (!newFmDef) return;
-                          // 등록 포지션 기반 스마트 배치 → 전체 쿼터에 적용
                           const autoPlayers = smartAutoAssign(newFmDef.positions, teamPlayers, playerPositions);
                           const tfData = { formationId: key, players: autoPlayers };
                           setTeamFormations(prev => ({ ...prev, [code]: tfData }));
                           setSelectedPos(null);
-                          // 현재 쿼터 + 모든 쿼터에 동일 배치 적용
+                          // 현재 쿼터에만 적용
                           const newQf = { ...quarterFormations };
                           if (!newQf[code]) newQf[code] = {};
-                          const updates = {};
-                          for (let q = 1; q <= quarterCount; q++) {
-                            const qKey = `Q${q}`;
-                            newQf[code][qKey] = tfData;
-                            updates[`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${qKey}`] = tfData;
-                          }
-                          updates[`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`] = tfData;
+                          newQf[code][activeQuarterTab] = tfData;
                           setQuarterFormations(newQf);
-                          await update(ref(db), updates);
+                          await update(ref(db), {
+                            [`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`]: tfData,
+                            [`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`]: tfData,
+                          });
                         }}
                         sx={{
                           fontSize: '0.72rem', fontWeight: 600,
