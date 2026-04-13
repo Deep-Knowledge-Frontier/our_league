@@ -70,6 +70,12 @@ export default function TeamViewPage() {
   const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
   const [teamCaptains, setTeamCaptains] = useState({ A: '', B: '', C: '' });
 
+  // 🆕 쿼터 시스템
+  const [quarterCount, setQuarterCount] = useState(0);
+  const [quarterFormations, setQuarterFormations] = useState({});
+  const [activeQuarter, setActiveQuarter] = useState('Q1');
+  const useQuarterView = clubType === 'football' && quarterCount >= 2 && !teams.C.length;
+
   useEffect(() => {
     setLoading(true);
     const teamsRef = ref(db, `PlayerSelectionByDate/${clubName}/${date}/AttandPlayer`);
@@ -89,7 +95,7 @@ export default function TeamViewPage() {
       setKeyPop(normalizeNames(snap.val()));
     });
 
-    // 클럽 종목 + 경기별 포메이션 + 팀이름 로드
+    // 클럽 종목 + 경기별 포메이션 + 팀이름 + 쿼터 로드
     (async () => {
       const clubSnap = await get(ref(db, `clubs/${clubName}`));
       if (clubSnap.exists()) setClubType(clubSnap.val().type || 'futsal');
@@ -99,6 +105,11 @@ export default function TeamViewPage() {
       if (tnSnap.exists()) setTeamNames(prev => ({ ...prev, ...tnSnap.val() }));
       const tcSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${date}/TeamCaptains`));
       if (tcSnap.exists()) setTeamCaptains(prev => ({ ...prev, ...tcSnap.val() }));
+      // 🆕 쿼터 설정 + 포메이션
+      const qcSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${date}/QuarterConfig`));
+      if (qcSnap.exists() && qcSnap.val()?.count >= 2) setQuarterCount(qcSnap.val().count);
+      const qfSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${date}/QuarterFormation`));
+      if (qfSnap.exists()) setQuarterFormations(qfSnap.val());
     })();
 
     return () => {
@@ -259,15 +270,48 @@ export default function TeamViewPage() {
 
         <Box sx={{ my: 2.2, height: 1, bgcolor: "rgba(0,0,0,0.12)" }} />
 
+        {/* 🆕 쿼터 탭 (축구 2팀 쿼터제) */}
+        {useQuarterView && (
+          <Box sx={{ mb: 1.5 }}>
+            <Box sx={{ display: 'flex', gap: 0.5 }}>
+              {Array.from({ length: quarterCount }).map((_, i) => {
+                const qKey = `Q${i + 1}`;
+                const active = activeQuarter === qKey;
+                return (
+                  <Box
+                    key={qKey}
+                    onClick={() => setActiveQuarter(qKey)}
+                    sx={{
+                      flex: 1, py: 0.7, textAlign: 'center',
+                      borderRadius: 2, cursor: 'pointer',
+                      bgcolor: active ? '#2D336B' : '#E0E0E0',
+                      color: active ? 'white' : '#555',
+                      fontWeight: active ? 900 : 600,
+                      fontSize: '0.8rem',
+                      transition: 'all 0.15s',
+                      boxShadow: active ? '0 3px 8px rgba(0,0,0,0.15)' : 'none',
+                    }}
+                  >
+                    {qKey}
+                  </Box>
+                );
+              })}
+            </Box>
+          </Box>
+        )}
+
         {/* 팀별 포메이션 */}
-        {Object.keys(teamFormations).length > 0 && (
+        {(Object.keys(teamFormations).length > 0 || Object.keys(quarterFormations).length > 0) && (
           <Box sx={{ mt: 1 }}>
             <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', mb: 1, textAlign: 'center' }}>
               <SportsSoccerIcon sx={{ fontSize: 18, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />
-              팀별 포메이션
+              {useQuarterView ? `${activeQuarter} 포메이션` : '팀별 포메이션'}
             </Typography>
             {['A', 'B', 'C'].map(code => {
-              const tf = teamFormations[code];
+              // 쿼터 모드: 해당 쿼터의 포메이션 사용, 없으면 기본 TeamFormation
+              const tf = useQuarterView
+                ? (quarterFormations?.[code]?.[activeQuarter] || teamFormations[code])
+                : teamFormations[code];
               if (!tf || !tf.formationId) return null;
               const fmDef = getFormations(clubType)[tf.formationId];
               if (!fmDef) return null;
