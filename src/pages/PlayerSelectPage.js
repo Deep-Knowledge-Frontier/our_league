@@ -835,8 +835,8 @@ export default function PlayerSelectPage() {
           </Box>
 
 
-          {/* 경기 순서 */}
-          {!editMode && matchOrder.length > 0 && (
+          {/* 경기 순서 (2팀이면 A vs B 뿐이라 표시 불필요) */}
+          {!editMode && matchOrder.length > 0 && teamCount > 2 && (
             <Box sx={{ mt: 2 }}>
               <Divider sx={{ mb: 1.5 }} />
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
