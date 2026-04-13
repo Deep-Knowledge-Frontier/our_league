@@ -411,6 +411,16 @@ export default function PlayerSelectPage() {
 
   const selectedCount = useMemo(() => Object.values(selectedPlayers).filter(Boolean).length, [selectedPlayers]);
 
+  // 풋살: 참여선수 수에 따라 팀 수 자동 추천 (14명 이하 → 2팀, 15명+ → 3팀)
+  // 이미 팀 편성이 저장된 경우에는 자동 변경 안 함 (관리자 수동 우선)
+  useEffect(() => {
+    if (clubType !== 'futsal') return;
+    if (hasSavedTeams) return; // 이미 편성된 팀이 있으면 건드리지 않음
+    if (selectedCount <= 0) return;
+    const recommended = selectedCount <= 14 ? 2 : 3;
+    setTeamCount(recommended);
+  }, [selectedCount, clubType, hasSavedTeams]);
+
   const togglePlayer = useCallback((name) => {
     if (!canEdit) return;
     setSelectedPlayers(prev => {
