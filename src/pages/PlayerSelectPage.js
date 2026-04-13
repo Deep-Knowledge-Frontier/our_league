@@ -21,7 +21,6 @@ import RestoreIcon from '@mui/icons-material/Restore';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { db } from '../config/firebase';
-import { get } from 'firebase/database';
 import { useAuth } from '../contexts/AuthContext';
 import { softmaxPercent } from '../utils/stats';
 import { getFormations, getDefaultFormation } from '../config/formations';
