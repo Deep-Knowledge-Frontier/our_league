@@ -1349,21 +1349,28 @@ export default function PlayerSelectPage() {
                             </Typography>
                           )}
                         </Typography>
-                        {/* 쿼터 세그먼트 블록 ■■□□ */}
-                        <Box sx={{ display: 'flex', gap: '2px', mt: 0.3 }}>
-                          {quarterSlots.map((played, qi) => (
-                            <Box
-                              key={qi}
-                              sx={{
-                                width: 10, height: 6, borderRadius: 0.5,
-                                bgcolor: played
-                                  ? (qCount === quarterCount ? '#2E7D32' : qCount < quarterCount * 0.5 ? '#F57C00' : th.bg)
-                                  : '#E0E0E0',
-                                border: `Q${qi + 1}` === activeQuarterTab ? '1px solid #333' : 'none',
-                                transition: 'all 0.2s',
-                              }}
-                            />
-                          ))}
+                        {/* 쿼터 세그먼트 블록 — 출전 ■ / 미출전 □ */}
+                        <Box sx={{ display: 'flex', gap: '2px', mt: 0.3, alignItems: 'center' }}>
+                          {quarterSlots.map((played, qi) => {
+                            const isCurrentQ = `Q${qi + 1}` === activeQuarterTab;
+                            return (
+                              <Box
+                                key={qi}
+                                sx={{
+                                  width: isCurrentQ ? 12 : 10,
+                                  height: isCurrentQ ? 8 : 6,
+                                  borderRadius: 0.5,
+                                  bgcolor: played ? th.bg : '#E8E8E8',
+                                  opacity: played ? 1 : 0.4,
+                                  border: isCurrentQ
+                                    ? (played ? `1.5px solid ${th.bg}` : '1.5px solid #999')
+                                    : (played ? 'none' : '0.5px solid #CCC'),
+                                  boxShadow: played && isCurrentQ ? `0 0 3px ${th.bg}88` : 'none',
+                                  transition: 'all 0.2s',
+                                }}
+                              />
+                            );
+                          })}
                         </Box>
                       </Box>
                     );
