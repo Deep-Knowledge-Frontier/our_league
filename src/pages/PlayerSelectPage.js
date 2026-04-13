@@ -157,6 +157,50 @@ function getPositionScore(posId, stats) {
   return bal;
 }
 
+// 등록 포지션 기반 스마트 배치 (축구 쿼터용)
+// 선수의 registeredPlayers.position과 포메이션 포지션을 매칭
+function smartAutoAssign(positions, teamPlayers, playerPositions) {
+  const assigned = {};
+  const available = new Set(teamPlayers);
+
+  // 포지션 카테고리 매핑: 등록 포지션 → 포메이션 포지션 호환성
+  const categoryOf = (id) => {
+    const u = (id || '').toUpperCase();
+    if (u === 'GK') return 'GK';
+    if (['CB', 'CB1', 'CB2', 'CB3', 'DF', 'LB', 'RB', 'LWB', 'RWB'].includes(u)) return 'DF';
+    if (['CDM', 'CDM1', 'CDM2', 'DM', 'CM', 'CM1', 'CM2', 'CM3', 'MF', 'LM', 'RM'].includes(u)) return 'MF';
+    if (['AM', 'CAM'].includes(u)) return 'AM';
+    if (['FW', 'ST', 'ST1', 'ST2', 'LW', 'RW', 'LF', 'RF'].includes(u)) return 'FW';
+    return 'MF';
+  };
+
+  // GK 먼저, 그 다음 DF → MF → FW 순으로 배치 (구체적 포지션 우선)
+  const sorted = [...positions].sort((a, b) => {
+    const pri = (id) => { const c = categoryOf(id); return c === 'GK' ? 0 : c === 'DF' ? 1 : c === 'MF' ? 2 : c === 'AM' ? 3 : 4; };
+    return pri(a.id) - pri(b.id);
+  });
+
+  for (const pos of sorted) {
+    if (available.size === 0) break;
+    const posCat = categoryOf(pos.id);
+
+    // 1순위: 등록 포지션 카테고리가 정확히 일치하는 선수
+    let bestPlayer = null;
+    for (const player of available) {
+      const regPos = playerPositions[player] || '';
+      if (categoryOf(regPos) === posCat) { bestPlayer = player; break; }
+    }
+    // 2순위: 없으면 아무나 (남은 선수 중 첫 번째)
+    if (!bestPlayer) bestPlayer = [...available][0];
+
+    if (bestPlayer) {
+      assigned[pos.id] = bestPlayer;
+      available.delete(bestPlayer);
+    }
+  }
+  return assigned;
+}
+
 function autoAssignPlayers(positions, teamPlayers, statsMap) {
   const players = {};
   const available = [...teamPlayers];
@@ -261,11 +305,18 @@ export default function PlayerSelectPage() {
   const [synergyScores, setSynergyScores] = useState(null);  // { A: { formationId, players }, B: ... }
   const [selectedPos, setSelectedPos] = useState(null);
   const [expandFormation, setExpandFormation] = useState(null); // 'A' | 'B' | 'C' | null
+  // 선수별 등록 포지션 맵 { '테스트GK1': 'GK', '테스트DF1': 'DF', ... }
+  const [playerPositions, setPlayerPositions] = useState({});
 
   useEffect(() => {
     return onValue(ref(db, `registeredPlayers/${clubName}`), snap => {
       const v = snap.val() || {};
-      setRegisteredPlayers(Object.values(v).map(p => p.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko')));
+      const entries = Object.values(v);
+      setRegisteredPlayers(entries.map(p => p.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko')));
+      // 포지션 맵 구성
+      const posMap = {};
+      entries.forEach(p => { if (p.name && p.position) posMap[p.name] = p.position; });
+      setPlayerPositions(posMap);
     });
   }, [clubName]);
 
@@ -1092,23 +1143,31 @@ export default function PlayerSelectPage() {
                   })}
                 </Box>
 
-                {/* 선택된 팀의 포메이션 프리셋 */}
+                {/* 선택된 팀의 포메이션 프리셋 — 클릭 시 전체 쿼터 자동 배치 */}
                 {canEditThis && (
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1, justifyContent: 'center' }}>
                     {Object.entries(getFormations(clubType)).map(([key, fm]) => (
                       <Chip key={key} label={fm.name} size="small"
                         onClick={async () => {
                           const newFmDef = getFormations(clubType)[key];
-                          const autoPlayers = newFmDef ? autoAssignPlayers(newFmDef.positions, teamPlayers, statsMap) : {};
+                          if (!newFmDef) return;
+                          // 등록 포지션 기반 스마트 배치 → 전체 쿼터에 적용
+                          const autoPlayers = smartAutoAssign(newFmDef.positions, teamPlayers, playerPositions);
                           const tfData = { formationId: key, players: autoPlayers };
                           setTeamFormations(prev => ({ ...prev, [code]: tfData }));
                           setSelectedPos(null);
-                          await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
+                          // 현재 쿼터 + 모든 쿼터에 동일 배치 적용
                           const newQf = { ...quarterFormations };
                           if (!newQf[code]) newQf[code] = {};
-                          newQf[code][activeQuarterTab] = tfData;
+                          const updates = {};
+                          for (let q = 1; q <= quarterCount; q++) {
+                            const qKey = `Q${q}`;
+                            newQf[code][qKey] = tfData;
+                            updates[`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${qKey}`] = tfData;
+                          }
+                          updates[`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`] = tfData;
                           setQuarterFormations(newQf);
-                          await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
+                          await update(ref(db), updates);
                         }}
                         sx={{
                           fontSize: '0.72rem', fontWeight: 600,
