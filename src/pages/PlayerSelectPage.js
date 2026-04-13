@@ -1152,24 +1152,41 @@ export default function PlayerSelectPage() {
                   </Box>
                 )}
 
-                {/* 안내 + 미배치 선수 */}
+                {/* 통합 선수 목록 — 출전 fill + 클릭으로 포메이션 배치 */}
                 {canEditThis && selectedPos && fmDef && (
                   <Typography sx={{ fontSize: '0.75rem', color: '#FF6F00', fontWeight: 700, mb: 0.5, textAlign: 'center' }}>
-                    📍 {fmDef.positions.find((p) => p.id === selectedPos)?.label || selectedPos} 선택됨 — 아래 선수 또는 다른 포지션 탭
+                    📍 {fmDef.positions.find((p) => p.id === selectedPos)?.label || selectedPos} — 아래 선수 탭해서 배치
                   </Typography>
                 )}
-                {canEditThis && unassigned.length > 0 && (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4, justifyContent: 'center', mb: 1 }}>
-                    {unassigned.map((name) => (
-                      <Chip key={name} label={name} size="small"
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4, justifyContent: 'center', mb: 1 }}>
+                  {teamPlayers.map((name) => {
+                    // 현재 쿼터 배치 여부
+                    const posKey = Object.keys(assignedPlayers).find((k) => assignedPlayers[k] === name);
+                    const isPlaced = !!posKey;
+                    const posLabel = posKey && fmDef ? (fmDef.positions.find((p) => p.id === posKey)?.label || posKey) : null;
+                    // 전체 쿼터 출전 카운트
+                    let qCount = 0;
+                    for (let q = 1; q <= quarterCount; q++) {
+                      const qf = quarterFormations?.[code]?.[`Q${q}`];
+                      if (qf?.players && Object.values(qf.players).includes(name)) qCount++;
+                    }
+                    const pct = Math.round((qCount / quarterCount) * 100);
+                    const fillColor = qCount === quarterCount ? '#2E7D32'
+                      : qCount === 0 ? '#E0E0E0'
+                      : qCount < quarterCount * 0.5 ? '#F57C00' : th.bg;
+                    const isClickable = canEditThis && !!selectedPos;
+
+                    return (
+                      <Box
+                        key={name}
                         onClick={async () => {
-                          if (!selectedPos) return;
+                          if (!selectedPos || !canEditThis) return;
                           const newPlayers = { ...assignedPlayers, [selectedPos]: name };
                           Object.keys(newPlayers).forEach((p) => {
                             if (newPlayers[p] === name && p !== selectedPos) delete newPlayers[p];
                           });
                           const tfData = { formationId: fmId, players: newPlayers };
-                          setTeamFormations(prev => ({ ...prev, [code]: tfData }));
+                          setTeamFormations((prev) => ({ ...prev, [code]: tfData }));
                           setSelectedPos(null);
                           await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
                           const newQf = { ...quarterFormations };
@@ -1179,71 +1196,45 @@ export default function PlayerSelectPage() {
                           await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
                         }}
                         sx={{
-                          fontSize: '0.75rem', fontWeight: 600,
-                          cursor: selectedPos ? 'pointer' : 'default',
-                          bgcolor: selectedPos ? '#FFF8E1' : '#F5F5F5',
-                          color: selectedPos ? '#F57F17' : '#999',
-                          border: selectedPos ? '1px solid #FFD600' : '1px solid #E0E0E0',
+                          position: 'relative', overflow: 'hidden',
+                          borderRadius: 2, minWidth: 72, height: 34,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          border: isPlaced
+                            ? `2px solid ${th.bg}`
+                            : isClickable ? '1.5px dashed #FFB300' : '1px solid #DDD',
+                          bgcolor: isPlaced ? th.light : '#F9F9F9',
+                          cursor: isClickable ? 'pointer' : 'default',
+                          transition: 'all 0.15s',
+                          '&:hover': isClickable ? { bgcolor: '#FFF8E1', borderColor: '#FFB300' } : {},
+                        }}
+                      >
+                        {/* 출전 fill 바 (하단) */}
+                        <Box sx={{
+                          position: 'absolute', left: 0, bottom: 0,
+                          width: `${pct}%`, height: 3,
+                          bgcolor: fillColor, transition: 'width 0.3s',
                         }} />
-                    ))}
-                  </Box>
-                )}
-                {unassigned.length === 0 && canEditThis && (
-                  <Typography sx={{ fontSize: '0.75rem', color: '#2E7D32', fontWeight: 700, textAlign: 'center', mb: 1 }}>
-                    ✓ 모든 선수 배치 완료
-                  </Typography>
-                )}
+                        {/* 선수명 + 포지션/카운트 */}
+                        <Typography sx={{
+                          position: 'relative', zIndex: 1,
+                          fontSize: '0.65rem', fontWeight: isPlaced ? 800 : 600,
+                          color: isPlaced ? th.bg : '#666',
+                        }}>
+                          {name}
+                          <Typography component="span" sx={{
+                            fontSize: '0.55rem', fontWeight: 700, ml: 0.3,
+                            color: isPlaced ? th.bg : '#BBB',
+                          }}>
+                            {isPlaced ? posLabel : `${qCount}/${quarterCount}`}
+                          </Typography>
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
               </Box>
             );
           })()}
-
-          {/* 선수별 출전 카운팅 — 포메이션 아래 (축구 + 2팀 + 2쿼터 이상) */}
-          {useQuarterSystem && quarterCount > 1 && !editMode && (
-            <Box sx={{ mt: 1.5 }}>
-              {['A', 'B'].map((code) => {
-                const th = theme[code] || theme.A;
-                const teamPlayers = displayTeams[code] || [];
-                if (teamPlayers.length === 0) return null;
-                return (
-                  <Box key={code} sx={{ mb: 1.5 }}>
-                    <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, color: th.bg, mb: 0.6 }}>
-                      {getTeamLabel(code)} 선수별 출전
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {teamPlayers.map((name) => {
-                        let count = 0;
-                        for (let q = 1; q <= quarterCount; q++) {
-                          const qf = quarterFormations?.[code]?.[`Q${q}`];
-                          if (qf?.players && Object.values(qf.players).includes(name)) count++;
-                        }
-                        const pct = Math.round((count / quarterCount) * 100);
-                        const fillColor = count === quarterCount ? '#2E7D32'
-                          : count === 0 ? '#E0E0E0'
-                          : count < quarterCount * 0.5 ? '#F57C00' : th.bg;
-                        return (
-                          <Box key={name} sx={{
-                            position: 'relative', overflow: 'hidden', borderRadius: 2,
-                            border: `1.5px solid ${count > 0 ? fillColor : '#DDD'}`,
-                            bgcolor: '#F5F5F5', minWidth: 70, height: 30,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>
-                            <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, bgcolor: fillColor, opacity: count > 0 ? 0.2 : 0, transition: 'width 0.4s ease' }} />
-                            <Box sx={{ position: 'absolute', left: 0, bottom: 0, width: `${pct}%`, height: 3, bgcolor: fillColor, transition: 'width 0.4s ease' }} />
-                            <Typography sx={{ position: 'relative', zIndex: 1, fontSize: '0.68rem', fontWeight: count === quarterCount ? 900 : 700, color: count === 0 ? '#BBB' : count === quarterCount ? '#2E7D32' : '#333' }}>
-                              {name}
-                              <Typography component="span" sx={{ fontSize: '0.58rem', fontWeight: 800, ml: 0.4, color: count < quarterCount * 0.5 && count > 0 ? '#E65100' : '#999' }}>
-                                {count}/{quarterCount}
-                              </Typography>
-                            </Typography>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  </Box>
-                );
-              })}
-            </Box>
-          )}
 
           {/* ──────────── 기존 포메이션 (풋살/3팀/쿼터 없음) ──────────── */}
           {!(useQuarterSystem && quarterCount > 1) && !editMode && (
