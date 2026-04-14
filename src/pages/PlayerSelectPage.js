@@ -23,7 +23,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ShareIcon from '@mui/icons-material/Share';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { softmaxPercent } from '../utils/stats';
+import { softmaxPercent, averageExcludeZero } from '../utils/stats';
 import { getFormations, getDefaultFormation } from '../config/formations';
 import FormationField from '../components/FormationField';
 import { shareFormationImage } from '../utils/shareFormation';
@@ -31,15 +31,9 @@ import { shareFormationImage } from '../utils/shareFormation';
 const DRAFT_HIGH_ATTEND_THRESHOLD = 3;
 const MATCHES_PER_TEAM = 6;
 
-function avgExcludeNull(names, statsMap) {
-  if (!names?.length) return 0;
-  let sum = 0, cnt = 0;
-  names.forEach(n => {
-    const s = statsMap[n];
-    if (s?.pointRate > 0) { sum += s.pointRate; cnt++; }
-  });
-  return cnt === 0 ? 0 : sum / cnt;
-}
+// 팀 선수들의 pointRate 평균 (0 제외)
+const avgExcludeNull = (names, statsMap) =>
+  averageExcludeZero(names, (n) => statsMap[n]?.pointRate);
 
 function snakeDraft(players, teamCount, statsMap) {
   const high = [], low = [];
@@ -283,8 +277,14 @@ export default function PlayerSelectPage() {
   const [clubFormation, setClubFormation] = useState('');
   const [teamFormations, setTeamFormations] = useState({});
 
-  // 🆕 쿼터 시스템 (축구 + 2팀 전용)
-  const useQuarterSystem = clubType === 'football' && teamCount === 2;
+  // 🆕 포메이션 시스템 (축구: 쿼터 / 풋살: 경기)
+  const [formationEnabled, setFormationEnabled] = useState(false);
+  const useQuarterSystem = teamCount === 2 && formationEnabled;
+  // 쿼터/경기 라벨: 축구 = "Q1", 풋살 = "1경기"
+  const getQuarterLabel = (qKey) => {
+    const n = qKey.replace('Q', '');
+    return clubType === 'football' ? qKey : `${n}경기`;
+  };
   const [quarterCount, setQuarterCount] = useState(1);
   const [quarterFormations, setQuarterFormations] = useState({}); // { A: { Q1: {...}, Q2: {...} }, B: {...} }
   const [teamQuarterTab, setTeamQuarterTab] = useState({ A: 'Q1', B: 'Q1' }); // 팀별 쿼터 기억
@@ -441,13 +441,17 @@ export default function PlayerSelectPage() {
       }
       const qfSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation`));
       if (qfSnap.exists()) setQuarterFormations(qfSnap.val());
+      // 포메이션 활성화 여부 로드
+      const feSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/FormationEnabled`));
+      setFormationEnabled(feSnap.val() === true);
     })();
   }, [clubName, dateParam]);
 
-  // 팀이 있는데 포메이션이 비어있으면 자동 배치
+  // 팀이 있는데 포메이션이 비어있으면 자동 배치 (2팀은 formationEnabled일 때만)
   useEffect(() => {
     if (!hasSavedTeams || Object.keys(teamFormations).length > 0) return;
     if (!clubType || teams.A.length === 0) return;
+    if (teamCount === 2 && !formationEnabled) return;
     const fmId = clubFormation || getDefaultFormation(clubType);
     const fmDef = getFormations(clubType)[fmId];
     if (!fmDef) return;
@@ -463,7 +467,7 @@ export default function PlayerSelectPage() {
       setTeamFormations(newTf);
       set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`), newTf);
     }
-  }, [hasSavedTeams, teamFormations, teams, clubType, clubFormation, statsMap, clubName, dateParam]);
+  }, [hasSavedTeams, teamFormations, teams, clubType, clubFormation, statsMap, clubName, dateParam, teamCount, formationEnabled]);
 
   // 참여선수 = 등록선수 + 이 경기일의 등록 용병 (스탯 기록만 있는 과거 선수는 제외)
   const playerList = useMemo(() => {
@@ -640,7 +644,11 @@ export default function PlayerSelectPage() {
   }, [clubName, dateParam, teamCount, matchOrder]);
 
   // 축구 2팀 쿼터 모드: matchesPerTeam = quarterCount (각 쿼터가 독립 경기)
-  const effectiveMatchesPerTeam = useQuarterSystem && quarterCount > 1 ? quarterCount : MATCHES_PER_TEAM;
+  // formationEnabled 여부와 무관하게 기존 축구 2팀 쿼터 개수 유지
+  const effectiveMatchesPerTeam =
+    (clubType === 'football' && teamCount === 2 && quarterCount > 1)
+      ? quarterCount
+      : MATCHES_PER_TEAM;
 
   // 경기 기록이 있으면 MatchDetailPage(경기 1)로, 없으면 ScoreRecordPage(새 기록)로
   const goToScoreRecord = useCallback(() => {
@@ -1056,7 +1064,38 @@ export default function PlayerSelectPage() {
             </Box>
           )}
 
-          {/* 🆕 쿼터 설정 + 탭 (축구 + 2팀일 때만) — 스테퍼 + 탭 통합 */}
+          {/* 🆕 포메이션 정하기 토글 (2팀일 때만) */}
+          {teamCount === 2 && !editMode && canEdit && (
+            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+              <Button
+                variant={formationEnabled ? 'contained' : 'outlined'}
+                size="small"
+                startIcon={<SportsSoccerIcon sx={{ fontSize: 16 }} />}
+                onClick={async () => {
+                  const newVal = !formationEnabled;
+                  setFormationEnabled(newVal);
+                  await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/FormationEnabled`), newVal);
+                }}
+                sx={{
+                  fontSize: '0.78rem', fontWeight: 700,
+                  bgcolor: formationEnabled ? '#2D336B' : 'transparent',
+                  color: formationEnabled ? 'white' : '#2D336B',
+                  borderColor: '#2D336B',
+                  '&:hover': {
+                    bgcolor: formationEnabled ? '#1A1D4E' : '#E8EAF6',
+                    borderColor: '#2D336B',
+                  },
+                  textTransform: 'none',
+                  borderRadius: 2,
+                  px: 2, py: 0.6,
+                }}
+              >
+                {formationEnabled ? '포메이션 설정 중' : '포메이션 정하기'}
+              </Button>
+            </Box>
+          )}
+
+          {/* 🆕 쿼터/경기 설정 + 탭 (2팀 + 포메이션 활성화 시) — 스테퍼 + 탭 통합 */}
           {useQuarterSystem && !editMode && (
             <Box sx={{ mt: 2 }}>
               <Divider sx={{ mb: 1.5 }} />
@@ -1068,7 +1107,7 @@ export default function PlayerSelectPage() {
                   gap: 1.5, mb: 1.5,
                 }}>
                   <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#666' }}>
-                    ⏱ 쿼터 수
+                    ⏱ {clubType === 'football' ? '쿼터' : '경기'} 수
                   </Typography>
                   <Box sx={{
                     display: 'flex', alignItems: 'center',
@@ -1149,7 +1188,6 @@ export default function PlayerSelectPage() {
             const fmId = tf.formationId || clubFormation || getDefaultFormation(clubType);
             const fmDef = getFormations(clubType)[fmId];
             const assignedPlayers = tf.players || {};
-            const unassigned = teamPlayers.filter((p) => !Object.values(assignedPlayers).includes(p));
             const canEditThis = canEditTeamFormation(code);
 
             return (
@@ -1161,7 +1199,9 @@ export default function PlayerSelectPage() {
                   {['A', 'B'].map((c) => {
                     const t = theme[c] || theme.A;
                     const active = activeTeamCode === c;
-                    const cTf = quarterFormations?.[c]?.[activeQuarterTab] || teamFormations[c] || {};
+                    // 각 팀 자신의 기억된 쿼터 사용 (비활성 팀도 자기 쿼터 표시)
+                    const cQuarter = teamQuarterTab[c] || 'Q1';
+                    const cTf = quarterFormations?.[c]?.[cQuarter] || teamFormations[c] || {};
                     const cFmId = cTf.formationId || '';
                     return (
                       <Box
@@ -1211,17 +1251,17 @@ export default function PlayerSelectPage() {
                           '&:hover': !active ? { color: '#555', borderBottomColor: '#999' } : {},
                         }}
                       >
-                        {qKey}
+                        {getQuarterLabel(qKey)}
                       </Box>
                     );
                   })}
                 </Box>
 
-                {/* 3️⃣ 쿼터 포메이션 제목 + 공유 */}
+                {/* 3️⃣ 쿼터/경기 포메이션 제목 + 공유 */}
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.8, gap: 0.5 }}>
                   <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: '#444' }}>
                     <SportsSoccerIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />
-                    {activeQuarterTab} 포메이션
+                    {getQuarterLabel(activeQuarterTab)} 포메이션
                   </Typography>
                   <IconButton
                     size="small"
@@ -1329,16 +1369,6 @@ export default function PlayerSelectPage() {
                     const posKey = Object.keys(assignedPlayers).find((k) => assignedPlayers[k] === name);
                     const isPlaced = !!posKey;
                     const posLabel = posKey && fmDef ? (fmDef.positions.find((p) => p.id === posKey)?.label || posKey) : null;
-                    // 전체 쿼터 출전 카운트
-                    let qCount = 0;
-                    for (let q = 1; q <= quarterCount; q++) {
-                      const qf = quarterFormations?.[code]?.[`Q${q}`];
-                      if (qf?.players && Object.values(qf.players).includes(name)) qCount++;
-                    }
-                    const pct = Math.round((qCount / quarterCount) * 100);
-                    const fillColor = qCount === quarterCount ? '#2E7D32'
-                      : qCount === 0 ? '#E0E0E0'
-                      : qCount < quarterCount * 0.5 ? '#F57C00' : th.bg;
                     const isClickable = canEditThis && !!selectedPos;
 
                     // 각 쿼터별 출전 여부 (세그먼트 블록용)
@@ -1423,8 +1453,8 @@ export default function PlayerSelectPage() {
             );
           })()}
 
-          {/* ──────────── 기존 포메이션 (풋살/3팀/쿼터 없음) ──────────── */}
-          {!(useQuarterSystem && quarterCount > 1) && !editMode && (
+          {/* ──────────── 기존 포메이션 (3팀 / 2팀 1쿼터 + 포메이션 활성화) ──────────── */}
+          {!(useQuarterSystem && quarterCount > 1) && !editMode && (teamCount !== 2 || formationEnabled) && (
             <Box sx={{ mt: 2 }}>
               <Divider sx={{ mb: 1.5 }} />
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>

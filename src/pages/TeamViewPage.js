@@ -9,7 +9,6 @@ import {
   CircularProgress,
   Paper,
   Chip,
-  Stack,
   Button,
   Card,
   CardContent,
@@ -21,12 +20,11 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import SportsSoccerIcon from "@mui/icons-material/SportsSoccer";
 import ShareIcon from "@mui/icons-material/Share";
 import GroupsIcon from "@mui/icons-material/Groups";
-import VpnKeyIcon from "@mui/icons-material/VpnKey";
 
 import { useAuth } from "../contexts/AuthContext";
 import { normalizeNames, formatDateWithDay } from "../utils/format";
-import { softmaxPercent } from "../utils/stats";
-import { getFormations, getDefaultFormation } from "../config/formations";
+import { softmaxPercent, averageExcludeZero } from "../utils/stats";
+import { getFormations } from "../config/formations";
 import { shareFormationImage } from "../utils/shareFormation";
 import FormationField from "../components/FormationField";
 
@@ -35,24 +33,9 @@ function fmt(p) {
   return `${p.toFixed(1)}%`;
 }
 
-// 점수가 없는(0점) 사람을 제외하고 평균을 구하는 헬퍼 함수
-function calculateAverageExcludeZero(teamMembers, rateMap) {
-  if (!teamMembers || teamMembers.length === 0) return 0;
-
-  let sum = 0;
-  let count = 0;
-
-  teamMembers.forEach((name) => {
-    const score = rateMap[name] || 0;
-    if (score > 0) {
-      sum += score;
-      count++;
-    }
-  });
-
-  if (count === 0) return 0;
-  return sum / count;
-}
+// 팀 선수들의 pointRate 평균 (0 제외)
+const calculateAverageExcludeZero = (teamMembers, rateMap) =>
+  averageExcludeZero(teamMembers, (n) => rateMap[n]);
 
 export default function TeamViewPage() {
   const { date } = useParams();
@@ -62,7 +45,6 @@ export default function TeamViewPage() {
   const [loading, setLoading] = useState(true);
 
   const [teams, setTeams] = useState({ A: [], B: [], C: [] });
-  const [keyPop, setKeyPop] = useState([]);
   const [playerPointRate, setPlayerPointRate] = useState({});
   const [playerAbility, setPlayerAbility] = useState({});
 
@@ -73,21 +55,27 @@ export default function TeamViewPage() {
   const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
   const [teamCaptains, setTeamCaptains] = useState({ A: '', B: '', C: '' });
 
-  // 🆕 쿼터 시스템
+  // 🆕 쿼터/경기 시스템
   const [quarterCount, setQuarterCount] = useState(0);
   const [quarterFormations, setQuarterFormations] = useState({});
   const [teamQuarterTab, setTeamQuarterTab] = useState({ A: 'Q1', B: 'Q1' }); // 팀별 쿼터 기억
+  const [formationEnabled, setFormationEnabled] = useState(false);
   const activeQuarter = teamQuarterTab[expandFormation === 'B' ? 'B' : 'A'] || 'Q1';
   const setActiveQuarter = (qKey) => {
     const teamCode = expandFormation === 'B' ? 'B' : 'A';
     setTeamQuarterTab(prev => ({ ...prev, [teamCode]: qKey }));
   };
-  const useQuarterView = clubType === 'football' && quarterCount >= 2 && !teams.C.length;
+  // 쿼터 뷰: 2팀 + 포메이션 활성화 + 쿼터/경기 2개 이상
+  const useQuarterView = !teams.C.length && formationEnabled && quarterCount >= 2;
+  // 라벨: 축구 = "Q1", 풋살 = "1경기"
+  const getQuarterLabel = (qKey) => {
+    const n = qKey.replace('Q', '');
+    return clubType === 'football' ? qKey : `${n}경기`;
+  };
 
   useEffect(() => {
     setLoading(true);
     const teamsRef = ref(db, `PlayerSelectionByDate/${clubName}/${date}/AttandPlayer`);
-    const keyPopRef = ref(db, `PlayerSelectionByDate/${clubName}/${date}/keyPop`);
 
     const off1 = onValue(teamsRef, (snap) => {
       const v = snap.val() || {};
@@ -97,10 +85,6 @@ export default function TeamViewPage() {
         C: normalizeNames(v.C),
       });
       setLoading(false);
-    });
-
-    const off2 = onValue(keyPopRef, (snap) => {
-      setKeyPop(normalizeNames(snap.val()));
     });
 
     // 클럽 종목 (1회 로드)
@@ -125,9 +109,12 @@ export default function TeamViewPage() {
     const off7 = onValue(ref(db, `PlayerSelectionByDate/${clubName}/${date}/QuarterFormation`), snap => {
       setQuarterFormations(snap.val() || {});
     });
+    const off8 = onValue(ref(db, `PlayerSelectionByDate/${clubName}/${date}/FormationEnabled`), snap => {
+      setFormationEnabled(snap.val() === true);
+    });
 
     return () => {
-      off1(); off2(); off3(); off4(); off5(); off6(); off7();
+      off1(); off3(); off4(); off5(); off6(); off7(); off8();
     };
   }, [clubName, date]);
 
@@ -298,7 +285,9 @@ export default function TeamViewPage() {
                 {['A', 'B'].map((c) => {
                   const t = theme[c];
                   const active = activeTeamCode === c;
-                  const cTf = quarterFormations?.[c]?.[activeQuarter] || teamFormations[c] || {};
+                  // 각 팀 자신의 기억된 쿼터 사용
+                  const cQuarter = teamQuarterTab[c] || 'Q1';
+                  const cTf = quarterFormations?.[c]?.[cQuarter] || teamFormations[c] || {};
                   const cFmId = cTf.formationId || '';
                   return (
                     <Box
@@ -348,7 +337,7 @@ export default function TeamViewPage() {
                         '&:hover': !active ? { color: '#555', borderBottomColor: '#999' } : {},
                       }}
                     >
-                      {qKey}
+                      {getQuarterLabel(qKey)}
                     </Box>
                   );
                 })}
@@ -358,7 +347,7 @@ export default function TeamViewPage() {
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.8, gap: 0.5 }}>
                 <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: '#444' }}>
                   <SportsSoccerIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />
-                  {activeQuarter} 포메이션
+                  {getQuarterLabel(activeQuarter)} 포메이션
                 </Typography>
                 <IconButton
                   size="small"
@@ -410,8 +399,8 @@ export default function TeamViewPage() {
           );
         })()}
 
-        {/* 풋살/3팀 포메이션 — 아코디언 스타일 */}
-        {!useQuarterView && (Object.keys(teamFormations).length > 0) && (
+        {/* 풋살/3팀 포메이션 — 아코디언 스타일 (2팀은 formationEnabled일 때만) */}
+        {!useQuarterView && (Object.keys(teamFormations).length > 0) && (teams.C.length > 0 || formationEnabled) && (
           <Box sx={{ mt: 1 }}>
             <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', mb: 1, textAlign: 'center' }}>
               <SportsSoccerIcon sx={{ fontSize: 18, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />

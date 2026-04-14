@@ -11,6 +11,7 @@ import { useTheme } from '@mui/material/styles';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
+import { extractTeamRoster } from '../utils/roster';
 
 function LeaguePage() {
   const location = useLocation();
@@ -230,31 +231,6 @@ function LeaguePage() {
       setLoading(false);
       setPlayerLoading(false);
     }
-  };
-
-  const extractTeamRoster = (rosterData, teamName, teamSide) => {
-    const entries = Object.entries(rosterData);
-    const tName = (teamName || '').toLowerCase().trim();
-
-    for (const [key, val] of entries) {
-      if (key.toLowerCase().trim() === tName) {
-        return val ? Object.values(val).filter(Boolean).map(String) : [];
-      }
-    }
-    for (const [key, val] of entries) {
-      const k = key.toLowerCase().trim();
-      const num = teamSide === 'team1' ? '1' : '2';
-      if (k === `team${num}` || k === `team_${num}`) {
-        return val ? Object.values(val).filter(Boolean).map(String) : [];
-      }
-    }
-    const sorted = [...entries].sort((a, b) => a[0].localeCompare(b[0]));
-    const idx = teamSide === 'team1' ? 0 : 1;
-    if (sorted[idx]) {
-      const val = sorted[idx][1];
-      return val ? Object.values(val).filter(Boolean).map(String) : [];
-    }
-    return [];
   };
 
   const initTeamStat = () => ({

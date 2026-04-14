@@ -13,6 +13,18 @@ export const calcMean = (arr) => {
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 };
 
+// 이름 배열의 점수 평균 (0 또는 null인 선수 제외)
+// getValue: (name) => number
+export const averageExcludeZero = (names, getValue) => {
+  if (!names || names.length === 0) return 0;
+  let sum = 0, count = 0;
+  names.forEach((n) => {
+    const v = getValue(n);
+    if (v && v > 0) { sum += v; count++; }
+  });
+  return count === 0 ? 0 : sum / count;
+};
+
 // 표준편차
 export const calcStd = (arr) => {
   if (!arr || arr.length < 2) return 0;

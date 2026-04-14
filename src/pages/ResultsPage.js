@@ -5,14 +5,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Container, Paper, Typography, Box, Tab, Tabs,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Select, MenuItem, FormControl, InputLabel, CircularProgress, Chip,
+  Select, MenuItem, FormControl, CircularProgress, Chip,
   Card, CardContent, useMediaQuery, Button, Dialog, DialogContent, IconButton
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import CloseIcon from '@mui/icons-material/Close';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAuth } from '../contexts/AuthContext';
 import { calcMean, calcStd } from '../utils/stats';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
@@ -55,6 +54,7 @@ function ResultsPage() {
   const [dateGroups, setDateGroups] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [leagueList, setLeagueList] = useState([]);
+  // eslint-disable-next-line no-unused-vars
   const [awardStats, setAwardStats] = useState(null);
   const [demoMode, setDemoMode] = useState(false);
   const [demoNameMap, setDemoNameMap] = useState(null);
@@ -537,7 +537,6 @@ function ResultsPage() {
   // =========================
   // 4) 스타일
   // =========================
-  const titleFont = isMobile ? "1.4rem" : "1.8rem";
   const dateTitleFont = isMobile ? "1.1rem" : "1.3rem";
   const teamFont = isMobile ? "1.0rem" : "1.1rem";
   const scoreFont = isMobile ? "1.3rem" : "1.5rem";

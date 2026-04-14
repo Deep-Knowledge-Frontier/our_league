@@ -4,9 +4,8 @@ import { auth, db } from '../config/firebase';
 import { ref, get } from 'firebase/database';
 import {
   Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
-  Avatar, Divider, Chip, FormControl, InputLabel, Select, MenuItem, LinearProgress, IconButton
+  Divider, Chip, FormControl, InputLabel, Select, MenuItem, LinearProgress, IconButton
 } from '@mui/material';
-import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
 import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
 import GroupIcon from '@mui/icons-material/Group';
@@ -16,8 +15,6 @@ import MilitaryTechIcon from '@mui/icons-material/MilitaryTech';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import EditIcon from '@mui/icons-material/Edit';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
-import SettingsIcon from '@mui/icons-material/Settings';
 import HelpDialog from '../components/HelpDialog';
 import ProfileEditDialog from '../components/ProfileEditDialog';
 import AccountDeleteDialog from '../components/AccountDeleteDialog';

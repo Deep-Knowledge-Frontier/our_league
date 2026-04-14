@@ -31,10 +31,8 @@ import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
 import HomeIcon from '@mui/icons-material/Home';
 import SearchIcon from '@mui/icons-material/Search';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useAuth } from '../contexts/AuthContext';
-import { APP_CONFIG } from '../config/app.config';
 import OnboardingModal from '../components/OnboardingModal';
 import { useOnboarding } from '../hooks/useOnboarding';
 
@@ -51,7 +49,6 @@ export default function AdminPage() {
   });
 
   const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState('');
 
   // 마스터 전용: 팀 관리
   const [clubsList, setClubsList] = useState([]);
@@ -75,6 +72,7 @@ export default function AdminPage() {
   const [matchDialog, setMatchDialog] = useState(false);
   const [editingMatch, setEditingMatch] = useState(null);
   const [matchForm, setMatchForm] = useState({ date: '', time: '', location: '', address: '' });
+  // eslint-disable-next-line no-unused-vars
   const [locationPreset, setLocationPreset] = useState('custom');
   const [locationPresets, setLocationPresets] = useState([]);
   const [showPast, setShowPast] = useState(false);
@@ -105,9 +103,6 @@ export default function AdminPage() {
   const [leagueDialog, setLeagueDialog] = useState(false);
   const [editingLeague, setEditingLeague] = useState(null);
   const [leagueForm, setLeagueForm] = useState({ leagueName: '', startDate: '', endDate: '' });
-
-  // 클럽 종목
-  const [clubType, setClubType] = useState('futsal');
 
   // 백업
   const [backupRunning, setBackupRunning] = useState(false);
@@ -196,10 +191,6 @@ export default function AdminPage() {
 
     const loadData = async () => {
       try {
-        // 이름
-        const userSnap = await get(ref(db, `Users/${emailKey}`));
-        if (userSnap.exists()) setUserName(userSnap.val().name || '');
-
         // 마스터: 팀 목록 + 클럽 생성 요청 로드
         if (isMaster) {
           const [clubsSnap, reqSnap] = await Promise.all([
@@ -230,13 +221,6 @@ export default function AdminPage() {
         }
 
         // 클럽 종목/포메이션 로드
-        if (clubName) {
-          const clubSnap = await get(ref(db, `clubs/${clubName}`));
-          if (clubSnap.exists()) {
-            const type = clubSnap.val().type || 'futsal';
-            setClubType(type);
-          }
-        }
       } catch (e) {
         console.error('AdminPage load error:', e);
       }
@@ -845,7 +829,7 @@ export default function AdminPage() {
           for (const [name, p] of Object.entries(pStats)) {
             if (p.participatedMatches === 0 && !p.totalVotes) continue;
             // Firebase key 검증: 문자열이고 금지 문자 없어야 함
-            if (typeof name !== 'string' || !name.trim() || /[.#$\/\[\]]/.test(name)) continue;
+            if (typeof name !== 'string' || !name.trim() || /[.#$/[\]]/.test(name)) continue;
             output[name] = {
               goals: p.goals, assists: p.assists,
               participatedMatches: p.participatedMatches,

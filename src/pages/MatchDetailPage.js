@@ -11,37 +11,7 @@ import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateWithDay } from '../utils/format';
 import { getFormations } from '../config/formations';
-
-// 로스터에서 특정 팀의 선수 명단 추출
-function extractTeamRoster(rosterData, teamName, teamSide) {
-  const entries = Object.entries(rosterData);
-  const tName = (teamName || '').toLowerCase().trim();
-
-  // 1. 키가 팀 이름과 정확히 일치
-  for (const [key, val] of entries) {
-    if (key.toLowerCase().trim() === tName) {
-      return val ? Object.values(val).filter(Boolean).map(String) : [];
-    }
-  }
-
-  // 2. 키가 team1/team2 패턴
-  for (const [key, val] of entries) {
-    const k = key.toLowerCase().trim();
-    const num = teamSide === 'team1' ? '1' : '2';
-    if (k === `team${num}` || k === `team_${num}`) {
-      return val ? Object.values(val).filter(Boolean).map(String) : [];
-    }
-  }
-
-  // 3. 키 정렬 후 순서로 매칭 (첫번째=team1, 두번째=team2)
-  const sorted = [...entries].sort((a, b) => a[0].localeCompare(b[0]));
-  const idx = teamSide === 'team1' ? 0 : 1;
-  if (sorted[idx]) {
-    const val = sorted[idx][1];
-    return val ? Object.values(val).filter(Boolean).map(String) : [];
-  }
-  return [];
-}
+import { extractTeamRoster } from '../utils/roster';
 
 // 선수 포지션 계산 (안드로이드 로직 이식)
 function calculateTeamPositions(team, isHome, fieldW, fieldH, statsMap) {

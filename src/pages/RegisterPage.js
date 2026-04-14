@@ -9,7 +9,6 @@ import {
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -28,15 +27,6 @@ function getClubColor(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
   return CLUB_COLORS[Math.abs(h) % CLUB_COLORS.length];
-}
-
-// 팀별 이모지 (기본 매핑, DB emoji 필드 우선)
-const CLUB_EMOJI_MAP = {
-  '수성FC': '🦁',
-  '한강FC': '🌊',
-};
-function getClubEmoji(club) {
-  return club.emoji || CLUB_EMOJI_MAP[club.name] || null;
 }
 
 const POSITION_INFO = {
@@ -105,7 +95,7 @@ function RegisterPage() {
     if (!user) { alert('로그인 정보가 없습니다.'); return; }
     setCreatingClub(true);
     try {
-      const requestKey = name.replace(/[.#$\/\[\]]/g, '_');
+      const requestKey = name.replace(/[.#$/[\]]/g, '_');
       await set(ref(db, `ClubRequests/${requestKey}`), {
         name, type: newClub.type, region: newClub.region || '',
         requestedAt: new Date().toISOString().slice(0, 10),
@@ -191,7 +181,6 @@ function RegisterPage() {
                       const selected = formData.club === c.name;
                       const color = getClubColor(c.name);
                       const EmblemComp = CLUB_EMBLEM_MAP[c.name];
-                      const typeIcon = c.type === 'football' ? '⚽' : '🏟️';
                       return (
                         <Box key={c.name} onClick={() => selectClub(c.name)}
                           sx={{

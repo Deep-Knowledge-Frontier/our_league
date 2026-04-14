@@ -12,7 +12,6 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import EditIcon from '@mui/icons-material/Edit';
-import SkipNextIcon from '@mui/icons-material/SkipNext';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -307,15 +306,6 @@ export default function DraftPage() {
     };
 
     await update(ref(db, `PlayerSelectionByDate/${clubName}/${date}/Draft`), updates);
-  };
-
-  const skipTurn = async () => {
-    if (!canAdmin || !draft) return;
-    const pickIdx = draft.currentPickIdx || 0;
-    await update(ref(db, `PlayerSelectionByDate/${clubName}/${date}/Draft`), {
-      currentPickIdx: pickIdx + 1,
-      skippedBy: userName,
-    });
   };
 
   // ── 리뷰 단계 액션 ──

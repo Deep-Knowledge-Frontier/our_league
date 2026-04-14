@@ -105,10 +105,12 @@ export async function shareFormationImage({
     const fmId = qf.formationId;
     const fmDef = fmId ? formations[fmId] : null;
     const qPlayers = qf.players || {};
+    // 라벨: 축구 = "Q1", 풋살 = "1경기"
+    const displayLabel = clubType === 'football' ? qKey : `${q + 1}경기`;
 
     // 쿼터 라벨 배경
     svg += `<rect x="${x}" y="${y}" width="${fieldW}" height="${labelH}" rx="4" fill="#E8EAF6"/>`;
-    svg += `<text x="${x + fieldW / 2}" y="${y + 15}" text-anchor="middle" font-size="12" font-weight="800" fill="#2D336B" font-family="sans-serif">${qKey}  ${fmId || ''}</text>`;
+    svg += `<text x="${x + fieldW / 2}" y="${y + 15}" text-anchor="middle" font-size="12" font-weight="800" fill="#2D336B" font-family="sans-serif">${displayLabel}  ${fmId || ''}</text>`;
 
     // 필드
     const fy = y + labelH;

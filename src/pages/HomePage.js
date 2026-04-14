@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ref, get, onValue, set, update } from 'firebase/database';
 import {
   Container, Box, Typography, Card, CardContent, Button,
-  CircularProgress, Chip, Divider, Badge, Stack
+  CircularProgress, Chip, Badge, Stack
 } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
