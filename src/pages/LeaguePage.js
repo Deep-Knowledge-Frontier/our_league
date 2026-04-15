@@ -5,12 +5,10 @@ import { ref, get } from "firebase/database";
 import {
   Container, Paper, Typography, Box, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, CircularProgress, Button,
-  useMediaQuery, Chip, ToggleButton, ToggleButtonGroup, TextField, InputAdornment, IconButton,
+  useMediaQuery, Chip, ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import SearchIcon from '@mui/icons-material/Search';
-import ClearIcon from '@mui/icons-material/Clear';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 import { extractTeamRoster } from '../utils/roster';
@@ -30,7 +28,6 @@ function LeaguePage() {
   const [playerStats, setPlayerStats] = useState([]);
   const [playerLoading, setPlayerLoading] = useState(false);
   const [sortBy, setSortBy] = useState('attackPts');
-  const [searchQuery, setSearchQuery] = useState('');
   const [nameMap, setNameMap] = useState(null);
   const dn = (name) => (isDemoGuest && nameMap) ? anonymize(name, nameMap) : name;
 
@@ -258,9 +255,6 @@ function LeaguePage() {
     if (sortBy === 'cleanSheets') return b.cleanSheets - a.cleanSheets || a.concededPG - b.concededPG;
     if (sortBy === 'concededPG') return parseFloat(a.concededPG) - parseFloat(b.concededPG) || b.cleanSheets - a.cleanSheets;
     return b.attackPts - a.attackPts || b.goals - a.goals;
-  }).filter(p => {
-    if (!searchQuery.trim()) return true;
-    return (p.name || '').toLowerCase().includes(searchQuery.trim().toLowerCase());
   });
 
   // 뱃지 결정
@@ -392,31 +386,6 @@ function LeaguePage() {
           </ToggleButtonGroup>
         </Box>
 
-        {/* 선수 이름 검색 */}
-        <Box sx={{ mb: 2 }}>
-          <TextField
-            fullWidth
-            size="small"
-            placeholder="선수 이름 검색"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon sx={{ color: '#999', fontSize: 20 }} />
-                </InputAdornment>
-              ),
-              endAdornment: searchQuery && (
-                <InputAdornment position="end">
-                  <IconButton size="small" onClick={() => setSearchQuery('')}>
-                    <ClearIcon sx={{ fontSize: 18 }} />
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-            sx={{ bgcolor: 'white', borderRadius: 1 }}
-          />
-        </Box>
 
         {playerLoading ? (
           <Box display="flex" justifyContent="center" mt={3}>

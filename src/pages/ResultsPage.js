@@ -690,31 +690,77 @@ function ResultsPage() {
             {/* 탭 1: 선수순위 */}
             {tabIndex === 1 && (
               <Box>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                  <Box sx={{ display: 'flex', gap: 0.3 }}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1.5} gap={1} flexWrap="wrap">
+                  {/* 기간 — iOS 스타일 Segmented Control */}
+                  <Box sx={{
+                    display: 'inline-flex',
+                    p: 0.4,
+                    bgcolor: '#F0F2F5',
+                    borderRadius: 99,
+                    position: 'relative',
+                  }}>
                     {[
                       { value: '6m', label: '6개월' },
                       { value: 'season', label: `${new Date().getFullYear()}` },
                       { value: 'all', label: '전체' },
-                    ].map(p => (
-                      <Chip key={p.value} label={p.label} size="small"
-                        onClick={() => { setStatsPeriod(p.value); statsRef.current = {}; }}
-                        sx={{
-                          fontSize: '0.75rem', height: 26, fontWeight: statsPeriod === p.value ? 700 : 400,
-                          bgcolor: statsPeriod === p.value ? '#1565C0' : '#f0f0f0',
-                          color: statsPeriod === p.value ? 'white' : '#888',
-                          cursor: 'pointer',
-                          '&:hover': { bgcolor: statsPeriod === p.value ? '#1565C0' : '#e0e0e0' },
-                        }} />
-                    ))}
+                    ].map(p => {
+                      const active = statsPeriod === p.value;
+                      return (
+                        <Box
+                          key={p.value}
+                          onClick={() => { setStatsPeriod(p.value); statsRef.current = {}; }}
+                          sx={{
+                            px: 1.8, py: 0.6,
+                            borderRadius: 99,
+                            fontSize: '0.78rem',
+                            fontWeight: active ? 800 : 600,
+                            color: active ? '#1565C0' : '#888',
+                            bgcolor: active ? 'white' : 'transparent',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            boxShadow: active ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                            '&:hover': !active ? { color: '#555' } : {},
+                          }}
+                        >
+                          {p.label}
+                        </Box>
+                      );
+                    })}
                   </Box>
-                  <FormControl size="small" sx={{ minWidth: 80 }}>
+
+                  {/* 최소 출전율 필터 — Pill 스타일 */}
+                  <FormControl size="small">
                     <Select
                       value={attendanceThreshold}
                       onChange={(e) => setAttendanceThreshold(e.target.value)}
-                      sx={{ fontSize: '0.78rem', height: 28 }}
+                      renderValue={(value) => (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Box component="span" sx={{ fontSize: '0.72rem', color: '#888', fontWeight: 600 }}>
+                            최소 출전
+                          </Box>
+                          <Box component="span" sx={{ fontSize: '0.82rem', color: '#1565C0', fontWeight: 900 }}>
+                            {value}%
+                          </Box>
+                        </Box>
+                      )}
+                      sx={{
+                        borderRadius: 99,
+                        bgcolor: '#F0F2F5',
+                        height: 36,
+                        '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                        '&:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                        '& .MuiSelect-select': {
+                          py: 0.8, pl: 1.8, pr: '30px !important',
+                        },
+                        '& .MuiSelect-icon': { right: 8, color: '#888' },
+                      }}
                     >
-                      {[5, 10, 15, 30, 50].map(v => (<MenuItem key={v} value={v} sx={{ fontSize: '0.8rem' }}>출전 {v}%</MenuItem>))}
+                      {[5, 10, 15, 30, 50].map(v => (
+                        <MenuItem key={v} value={v} sx={{ fontSize: '0.85rem' }}>
+                          최소 출전 {v}%
+                        </MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
                 </Box>
