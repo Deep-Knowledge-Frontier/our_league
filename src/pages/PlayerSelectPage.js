@@ -18,9 +18,9 @@ import ShieldIcon from '@mui/icons-material/Shield';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import RestoreIcon from '@mui/icons-material/Restore';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ShareIcon from '@mui/icons-material/Share';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { softmaxPercent, averageExcludeZero } from '../utils/stats';
@@ -264,6 +264,8 @@ export default function PlayerSelectPage() {
   const [movingPlayer, setMovingPlayer] = useState(null);
   const [showResult, setShowResult] = useState(false);
   const saveTimerRef = useRef(null);
+  // 🆕 DB에 실제로 저장된 팀 스냅샷 (closure 버그 방지용)
+  const savedTeamsRef = useRef({ A: [], B: [], C: [] });
   const [teamNames, setTeamNames] = useState({ A: '', B: '', C: '' });
   const [editingTeamName, setEditingTeamName] = useState(null); // 'A' | 'B' | 'C' | null
   const [teamCaptains, setTeamCaptains] = useState({ A: '', B: '', C: '' });
@@ -279,6 +281,7 @@ export default function PlayerSelectPage() {
 
   // 🆕 포메이션 시스템 (축구: 쿼터 / 풋살: 경기)
   const [formationEnabled, setFormationEnabled] = useState(false);
+  const [formationOpen, setFormationOpen] = useState(false); // 🆕 선수들에게 포메이션 공개 여부
   const useQuarterSystem = teamCount === 2 && formationEnabled;
   // 쿼터/경기 라벨: 축구 = "Q1", 풋살 = "1경기"
   const getQuarterLabel = (qKey) => {
@@ -302,20 +305,8 @@ export default function PlayerSelectPage() {
     setTeamQuarterTab(prev => ({ ...prev, [teamCode]: qKey }));
   };
 
-  // 쿼터 탭 전환 시: 해당 쿼터의 포메이션을 TeamFormation 뷰에 반영
-  useEffect(() => {
-    if (!useQuarterSystem || quarterCount <= 1) return;
-    const newTf = {};
-    ['A', 'B'].forEach((code) => {
-      const qKey = teamQuarterTab[code] || 'Q1';
-      if (quarterFormations?.[code]?.[qKey]) {
-        newTf[code] = quarterFormations[code][qKey];
-      }
-    });
-    if (Object.keys(newTf).length > 0) {
-      setTeamFormations((prev) => ({ ...prev, ...newTf }));
-    }
-  }, [teamQuarterTab, useQuarterSystem, quarterCount, quarterFormations]);
+  // (쿼터 탭 전환 → teamFormations 동기화 useEffect 제거됨:
+  //  TeamFormation은 base로 유지되고, 포메이션 뷰는 quarterFormations를 직접 읽음)
   // 선수별 등록 포지션 맵 { '테스트GK1': 'GK', '테스트DF1': 'DF', ... }
   const [playerPositions, setPlayerPositions] = useState({});
 
@@ -391,6 +382,8 @@ export default function PlayerSelectPage() {
       const b = Array.isArray(v.B) ? v.B.filter(Boolean) : [];
       const c = Array.isArray(v.C) ? v.C.filter(Boolean) : [];
       setTeams({ A: a, B: b, C: c });
+      // 저장된 팀 스냅샷을 ref에 유지 (closure 우회용)
+      savedTeamsRef.current = { A: a, B: b, C: c };
       setHasSavedTeams(a.length > 0 || b.length > 0 || c.length > 0);
       // 저장된 팀 구성에서 팀수 복원 (C팀 유무로 판단)
       if (a.length > 0 || b.length > 0) {
@@ -444,6 +437,8 @@ export default function PlayerSelectPage() {
       // 포메이션 활성화 여부 로드
       const feSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/FormationEnabled`));
       setFormationEnabled(feSnap.val() === true);
+      const foSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/FormationOpen`));
+      setFormationOpen(foSnap.val() === true);
     })();
   }, [clubName, dateParam]);
 
@@ -500,6 +495,34 @@ export default function PlayerSelectPage() {
     });
   }, [canEdit, clubName, dateParam]);
 
+  // 팀 로스터 변경 시 포메이션 재구성 (Smart: 남은 선수는 포지션 유지, 나간 선수 자리는 새 선수로)
+  const rebuildFormationForRoster = useCallback((currentTf, newRoster, fallbackFmId) => {
+    if (!newRoster || newRoster.length === 0) return null; // 빈 팀은 포메이션 제거
+    const fmId = currentTf?.formationId || fallbackFmId || getDefaultFormation(clubType);
+    const fmDef = getFormations(clubType)[fmId];
+    if (!fmDef) return null;
+
+    // 1) 기존 배치 중 여전히 팀에 있는 선수만 유지
+    const keptPlayers = {};
+    const oldPlayers = currentTf?.players || {};
+    Object.entries(oldPlayers).forEach(([posId, playerName]) => {
+      if (newRoster.includes(playerName)) {
+        keptPlayers[posId] = playerName;
+      }
+    });
+
+    // 2) 아직 배치 안 된 선수 찾기
+    const placedSet = new Set(Object.values(keptPlayers));
+    const unassigned = newRoster.filter(n => !placedSet.has(n));
+
+    // 3) 빈 포지션에 스마트 배치 (등록 포지션 기반)
+    const emptyPositions = fmDef.positions.filter(p => !keptPlayers[p.id]);
+    const smartFilled = smartAutoAssign(emptyPositions, unassigned, playerPositions);
+    Object.assign(keptPlayers, smartFilled);
+
+    return { formationId: fmId, players: keptPlayers };
+  }, [clubType, playerPositions]);
+
   // 참석선수 변동 시 팀 자동 조정
   useEffect(() => {
     if (!hasSavedTeams || editMode) return;
@@ -525,29 +548,46 @@ export default function PlayerSelectPage() {
     if (teamCount === 2) newTeams.C = [];
 
     setTeams(newTeams);
-    // 포메이션도 재배치
-    const fmId = clubFormation || getDefaultFormation(clubType);
-    const fmDef = getFormations(clubType)[fmId];
-    if (fmDef) {
-      const newTf = {};
-      codes.forEach(code => {
-        const existing = teamFormations[code];
-        const useFmId = existing?.formationId || fmId;
-        const useFmDef = getFormations(clubType)[useFmId] || fmDef;
-        if (newTeams[code].length > 0) {
-          newTf[code] = { formationId: useFmId, players: autoAssignPlayers(useFmDef.positions, newTeams[code], statsMap) };
-        }
-      });
-      setTeamFormations(newTf);
-      update(ref(db), { [`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`]: newTf });
-    }
-    const base = `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`;
+    // 🆕 Smart 재구성: 남아있는 선수의 포지션은 유지, 빠진 자리만 새 선수로 채움
+    const newTeamFormations = { ...teamFormations };
+    const newQuarterFormations = { ...quarterFormations };
     const updates = {};
+    codes.forEach(code => {
+      const newRoster = newTeams[code] || [];
+      const rebuilt = rebuildFormationForRoster(teamFormations[code], newRoster, clubFormation);
+      if (rebuilt) {
+        newTeamFormations[code] = rebuilt;
+        updates[`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`] = rebuilt;
+      } else {
+        delete newTeamFormations[code];
+        updates[`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`] = null;
+      }
+      // QuarterFormation도 동일 로직 적용
+      const qfTeam = quarterFormations?.[code] || {};
+      const newQfTeam = {};
+      for (const [qKey, qTf] of Object.entries(qfTeam)) {
+        const qRebuilt = rebuildFormationForRoster(qTf, newRoster, rebuilt?.formationId || clubFormation);
+        if (qRebuilt) {
+          newQfTeam[qKey] = qRebuilt;
+          updates[`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${qKey}`] = qRebuilt;
+        } else {
+          updates[`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${qKey}`] = null;
+        }
+      }
+      if (Object.keys(newQfTeam).length > 0) newQuarterFormations[code] = newQfTeam;
+      else delete newQuarterFormations[code];
+    });
+    setTeamFormations(newTeamFormations);
+    setQuarterFormations(newQuarterFormations);
+
+    const base = `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`;
     updates[`${base}/A`] = newTeams.A;
     updates[`${base}/B`] = newTeams.B;
     updates[`${base}/C`] = teamCount === 3 ? newTeams.C : null;
     update(ref(db), updates);
-  }, [selectedPlayers, hasSavedTeams, editMode, teams, teamCount, clubName, dateParam, clubFormation, clubType, teamFormations, statsMap]);
+    // savedTeamsRef 업데이트 (다음 비교 기준)
+    savedTeamsRef.current = { A: [...newTeams.A], B: [...newTeams.B], C: teamCount === 3 ? [...newTeams.C] : [] };
+  }, [selectedPlayers, hasSavedTeams, editMode, teams, teamCount, clubName, dateParam, clubFormation, teamFormations, quarterFormations, rebuildFormationForRoster]);
 
   const generateDefaultMatchOrder = useCallback((tc) => {
     const codes = tc === 3 ? ['A', 'B', 'C'] : ['A', 'B'];
@@ -639,9 +679,73 @@ export default function PlayerSelectPage() {
     updates[`${base}/C`] = teamCount === 3 ? teamsToSave.C : null;
     updates[`PlayerSelectionByDate/${clubName}/${dateParam}/keyPop`] = keyPopToSave.slice(0, 2);
     if (matchOrder.length > 0) updates[`PlayerSelectionByDate/${clubName}/${dateParam}/MatchOrder`] = matchOrder;
-    try { await update(ref(db), updates); setHasSavedTeams(true); cb?.(); }
+
+    // 🆕 팀 로스터가 바뀌었는지 감지 → 포메이션 재구성
+    // savedTeamsRef (DB 스냅샷)와 비교 — teams state는 이미 변경돼 있을 수 있으므로 사용 불가
+    const teamChanged = (code) => {
+      const oldList = (savedTeamsRef.current[code] || []).slice().sort();
+      const newList = (teamsToSave[code] || []).slice().sort();
+      if (oldList.length !== newList.length) return true;
+      return oldList.some((n, i) => n !== newList[i]);
+    };
+
+    const codes = teamCount === 3 ? ['A', 'B', 'C'] : ['A', 'B'];
+    const newTeamFormations = { ...teamFormations };
+    const newQuarterFormations = { ...quarterFormations };
+    let formationsReshuffled = false;
+
+    for (const code of codes) {
+      if (!teamChanged(code)) continue;
+      formationsReshuffled = true;
+      const newRoster = teamsToSave[code] || [];
+
+      // TeamFormation 재구성 (base)
+      const currentTf = teamFormations[code];
+      const rebuilt = rebuildFormationForRoster(currentTf, newRoster, clubFormation);
+      if (rebuilt) {
+        newTeamFormations[code] = rebuilt;
+        updates[`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`] = rebuilt;
+      } else {
+        delete newTeamFormations[code];
+        updates[`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`] = null;
+      }
+
+      // QuarterFormation 재구성 (쿼터마다)
+      const qfTeam = quarterFormations?.[code] || {};
+      const newQfTeam = {};
+      for (const [qKey, qTf] of Object.entries(qfTeam)) {
+        const qRebuilt = rebuildFormationForRoster(qTf, newRoster, rebuilt?.formationId || clubFormation);
+        if (qRebuilt) {
+          newQfTeam[qKey] = qRebuilt;
+          updates[`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${qKey}`] = qRebuilt;
+        } else {
+          updates[`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${qKey}`] = null;
+        }
+      }
+      if (Object.keys(newQfTeam).length > 0) {
+        newQuarterFormations[code] = newQfTeam;
+      } else {
+        delete newQuarterFormations[code];
+      }
+    }
+
+    try {
+      await update(ref(db), updates);
+      setHasSavedTeams(true);
+      // ref 업데이트 — 다음 비교 기준이 됨
+      savedTeamsRef.current = {
+        A: [...(teamsToSave.A || [])],
+        B: [...(teamsToSave.B || [])],
+        C: [...(teamsToSave.C || [])],
+      };
+      if (formationsReshuffled) {
+        setTeamFormations(newTeamFormations);
+        setQuarterFormations(newQuarterFormations);
+      }
+      cb?.();
+    }
     catch (e) { alert('저장 실패: ' + e.message); }
-  }, [clubName, dateParam, teamCount, matchOrder]);
+  }, [clubName, dateParam, teamCount, matchOrder, teamFormations, quarterFormations, rebuildFormationForRoster, clubFormation]);
 
   // 축구 2팀 쿼터 모드: matchesPerTeam = quarterCount (각 쿼터가 독립 경기)
   // formationEnabled 여부와 무관하게 기존 축구 2팀 쿼터 개수 유지
@@ -671,6 +775,7 @@ export default function PlayerSelectPage() {
   // 🆕 경기 기록 삭제 + 복구
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteDialog, setDeleteDialog] = useState(false);
+  const [quarterDecreaseDialog, setQuarterDecreaseDialog] = useState(null); // { targetCount, lostQuarters }
   const [hasDeletedBackup, setHasDeletedBackup] = useState(false);
 
   // 삭제: 백업 후 삭제
@@ -698,6 +803,16 @@ export default function PlayerSelectPage() {
       setHasDeletedBackup(true);
       setDeleteDialog(false);
       setDeleteConfirmText('');
+
+      // 3) 통계 재계산 안내 (A3)
+      const goStats = window.confirm(
+        '경기 기록이 삭제되었습니다.\n\n' +
+        '선수 통계(공격P/MVP/승률 등)는 자동 재계산되지 않습니다.\n' +
+        '지금 관리탭으로 이동해서 통계를 재계산하시겠습니까?'
+      );
+      if (goStats) {
+        navigate('/admin?action=rebuild-stats');
+      }
     } catch (e) {
       alert('삭제 실패: ' + e.message);
     }
@@ -1100,13 +1215,16 @@ export default function PlayerSelectPage() {
             <Box sx={{ mt: 2 }}>
               <Divider sx={{ mb: 1.5 }} />
 
-              {/* 쿼터 수 스테퍼 (−/+) — 컴팩트하고 "설정" 느낌 */}
+              {/* 쿼터 수 스테퍼 (−/+) + 포메이션 재설정 아이콘 버튼 */}
               {canEdit && (
                 <Box sx={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  gap: 1.5, mb: 1.5,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  mb: 1.5, minHeight: 36, gap: 1,
                 }}>
-                  <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#666' }}>
+                  <Typography sx={{
+                    fontSize: '0.82rem', fontWeight: 700, color: '#666',
+                    flexShrink: 0,
+                  }}>
                     ⏱ {clubType === 'football' ? '쿼터' : '경기'} 수
                   </Typography>
                   <Box sx={{
@@ -1118,8 +1236,21 @@ export default function PlayerSelectPage() {
                       onClick={async () => {
                         if (quarterCount <= 1) return;
                         const newCount = quarterCount - 1;
+                        // 잘리는 쿼터에 실제 포메이션 데이터가 있는지 확인
+                        const lostQuarters = [];
+                        for (let q = newCount + 1; q <= quarterCount; q++) {
+                          const qKey = `Q${q}`;
+                          const hasA = quarterFormations?.A?.[qKey]?.formationId;
+                          const hasB = quarterFormations?.B?.[qKey]?.formationId;
+                          if (hasA || hasB) lostQuarters.push(qKey);
+                        }
+                        if (lostQuarters.length > 0) {
+                          // 확인 다이얼로그 띄움
+                          setQuarterDecreaseDialog({ targetCount: newCount, lostQuarters });
+                          return;
+                        }
+                        // 데이터 없으면 바로 감소
                         setQuarterCount(newCount);
-                        // 양 팀 모두 쿼터 범위 초과 시 조정
                         setTeamQuarterTab(prev => {
                           const next = { ...prev };
                           ['A', 'B'].forEach(c => {
@@ -1151,57 +1282,170 @@ export default function PlayerSelectPage() {
                     }}>
                       {quarterCount}
                     </Box>
-                    <Box
-                      onClick={async () => {
-                        if (quarterCount >= 4) return;
-                        const newCount = quarterCount + 1;
-                        setQuarterCount(newCount);
-                        await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterConfig`), { count: newCount });
-                      }}
-                      sx={{
-                        width: 36, height: 36,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: quarterCount < 4 ? 'pointer' : 'default',
-                        color: quarterCount < 4 ? '#333' : '#CCC',
-                        fontWeight: 900, fontSize: '1.2rem',
-                        '&:hover': quarterCount < 4 ? { bgcolor: '#E0E0E0' } : {},
-                        '&:active': quarterCount < 4 ? { bgcolor: '#D0D0D0' } : {},
-                      }}
-                    >
-                      +
-                    </Box>
+                    {(() => {
+                      const maxCount = clubType === 'football' ? 4 : 9;
+                      const canIncrease = quarterCount < maxCount;
+                      return (
+                        <Box
+                          onClick={async () => {
+                            if (!canIncrease) return;
+                            const newCount = quarterCount + 1;
+                            setQuarterCount(newCount);
+                            await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterConfig`), { count: newCount });
+                          }}
+                          sx={{
+                            width: 36, height: 36,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: canIncrease ? 'pointer' : 'default',
+                            color: canIncrease ? '#333' : '#CCC',
+                            fontWeight: 900, fontSize: '1.2rem',
+                            '&:hover': canIncrease ? { bgcolor: '#E0E0E0' } : {},
+                            '&:active': canIncrease ? { bgcolor: '#D0D0D0' } : {},
+                          }}
+                        >
+                          +
+                        </Box>
+                      );
+                    })()}
                   </Box>
+                  {/* 🆕 포메이션 재설정 버튼 (우측, 아이콘 + 짧은 텍스트) */}
+                  <Button
+                    size="small"
+                    startIcon={<ShuffleIcon sx={{ fontSize: '16px !important' }} />}
+                    onClick={async () => {
+                      if (!window.confirm('현재 팀 구성을 기반으로 A, B 팀의 포메이션을 재설정합니다.\n\n수동으로 조정한 포지션 배치는 모두 초기화됩니다. 계속할까요?')) return;
+                      try {
+                        const codes2 = ['A', 'B'];
+                        const fmId = clubFormation || getDefaultFormation(clubType);
+                        const fmDef = getFormations(clubType)[fmId];
+                        if (!fmDef) { alert('포메이션 정의를 찾을 수 없습니다.'); return; }
+
+                        const newTeamFormations = { ...teamFormations };
+                        const newQuarterFormations = { ...quarterFormations };
+                        const updates = {};
+
+                        for (const code of codes2) {
+                          const roster = teams[code] || [];
+                          if (roster.length === 0) {
+                            updates[`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`] = null;
+                            delete newTeamFormations[code];
+                            continue;
+                          }
+                          const assigned = smartAutoAssign(fmDef.positions, roster, playerPositions);
+                          const tfData = { formationId: fmId, players: assigned };
+                          newTeamFormations[code] = tfData;
+                          updates[`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`] = tfData;
+
+                          if (useQuarterSystem && quarterCount > 1) {
+                            if (!newQuarterFormations[code]) newQuarterFormations[code] = {};
+                            for (let q = 1; q <= quarterCount; q++) {
+                              const qKey = `Q${q}`;
+                              newQuarterFormations[code][qKey] = tfData;
+                              updates[`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${qKey}`] = tfData;
+                            }
+                          }
+                        }
+
+                        setTeamFormations(newTeamFormations);
+                        setQuarterFormations(newQuarterFormations);
+                        await update(ref(db), updates);
+                      } catch (e) {
+                        alert('포메이션 재설정 실패: ' + e.message);
+                      }
+                    }}
+                    sx={{
+                      flexShrink: 0,
+                      height: 36, minWidth: 'auto', px: 1.2,
+                      borderRadius: 2,
+                      border: '1px solid #E0E0E0',
+                      bgcolor: '#F0F2F5',
+                      color: '#2D336B',
+                      fontWeight: 800,
+                      fontSize: '0.75rem',
+                      textTransform: 'none',
+                      whiteSpace: 'nowrap',
+                      '& .MuiButton-startIcon': { mr: 0.4 },
+                      '&:hover': { bgcolor: '#E8EAF6', borderColor: '#2D336B' },
+                    }}
+                  >
+                    재설정
+                  </Button>
                 </Box>
               )}
 
             </Box>
           )}
 
-          {/* ──────────── 축구 2팀 쿼터 포메이션 (팀 탭 + 단일 필드) ──────────── */}
-          {useQuarterSystem && quarterCount > 1 && !editMode && (() => {
-            const activeTeamCode = expandFormation === 'B' ? 'B' : 'A';
+          {/* ──────────── 통합 포메이션 (탭 스타일) — 2팀/3팀, 쿼터 유무 모두 지원 ──────────── */}
+          {!editMode && (teamCount !== 2 || formationEnabled) && (() => {
+            const codes = teamCount === 3 ? ['A', 'B', 'C'] : ['A', 'B'];
+            const activeTeamCode = codes.includes(expandFormation) ? expandFormation : 'A';
+            const showQuarterTabs = useQuarterSystem && quarterCount > 1;
             const fieldW = Math.min(280, window.innerWidth - 80);
             const code = activeTeamCode;
             const th = theme[code] || theme.A;
             const teamPlayers = displayTeams[code] || [];
-            const tf = quarterFormations?.[code]?.[activeQuarterTab] || teamFormations[code] || {};
+            const tf = showQuarterTabs
+              ? (quarterFormations?.[code]?.[activeQuarterTab] || teamFormations[code] || {})
+              : (teamFormations[code] || {});
             const fmId = tf.formationId || clubFormation || getDefaultFormation(clubType);
             const fmDef = getFormations(clubType)[fmId];
             const assignedPlayers = tf.players || {};
             const canEditThis = canEditTeamFormation(code);
 
+            // 저장: 쿼터 모드 = QuarterFormation만 (TeamFormation은 base로 유지)
+            //       비쿼터 모드 = TeamFormation
+            const saveFormation = async (tfData) => {
+              const updates = {};
+              if (showQuarterTabs) {
+                // 쿼터 모드: 현재 쿼터만 QuarterFormation에 저장
+                // TeamFormation은 fallback용 base로 건드리지 않음
+                const newQf = { ...quarterFormations, [code]: { ...(quarterFormations[code] || {}), [activeQuarterTab]: tfData } };
+                setQuarterFormations(newQf);
+                updates[`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`] = tfData;
+              } else {
+                // 비쿼터 모드: TeamFormation에만 저장
+                setTeamFormations(prev => ({ ...prev, [code]: tfData }));
+                updates[`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`] = tfData;
+              }
+              await update(ref(db), updates);
+            };
+
             return (
               <Box sx={{ mt: 2 }}>
                 <Divider sx={{ mb: 1.5 }} />
 
-                {/* 1️⃣ 팀 선택 탭 (좌우 — 먼저!) */}
+                {/* 클럽 종목 토글 (관리자만) */}
+                {canEdit && (
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1, gap: 0.5 }}>
+                    {['futsal', 'football'].map(t => (
+                      <Chip key={t} label={t === 'futsal' ? '풋살' : '축구'} size="small"
+                        onClick={async () => {
+                          setClubType(t);
+                          setClubFormation(getDefaultFormation(t));
+                          setTeamFormations({});
+                          await update(ref(db), {
+                            [`clubs/${clubName}/type`]: t,
+                            [`clubs/${clubName}/formation`]: getDefaultFormation(t),
+                            [`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`]: null,
+                          });
+                        }}
+                        sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600,
+                          bgcolor: clubType === t ? '#2E7D32' : '#F0F2F5',
+                          color: clubType === t ? 'white' : '#777' }} />
+                    ))}
+                  </Box>
+                )}
+
+                {/* 1️⃣ 팀 선택 탭 (좌우) */}
                 <Box sx={{ display: 'flex', gap: 0.5, mb: 1 }}>
-                  {['A', 'B'].map((c) => {
+                  {codes.map((c) => {
                     const t = theme[c] || theme.A;
                     const active = activeTeamCode === c;
-                    // 각 팀 자신의 기억된 쿼터 사용 (비활성 팀도 자기 쿼터 표시)
                     const cQuarter = teamQuarterTab[c] || 'Q1';
-                    const cTf = quarterFormations?.[c]?.[cQuarter] || teamFormations[c] || {};
+                    const cTf = showQuarterTabs
+                      ? (quarterFormations?.[c]?.[cQuarter] || teamFormations[c] || {})
+                      : (teamFormations[c] || {});
                     const cFmId = cTf.formationId || '';
                     return (
                       <Box
@@ -1229,39 +1473,41 @@ export default function PlayerSelectPage() {
                   })}
                 </Box>
 
-                {/* 2️⃣ 쿼터 탭 (팀 아래) */}
-                <Box sx={{ display: 'flex', gap: 0.5, mb: 1 }}>
-                  {Array.from({ length: quarterCount }).map((_, i) => {
-                    const qKey = `Q${i + 1}`;
-                    const active = activeQuarterTab === qKey;
-                    return (
-                      <Box
-                        key={qKey}
-                        onClick={() => setActiveQuarterTab(qKey)}
-                        sx={{
-                          flex: 1, py: 0.7, textAlign: 'center',
-                          borderRadius: '8px 8px 0 0',
-                          cursor: 'pointer',
-                          bgcolor: active ? '#2D336B' : 'transparent',
-                          color: active ? 'white' : '#888',
-                          fontWeight: active ? 900 : 600,
-                          fontSize: '0.82rem',
-                          borderBottom: active ? '3px solid #2D336B' : '3px solid #E0E0E0',
-                          transition: 'all 0.15s',
-                          '&:hover': !active ? { color: '#555', borderBottomColor: '#999' } : {},
-                        }}
-                      >
-                        {getQuarterLabel(qKey)}
-                      </Box>
-                    );
-                  })}
-                </Box>
+                {/* 2️⃣ 쿼터 탭 (쿼터 모드일 때만) */}
+                {showQuarterTabs && (
+                  <Box sx={{ display: 'flex', gap: 0.5, mb: 1 }}>
+                    {Array.from({ length: quarterCount }).map((_, i) => {
+                      const qKey = `Q${i + 1}`;
+                      const active = activeQuarterTab === qKey;
+                      return (
+                        <Box
+                          key={qKey}
+                          onClick={() => setActiveQuarterTab(qKey)}
+                          sx={{
+                            flex: 1, py: 0.7, textAlign: 'center',
+                            borderRadius: '8px 8px 0 0',
+                            cursor: 'pointer',
+                            bgcolor: active ? '#2D336B' : 'transparent',
+                            color: active ? 'white' : '#888',
+                            fontWeight: active ? 900 : 600,
+                            fontSize: '0.82rem',
+                            borderBottom: active ? '3px solid #2D336B' : '3px solid #E0E0E0',
+                            transition: 'all 0.15s',
+                            '&:hover': !active ? { color: '#555', borderBottomColor: '#999' } : {},
+                          }}
+                        >
+                          {getQuarterLabel(qKey)}
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                )}
 
-                {/* 3️⃣ 쿼터/경기 포메이션 제목 + 공유 */}
+                {/* 3️⃣ 포메이션 제목 + 공유 */}
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.8, gap: 0.5 }}>
                   <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: '#444' }}>
                     <SportsSoccerIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />
-                    {getQuarterLabel(activeQuarterTab)} 포메이션
+                    {showQuarterTabs ? `${getQuarterLabel(activeQuarterTab)} 포메이션` : `${getTeamLabel(code)} 포메이션`}
                   </Typography>
                   <IconButton
                     size="small"
@@ -1269,7 +1515,8 @@ export default function PlayerSelectPage() {
                       try {
                         const teamLabel = getTeamLabel(code);
                         const blob = await shareFormationImage({
-                          clubType, teamLabel, date: dateParam, quarterCount,
+                          clubType, teamLabel, date: dateParam,
+                          quarterCount: showQuarterTabs ? quarterCount : 1,
                           quarterFormations, teamFormations, teamCode: code,
                         });
                         const file = new File([blob], `${teamLabel}_formation.png`, { type: 'image/png' });
@@ -1293,7 +1540,7 @@ export default function PlayerSelectPage() {
                   </IconButton>
                 </Box>
 
-                {/* 선택된 팀의 포메이션 프리셋 — 현재 쿼터에만 적용 */}
+                {/* 4️⃣ 포메이션 프리셋 */}
                 {canEditThis && (
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1, justifyContent: 'center' }}>
                     {Object.entries(getFormations(clubType)).map(([key, fm]) => (
@@ -1303,17 +1550,8 @@ export default function PlayerSelectPage() {
                           if (!newFmDef) return;
                           const autoPlayers = smartAutoAssign(newFmDef.positions, teamPlayers, playerPositions);
                           const tfData = { formationId: key, players: autoPlayers };
-                          setTeamFormations(prev => ({ ...prev, [code]: tfData }));
                           setSelectedPos(null);
-                          // 현재 쿼터에만 적용
-                          const newQf = { ...quarterFormations };
-                          if (!newQf[code]) newQf[code] = {};
-                          newQf[code][activeQuarterTab] = tfData;
-                          setQuarterFormations(newQf);
-                          await update(ref(db), {
-                            [`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`]: tfData,
-                            [`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`]: tfData,
-                          });
+                          await saveFormation(tfData);
                         }}
                         sx={{
                           fontSize: '0.72rem', fontWeight: 600,
@@ -1325,7 +1563,7 @@ export default function PlayerSelectPage() {
                   </Box>
                 )}
 
-                {/* 필드 (선택된 팀만 풀사이즈) */}
+                {/* 5️⃣ 필드 */}
                 {fmDef && (
                   <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
                     <FormationField
@@ -1342,14 +1580,8 @@ export default function PlayerSelectPage() {
                         if (a) newPlayers[posId] = a; else delete newPlayers[posId];
                         if (b) newPlayers[selectedPos] = b; else delete newPlayers[selectedPos];
                         const tfData = { formationId: fmId, players: newPlayers };
-                        setTeamFormations(prev => ({ ...prev, [code]: tfData }));
                         setSelectedPos(null);
-                        await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
-                        const newQf = { ...quarterFormations };
-                        if (!newQf[code]) newQf[code] = {};
-                        newQf[code][activeQuarterTab] = tfData;
-                        setQuarterFormations(newQf);
-                        await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
+                        await saveFormation(tfData);
                       } : undefined}
                       readOnly={!canEditThis}
                       width={fieldW}
@@ -1357,7 +1589,7 @@ export default function PlayerSelectPage() {
                   </Box>
                 )}
 
-                {/* 통합 선수 목록 — 출전 fill + 클릭으로 포메이션 배치 */}
+                {/* 6️⃣ 선수 목록 */}
                 {canEditThis && selectedPos && fmDef && (
                   <Typography sx={{ fontSize: '0.75rem', color: '#FF6F00', fontWeight: 700, mb: 0.5, textAlign: 'center' }}>
                     📍 {fmDef.positions.find((p) => p.id === selectedPos)?.label || selectedPos} — 아래 선수 탭해서 배치
@@ -1365,17 +1597,19 @@ export default function PlayerSelectPage() {
                 )}
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4, justifyContent: 'center', mb: 1 }}>
                   {teamPlayers.map((name) => {
-                    // 현재 쿼터 배치 여부
                     const posKey = Object.keys(assignedPlayers).find((k) => assignedPlayers[k] === name);
                     const isPlaced = !!posKey;
                     const posLabel = posKey && fmDef ? (fmDef.positions.find((p) => p.id === posKey)?.label || posKey) : null;
                     const isClickable = canEditThis && !!selectedPos;
 
-                    // 각 쿼터별 출전 여부 (세그먼트 블록용)
+                    // 각 쿼터별 출전 여부 (쿼터 모드일 때만)
+                    // QuarterFormation 데이터가 없으면 TeamFormation 기반으로 fallback
                     const quarterSlots = [];
-                    for (let q = 1; q <= quarterCount; q++) {
-                      const qf = quarterFormations?.[code]?.[`Q${q}`];
-                      quarterSlots.push(qf?.players && Object.values(qf.players).includes(name));
+                    if (showQuarterTabs) {
+                      for (let q = 1; q <= quarterCount; q++) {
+                        const qf = quarterFormations?.[code]?.[`Q${q}`] || teamFormations[code];
+                        quarterSlots.push(qf?.players && Object.values(qf.players).includes(name));
+                      }
                     }
 
                     return (
@@ -1388,14 +1622,8 @@ export default function PlayerSelectPage() {
                             if (newPlayers[p] === name && p !== selectedPos) delete newPlayers[p];
                           });
                           const tfData = { formationId: fmId, players: newPlayers };
-                          setTeamFormations((prev) => ({ ...prev, [code]: tfData }));
                           setSelectedPos(null);
-                          await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
-                          const newQf = { ...quarterFormations };
-                          if (!newQf[code]) newQf[code] = {};
-                          newQf[code][activeQuarterTab] = tfData;
-                          setQuarterFormations(newQf);
-                          await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
+                          await saveFormation(tfData);
                         }}
                         sx={{
                           borderRadius: 2, minWidth: 80,
@@ -1410,7 +1638,6 @@ export default function PlayerSelectPage() {
                           '&:hover': isClickable ? { bgcolor: '#FFF8E1', borderColor: '#FFB300' } : {},
                         }}
                       >
-                        {/* 선수명 + 포지션 */}
                         <Typography sx={{
                           fontSize: '0.65rem', fontWeight: isPlaced ? 800 : 600,
                           color: isPlaced ? th.bg : '#555', lineHeight: 1.2,
@@ -1422,29 +1649,22 @@ export default function PlayerSelectPage() {
                             </Typography>
                           )}
                         </Typography>
-                        {/* 쿼터 세그먼트 블록 — 출전 ■ / 미출전 □ */}
-                        <Box sx={{ display: 'flex', gap: '2px', mt: 0.3, alignItems: 'center' }}>
-                          {quarterSlots.map((played, qi) => {
-                            const isCurrentQ = `Q${qi + 1}` === activeQuarterTab;
-                            return (
+                        {/* 쿼터 세그먼트 블록 (쿼터 모드일 때만) — 균일 크기 */}
+                        {showQuarterTabs && (
+                          <Box sx={{ display: 'flex', gap: '2px', mt: 0.3, alignItems: 'center' }}>
+                            {quarterSlots.map((played, qi) => (
                               <Box
                                 key={qi}
                                 sx={{
-                                  width: isCurrentQ ? 12 : 10,
-                                  height: isCurrentQ ? 8 : 6,
+                                  width: 8, height: 5,
                                   borderRadius: 0.5,
-                                  bgcolor: played ? th.bg : '#E8E8E8',
-                                  opacity: played ? 1 : 0.4,
-                                  border: isCurrentQ
-                                    ? (played ? `1.5px solid ${th.bg}` : '1.5px solid #999')
-                                    : (played ? 'none' : '0.5px solid #CCC'),
-                                  boxShadow: played && isCurrentQ ? `0 0 3px ${th.bg}88` : 'none',
-                                  transition: 'all 0.2s',
+                                  bgcolor: played ? th.bg : '#E0E0E0',
+                                  opacity: played ? 1 : 0.5,
                                 }}
                               />
-                            );
-                          })}
-                        </Box>
+                            ))}
+                          </Box>
+                        )}
                       </Box>
                     );
                   })}
@@ -1453,180 +1673,43 @@ export default function PlayerSelectPage() {
             );
           })()}
 
-          {/* ──────────── 기존 포메이션 (3팀 / 2팀 1쿼터 + 포메이션 활성화) ──────────── */}
-          {!(useQuarterSystem && quarterCount > 1) && !editMode && (teamCount !== 2 || formationEnabled) && (
-            <Box sx={{ mt: 2 }}>
-              <Divider sx={{ mb: 1.5 }} />
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#333', flex: 1 }}>
-                  <SportsSoccerIcon sx={{ fontSize: 18, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />
-                  팀별 포메이션
-                </Typography>
-                {canEdit && (
-                  <Box sx={{ display: 'flex', gap: 0.5 }}>
-                    {['futsal', 'football'].map(t => (
-                      <Chip key={t} label={t === 'futsal' ? '풋살' : '축구'} size="small"
-                        onClick={async () => {
-                          setClubType(t);
-                          setClubFormation(getDefaultFormation(t));
-                          setTeamFormations({});
-                          await update(ref(db), {
-                            [`clubs/${clubName}/type`]: t,
-                            [`clubs/${clubName}/formation`]: getDefaultFormation(t),
-                            [`PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`]: null,
-                          });
-                        }}
-                        sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600,
-                          bgcolor: clubType === t ? '#2E7D32' : '#F0F2F5',
-                          color: clubType === t ? 'white' : '#777' }} />
-                    ))}
-                  </Box>
-                )}
-              </Box>
-              {['A', 'B', ...(teamCount === 3 ? ['C'] : [])].map(code => {
-                const teamPlayers = displayTeams[code] || [];
-                if (teamPlayers.length === 0) return null;
-                const tf = teamFormations[code] || {};
-                const fmId = tf.formationId || clubFormation || getDefaultFormation(clubType);
-                const fmDef = getFormations(clubType)[fmId];
-                const assignedPlayers = tf.players || {};
-                const isExpanded = expandFormation === code;
-                const canEditThis = canEditTeamFormation(code);
-                const isMyTeam = !!userName && teamCaptains?.[code] === userName && !canEdit;
-
-                return (
-                  <Box key={code} sx={{ mb: 1 }}>
-                    <Box onClick={() => { setExpandFormation(isExpanded ? null : code); setSelectedPos(null); }}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', py: 0.8, px: 1,
-                        bgcolor: theme[code].light, borderRadius: 1.5, border: `1px solid ${theme[code].border}` }}>
-                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme[code].bg }} />
-                      <Typography sx={{ fontWeight: 700, fontSize: '0.88rem', flex: 1 }}>{getTeamLabel(code)} 포메이션</Typography>
-                      {isMyTeam && (
-                        <Chip label="내 팀 ⚽" size="small" sx={{ fontSize: '0.68rem', height: 18, bgcolor: '#FF6F00', color: 'white', fontWeight: 800, mr: 0.3 }} />
-                      )}
-                      <Chip label={fmId} size="small" sx={{ fontSize: '0.72rem', height: 20, fontWeight: 600 }} />
-                      {isExpanded ? <ExpandLessIcon sx={{ fontSize: 18 }} /> : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
-                    </Box>
-
-                    {isExpanded && fmDef && (
-                      <Box sx={{ mt: 1, px: 0.5 }}>
-                        {/* 포메이션 프리셋 변경 */}
-                        {canEditThis && (
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                            {Object.entries(getFormations(clubType)).map(([key, fm]) => (
-                              <Chip key={key} label={fm.name} size="small"
-                                onClick={async () => {
-                                  const newFmDef = getFormations(clubType)[key];
-                                  const autoPlayers = newFmDef ? autoAssignPlayers(newFmDef.positions, teamPlayers, statsMap) : {};
-                                  const newTf = { ...teamFormations, [code]: { formationId: key, players: autoPlayers } };
-                                  setTeamFormations(newTf);
-                                  setSelectedPos(null);
-                                  await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), { formationId: key, players: autoPlayers });
-                                  // 쿼터 모드: QuarterFormation 에도 동시 저장
-                                  if (useQuarterSystem && quarterCount > 1) {
-                                    const newQf = { ...quarterFormations };
-                                    if (!newQf[code]) newQf[code] = {};
-                                    newQf[code][activeQuarterTab] = { formationId: key, players: autoPlayers };
-                                    setQuarterFormations(newQf);
-                                    await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), { formationId: key, players: autoPlayers });
-                                  }
-                                }}
-                                sx={{ fontSize: '0.72rem', fontWeight: 600, bgcolor: fmId === key ? '#2E7D32' : '#F0F2F5',
-                                  color: fmId === key ? 'white' : '#555', cursor: 'pointer' }} />
-                            ))}
-                          </Box>
-                        )}
-
-                        {/* 안내 메시지 */}
-                        {canEditThis && selectedPos && expandFormation === code && (
-                          <Typography sx={{ fontSize: '0.73rem', color: '#FF9800', fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
-                            {assignedPlayers[selectedPos]
-                              ? `${fmDef.positions.find(p => p.id === selectedPos)?.label} (${assignedPlayers[selectedPos]}) — 다른 포지션 또는 아래 선수 터치`
-                              : `${fmDef.positions.find(p => p.id === selectedPos)?.label} — 아래 선수 터치로 배치`}
-                          </Typography>
-                        )}
-
-                        {/* 필드 */}
-                        <FormationField
-                          clubType={clubType}
-                          positions={fmDef.positions}
-                          players={assignedPlayers}
-                          selectedPos={expandFormation === code ? selectedPos : null}
-                          onPositionClick={canEditThis ? async (posId) => {
-                            if (!selectedPos) { setSelectedPos(posId); return; }
-                            if (selectedPos === posId) { setSelectedPos(null); return; }
-                            const newPlayers = { ...assignedPlayers };
-                            const a = newPlayers[selectedPos];
-                            const b = newPlayers[posId];
-                            if (a) newPlayers[posId] = a; else delete newPlayers[posId];
-                            if (b) newPlayers[selectedPos] = b; else delete newPlayers[selectedPos];
-                            const tfData = { formationId: fmId, players: newPlayers };
-                            const newTf = { ...teamFormations, [code]: tfData };
-                            setTeamFormations(newTf);
-                            setSelectedPos(null);
-                            await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
-                            if (useQuarterSystem && quarterCount > 1) {
-                              const newQf = { ...quarterFormations };
-                              if (!newQf[code]) newQf[code] = {};
-                              newQf[code][activeQuarterTab] = tfData;
-                              setQuarterFormations(newQf);
-                              await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
-                            }
-                          } : undefined}
-                          readOnly={!canEditThis}
-                          width={Math.min(280, window.innerWidth - 80)}
-                        />
-
-                        {/* 미배치 선수 목록 */}
-                        {canEditThis && (
-                          <Box sx={{ mt: 1 }}>
-                            <Typography sx={{ fontSize: '0.73rem', color: '#999', fontWeight: 600, mb: 0.5 }}>
-                              {selectedPos ? '선수 터치로 배치' : '포지션을 먼저 터치'}
-                            </Typography>
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4 }}>
-                              {teamPlayers
-                                .filter(p => !Object.values(assignedPlayers).includes(p))
-                                .map(name => (
-                                  <Chip key={name} label={name} size="small"
-                                    onClick={async () => {
-                                      if (!selectedPos) return;
-                                      const newPlayers = { ...assignedPlayers, [selectedPos]: name };
-                                      const tfData = { formationId: fmId, players: newPlayers };
-                                      const newTf = { ...teamFormations, [code]: tfData };
-                                      setTeamFormations(newTf);
-                                      setSelectedPos(null);
-                                      await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation/${code}`), tfData);
-                                      if (useQuarterSystem && quarterCount > 1) {
-                                        const newQf = { ...quarterFormations };
-                                        if (!newQf[code]) newQf[code] = {};
-                                        newQf[code][activeQuarterTab] = tfData;
-                                        setQuarterFormations(newQf);
-                                        await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${code}/${activeQuarterTab}`), tfData);
-                                      }
-                                    }}
-                                    sx={{ fontSize: '0.75rem', fontWeight: 600, cursor: selectedPos ? 'pointer' : 'default',
-                                      bgcolor: selectedPos ? '#FFF8E1' : '#F5F5F5', color: selectedPos ? '#F57F17' : '#999',
-                                      border: selectedPos ? '1px solid #FFD600' : '1px solid #E0E0E0' }} />
-                                ))}
-                              {teamPlayers.filter(p => !Object.values(assignedPlayers).includes(p)).length === 0 && (
-                                <Typography sx={{ fontSize: '0.72rem', color: '#BBB', fontStyle: 'italic' }}>모든 선수 배치됨</Typography>
-                              )}
-                            </Box>
-                          </Box>
-                        )}
-                      </Box>
-                    )}
-                  </Box>
-                );
-              })}
-            </Box>
-          )}
 
           {canEdit && !editMode && (
             <>
               <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                <Button variant="outlined" fullWidth startIcon={<SaveIcon />} onClick={() => saveTeams(teams, keyPop)}
-                  sx={{ borderRadius: 2, fontWeight: 'bold' }}>저장만 하기</Button>
+                <Button
+                  variant="contained"
+                  fullWidth
+                  startIcon={formationOpen ? <VisibilityIcon /> : <VisibilityOffIcon />}
+                  onClick={async () => {
+                    try {
+                      // 팀 구성을 먼저 저장 (자동 저장 보장)
+                      await saveTeams(teams, keyPop);
+                      // 포메이션 공개 상태 토글
+                      const newVal = !formationOpen;
+                      setFormationOpen(newVal);
+                      await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/FormationOpen`), newVal);
+                    } catch (e) {
+                      alert('처리 실패: ' + e.message);
+                    }
+                  }}
+                  sx={{
+                    borderRadius: 2, fontWeight: 'bold',
+                    bgcolor: formationOpen ? '#E65100' : '#F57C00',
+                    color: 'white',
+                    boxShadow: formationOpen
+                      ? '0 3px 10px rgba(230,81,0,0.35)'
+                      : '0 3px 10px rgba(245,124,0,0.35)',
+                    '&:hover': {
+                      bgcolor: formationOpen ? '#BF360C' : '#E65100',
+                      boxShadow: formationOpen
+                        ? '0 4px 14px rgba(191,54,12,0.45)'
+                        : '0 4px 14px rgba(230,81,0,0.45)',
+                    },
+                  }}
+                >
+                  {formationOpen ? '공개 중' : '오픈하기'}
+                </Button>
                 <Button
                   variant="contained"
                   fullWidth
@@ -1681,6 +1764,75 @@ export default function PlayerSelectPage() {
           )}
         </Paper>
       )}
+
+      {/* 쿼터/경기 수 감소 확인 다이얼로그 */}
+      <Dialog open={!!quarterDecreaseDialog} onClose={() => setQuarterDecreaseDialog(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 800, color: '#E65100' }}>
+          ⚠️ {clubType === 'football' ? '쿼터' : '경기'} 수 감소 확인
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: '0.85rem', mb: 1.5 }}>
+            {clubType === 'football' ? '쿼터' : '경기'} 수를{' '}
+            <b>{quarterCount} → {quarterDecreaseDialog?.targetCount}</b>(으)로 줄이면 아래 {clubType === 'football' ? '쿼터' : '경기'}의 포메이션 데이터가 <b style={{ color: '#C62828' }}>삭제</b>됩니다:
+          </Typography>
+          <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#FFF3E0', border: '1px solid #FFE0B2', mb: 1 }}>
+            <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#E65100' }}>
+              {quarterDecreaseDialog?.lostQuarters
+                .map((qk) => clubType === 'football' ? qk : `${qk.replace('Q', '')}경기`)
+                .join(', ')}
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: '0.75rem', color: '#888' }}>
+            경기 기록(골/어시스트)은 영향받지 않습니다. 포메이션 배치 데이터만 삭제됩니다.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQuarterDecreaseDialog(null)}>취소</Button>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={async () => {
+              const dlg = quarterDecreaseDialog;
+              if (!dlg) return;
+              const newCount = dlg.targetCount;
+
+              // 1) state 업데이트
+              setQuarterCount(newCount);
+              setTeamQuarterTab(prev => {
+                const next = { ...prev };
+                ['A', 'B'].forEach(c => {
+                  if (parseInt((next[c] || 'Q1').replace('Q', '')) > newCount) next[c] = `Q${newCount}`;
+                });
+                return next;
+              });
+              // 2) 삭제될 쿼터 포메이션을 state에서 제거
+              setQuarterFormations(prev => {
+                const next = { ...prev };
+                ['A', 'B', 'C'].forEach(c => {
+                  if (!next[c]) return;
+                  const teamQf = { ...next[c] };
+                  dlg.lostQuarters.forEach(qk => { delete teamQf[qk]; });
+                  next[c] = teamQf;
+                });
+                return next;
+              });
+              // 3) Firebase 업데이트 — QuarterConfig 변경 + 삭제될 쿼터 포메이션 null로 제거
+              const updates = {
+                [`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterConfig`]: { count: newCount },
+              };
+              ['A', 'B', 'C'].forEach(c => {
+                dlg.lostQuarters.forEach(qk => {
+                  updates[`PlayerSelectionByDate/${clubName}/${dateParam}/QuarterFormation/${c}/${qk}`] = null;
+                });
+              });
+              await update(ref(db), updates);
+              setQuarterDecreaseDialog(null);
+            }}
+          >
+            삭제하고 감소
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 경기 기록 삭제 다이얼로그 */}
       <Dialog open={deleteDialog} onClose={() => { setDeleteDialog(false); setDeleteConfirmText(''); }}>

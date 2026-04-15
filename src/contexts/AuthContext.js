@@ -19,6 +19,7 @@ export function AuthProvider({ children }) {
   const [emailKey, setEmailKey] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [isModerator, setIsModerator] = useState(false);
+  const [isMasterDb, setIsMasterDb] = useState(false); // DB에서 조회한 마스터 여부
   const [authReady, setAuthReady] = useState(false);
   const [loading, setLoading] = useState(true);
   // 게스트 데모 모드 (로그인 없이 체험)
@@ -64,17 +65,26 @@ export function AuthProvider({ children }) {
           ]);
           setIsAdmin(adminSnap.exists());
           setIsModerator(modSnap.exists());
+          // 마스터 체크 (DB 기반, rules 배포 전엔 실패할 수 있으므로 별도 try/catch)
+          try {
+            const masterSnap = await get(ref(db, `MasterUsers/${key}`));
+            setIsMasterDb(masterSnap.exists() && masterSnap.val() === true);
+          } catch {
+            setIsMasterDb(false); // env fallback 사용됨
+          }
         } catch (e) {
           console.error('유저 정보 로드 실패:', e);
           setUserData(null);
           setIsAdmin(false);
           setIsModerator(false);
+          setIsMasterDb(false);
         }
       } else {
         setEmailKey('');
         setUserData(null);
         setIsAdmin(false);
         setIsModerator(false);
+        setIsMasterDb(false);
       }
 
       setLoading(false);
@@ -85,8 +95,10 @@ export function AuthProvider({ children }) {
 
   const userName = isDemoGuest ? '체험 사용자' : (userData?.name || user?.displayName || user?.email?.split('@')[0] || '');
   const realClubName = userData?.club || '';
-  // 이메일 비교는 소문자 정규화 (masterEmails는 이미 소문자로 파싱됨)
-  const isMaster = !!(user?.email && APP_CONFIG.masterEmails?.includes(user.email.toLowerCase()));
+  // 마스터 체크: DB `MasterUsers/{emailKey}` 우선, env 이메일 리스트는 하위 호환 fallback
+  // (env 이메일은 빌드 번들에 포함되므로 점진적으로 제거 예정 — 초기 seed 전환 후)
+  const isMasterEnv = !!(user?.email && APP_CONFIG.masterEmails?.includes(user.email.toLowerCase()));
+  const isMaster = isMasterDb || isMasterEnv;
 
   // 마스터 전용: 다른 클럽 조회
   const [viewingClub, setViewingClub] = useState('');

@@ -37,6 +37,7 @@ function HomePage() {
   const [nextMatchAttend, setNextMatchAttend] = useState(0);
   const [myVoteStatus, setMyVoteStatus] = useState(null);
   const [myAttendTime, setMyAttendTime] = useState(null);
+  const [extraMatches, setExtraMatches] = useState([]); // 2번째, 3번째 예정 경기
   const [recentResults, setRecentResults] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [teamStats, setTeamStats] = useState({ totalPlayers: 0, avgAttend: 0 });
@@ -119,16 +120,45 @@ function HomePage() {
           const upcoming = Object.keys(data)
             .filter(dk => (data[dk]?.isActive === true || data[dk]?.isActive === 'true') && parseDateKeyLocal(dk) >= today)
             .sort();
-          let selectedDk = null;
+          // 오늘 경기 결과가 있으면 스킵 + 유효한 경기만 수집
+          const validDks = [];
           for (const dk of upcoming) {
             if (dk === todayStr) {
-              // 오늘 경기 결과가 이미 있으면 끝난 것으로 간주 → 스킵
               const resultSnap = await get(ref(db, `DailyResultsBackup/${clubName}/${dk}`));
               if (resultSnap.exists()) continue;
             }
-            selectedDk = dk;
-            break;
+            validDks.push(dk);
+            if (validDks.length >= 3) break; // 최대 3개
           }
+          const selectedDk = validDks[0] || null;
+          // 2번째, 3번째 경기를 extraMatches에 저장 — 출석 인원 + 내 투표 상태도 로드
+          const extras = [];
+          for (let i = 1; i < validDks.length; i++) {
+            const dk = validDks[i];
+            const [aSnap, bSnap, uSnap, atSnap] = await Promise.all([
+              get(ref(db, `PlayerSelectionByDate/${clubName}/${dk}/AttandPlayer/all`)),
+              get(ref(db, `PlayerSelectionByDate/${clubName}/${dk}/AbsentPlayer/all`)),
+              get(ref(db, `PlayerSelectionByDate/${clubName}/${dk}/UndecidedPlayer/all`)),
+              emailKey ? get(ref(db, `PlayerSelectionByDate/${clubName}/${dk}/AttendTime/${emailKey}`)) : Promise.resolve(null),
+            ]);
+            const toArr2 = snap => (snap.exists() && Array.isArray(snap.val())) ? snap.val().filter(Boolean) : [];
+            const atL = toArr2(aSnap);
+            const abL = toArr2(bSnap);
+            const ucL = toArr2(uSnap);
+            let myStatus = null;
+            if (atL.includes(userName)) myStatus = 'attend';
+            else if (abL.includes(userName)) myStatus = 'absent';
+            else if (ucL.includes(userName)) myStatus = 'undecided';
+            extras.push({
+              date: dk,
+              time: data[dk]?.time || '',
+              location: data[dk]?.location || '',
+              attendCount: atL.length,
+              myVoteStatus: myStatus,
+              myAttendTime: (atSnap && atSnap.exists()) ? atSnap.val() : null,
+            });
+          }
+          setExtraMatches(extras);
           if (selectedDk) {
             setNextMatch({ date: selectedDk, time: data[selectedDk]?.time || '', location: data[selectedDk]?.location || '' });
             const [attendSnap, absentSnap, undecidedSnap, attendTimeSnap, captainsSnap] = await Promise.all([
@@ -364,6 +394,129 @@ function HomePage() {
     });
   };
 
+  // ─── 예정 경기 카드 공통 렌더 (다음 경기 + 추가 예정 경기) ───
+  const renderUpcomingCard = ({
+    date, time, location, attendCount, myVoteStatus: voteStatus, myAttendTime: attendTime,
+    isFirst, children,
+  }) => {
+    const cardDday = getDaysDiff(date);
+    const partialTime = (voteStatus === 'attend' && attendTime && attendTime.full === false && attendTime.start && attendTime.end)
+      ? `${attendTime.start}-${attendTime.end}`
+      : null;
+    const urgent = voteStatus === null && cardDday >= 0 && cardDday <= 3;
+    const critical = voteStatus === null && cardDday === 0;
+    const cfg =
+      voteStatus === 'attend' ? {
+        label: partialTime ? `참석 · ${partialTime}` : '참석',
+        Icon: CheckCircleIcon,
+        bg: '#2E7D32', bgHover: '#1B5E20', shadow: '0 2px 8px rgba(46,125,50,0.3)',
+      } :
+      voteStatus === 'absent' ? {
+        label: '불참', Icon: CancelIcon,
+        bg: '#546E7A', bgHover: '#37474F', shadow: '0 2px 8px rgba(84,110,122,0.3)',
+      } :
+      voteStatus === 'undecided' ? {
+        label: '미정', Icon: HelpOutlineIcon,
+        bg: '#F57C00', bgHover: '#E65100', shadow: '0 2px 8px rgba(245,124,0,0.3)',
+      } :
+      critical ? {
+        label: '지금 투표!', Icon: HowToVoteIcon,
+        bg: '#D32F2F', bgHover: '#B71C1C', shadow: '0 2px 12px rgba(211,47,47,0.5)',
+      } :
+      urgent ? {
+        label: '투표하기', Icon: HowToVoteIcon,
+        bg: '#EF6C00', bgHover: '#E65100', shadow: '0 2px 10px rgba(239,108,0,0.4)',
+      } : {
+        label: '투표하기', Icon: HowToVoteIcon,
+        bg: '#1565C0', bgHover: '#0D47A1', shadow: '0 2px 8px rgba(21,101,192,0.3)',
+      };
+    const BtnIcon = cfg.Icon;
+    const pulseSpeed = critical ? '0.9s' : '1.4s';
+
+    return (
+      <Card sx={{
+        minWidth: 300, maxWidth: 320, flexShrink: 0, scrollSnapAlign: 'start',
+        borderRadius: 3, boxShadow: 3, overflow: 'hidden',
+        border: '1px solid #E0E0E0',
+      }}>
+        <CardContent sx={{ pb: '16px !important' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '0.92rem', flex: 1 }}>
+              {isFirst ? '다음 경기' : '예정 경기'}
+            </Typography>
+            <Chip
+              label={cardDday === 0 ? 'D-DAY' : `D-${cardDday}`}
+              size="small"
+              sx={{
+                bgcolor: '#1565C0', color: 'white',
+                fontWeight: 900, fontSize: '0.8rem', height: 26, px: 0.5,
+              }}
+            />
+          </Box>
+          <Typography sx={{ fontWeight: 700, fontSize: '1.15rem', color: '#222', mb: 0.5 }}>
+            {formatDateWithDay(date)}
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 1.5, color: '#666' }}>
+            {time && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                <AccessTimeIcon sx={{ fontSize: 17 }} />
+                <Typography sx={{ fontSize: '0.92rem' }}>{time}</Typography>
+              </Box>
+            )}
+            {location && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                <PlaceIcon sx={{ fontSize: 17 }} />
+                <Typography sx={{
+                  fontSize: '0.92rem',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 170,
+                }}>
+                  {location}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Chip icon={<PeopleIcon sx={{ fontSize: '16px !important' }} />}
+              label={`${attendCount || 0}명 참석`} size="small"
+              sx={{ bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 'bold', fontSize: '0.8rem', height: 28 }} />
+            <Badge
+              variant="dot"
+              invisible={voteStatus !== null}
+              sx={{
+                '& .MuiBadge-dot': {
+                  bgcolor: '#FF1744', width: 10, height: 10,
+                  border: '2px solid white',
+                  animation: `voteAlert ${pulseSpeed} ease-in-out infinite`,
+                  '@keyframes voteAlert': {
+                    '0%, 100%': { transform: 'scale(1)', opacity: 1 },
+                    '50%': { transform: 'scale(1.6)', opacity: 0.6 },
+                  },
+                },
+              }}
+            >
+              <Button
+                variant="contained" size="small"
+                startIcon={<BtnIcon sx={{ fontSize: '18px !important' }} />}
+                endIcon={voteStatus === null ? <ArrowForwardIcon /> : null}
+                onClick={() => navigate('/vote')}
+                sx={{
+                  borderRadius: 2, fontWeight: 'bold', px: 2.2, py: 0.8,
+                  bgcolor: cfg.bg, boxShadow: cfg.shadow,
+                  transition: 'all 0.15s ease',
+                  '&:hover': { bgcolor: cfg.bgHover, boxShadow: cfg.shadow },
+                  '&:active': { transform: 'scale(0.96)' },
+                }}
+              >
+                {cfg.label}
+              </Button>
+            </Badge>
+          </Box>
+          {children}
+        </CardContent>
+      </Card>
+    );
+  };
+
   if (loading) {
     return (
       <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
@@ -543,237 +696,142 @@ function HomePage() {
           );
         })()}
 
-        {/* ── 다음 경기 ── */}
+        {/* ── 예정 경기 (가로 스크롤, 모두 동일한 카드 구조) ── */}
         {nextMatch && (
-          <Card sx={{
-            mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
-            border: '1px solid #E0E0E0',
-          }}>
-            <CardContent sx={{ pb: '16px !important' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-                <CalendarMonthIcon sx={{ color: '#1565C0', fontSize: 22 }} />
-                <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '1.05rem', flex: 1 }}>다음 경기</Typography>
-                <Chip
-                  label={dday === 0 ? 'D-DAY' : `D-${dday}`}
-                  size="small"
-                  sx={{
-                    bgcolor: '#1565C0', color: 'white',
-                    fontWeight: 900, fontSize: '0.8rem', height: 26, px: 0.5,
-                  }}
-                />
-              </Box>
-              <Typography sx={{ fontWeight: 700, fontSize: '1.15rem', color: '#222', mb: 0.5 }}>
-                {formatDateWithDay(nextMatch.date)}
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 1.5, color: '#666' }}>
-                {nextMatch.time && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                    <AccessTimeIcon sx={{ fontSize: 17 }} />
-                    <Typography sx={{ fontSize: '0.92rem' }}>{nextMatch.time}</Typography>
-                  </Box>
-                )}
-                {nextMatch.location && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                    <PlaceIcon sx={{ fontSize: 17 }} />
-                    <Typography sx={{ fontSize: '0.92rem' }}>{nextMatch.location}</Typography>
-                  </Box>
-                )}
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Chip icon={<PeopleIcon sx={{ fontSize: '16px !important' }} />}
-                  label={`${nextMatchAttend}명 참석`} size="small"
-                  sx={{ bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 'bold', fontSize: '0.8rem', height: 28 }} />
-                {(() => {
-                  // ── 상태별 설정 계산 ──
-                  const partialTime = (myVoteStatus === 'attend' && myAttendTime && myAttendTime.full === false && myAttendTime.start && myAttendTime.end)
-                    ? `${myAttendTime.start}-${myAttendTime.end}`
-                    : null;
-                  // 미투표 시 D-day 긴급도
-                  const urgent = myVoteStatus === null && dday >= 0 && dday <= 3;
-                  const critical = myVoteStatus === null && dday === 0;
-                  const cfg =
-                    myVoteStatus === 'attend' ? {
-                      label: partialTime ? `참석 · ${partialTime}` : '참석',
-                      Icon: CheckCircleIcon,
-                      bg: '#2E7D32', bgHover: '#1B5E20', shadow: '0 2px 8px rgba(46,125,50,0.3)',
-                      aria: `현재 ${partialTime ? `부분 참석(${partialTime})` : '참석'}으로 투표함. 누르면 수정 페이지로 이동`,
-                    } :
-                    myVoteStatus === 'absent' ? {
-                      label: '불참', Icon: CancelIcon,
-                      bg: '#546E7A', bgHover: '#37474F', shadow: '0 2px 8px rgba(84,110,122,0.3)',
-                      aria: '현재 불참으로 투표함. 누르면 수정 페이지로 이동',
-                    } :
-                    myVoteStatus === 'undecided' ? {
-                      label: '미정', Icon: HelpOutlineIcon,
-                      bg: '#F57C00', bgHover: '#E65100', shadow: '0 2px 8px rgba(245,124,0,0.3)',
-                      aria: '현재 미정으로 투표함. 누르면 수정 페이지로 이동',
-                    } :
-                    critical ? {
-                      label: '지금 투표!', Icon: HowToVoteIcon,
-                      bg: '#D32F2F', bgHover: '#B71C1C', shadow: '0 2px 12px rgba(211,47,47,0.5)',
-                      aria: '오늘 경기입니다. 아직 투표하지 않음. 누르면 투표 페이지로 이동',
-                    } :
-                    urgent ? {
-                      label: '투표하기', Icon: HowToVoteIcon,
-                      bg: '#EF6C00', bgHover: '#E65100', shadow: '0 2px 10px rgba(239,108,0,0.4)',
-                      aria: `D-${dday}, 아직 투표하지 않음. 누르면 투표 페이지로 이동`,
-                    } : {
-                      label: '투표하기', Icon: HowToVoteIcon,
-                      bg: '#1565C0', bgHover: '#0D47A1', shadow: '0 2px 8px rgba(21,101,192,0.3)',
-                      aria: '아직 투표하지 않음. 누르면 투표 페이지로 이동',
-                    };
-                  const BtnIcon = cfg.Icon;
-                  const pulseSpeed = critical ? '0.9s' : '1.4s';
-
+          <Box sx={{ mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 1, px: 0.5 }}>
+              <CalendarMonthIcon sx={{ color: '#1565C0', fontSize: 20 }} />
+              <Typography sx={{ fontWeight: 'bold', fontSize: '1.05rem', flex: 1 }}>예정 경기</Typography>
+              {extraMatches.length > 0 && (
+                <Typography sx={{ fontSize: '0.72rem', color: '#999' }}>← 좌우로 밀어보기 →</Typography>
+              )}
+            </Box>
+            <Box sx={{
+              display: 'flex', gap: 1.2, overflowX: 'auto', pb: 1,
+              scrollSnapType: 'x mandatory',
+              '&::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none',
+              mx: -0.5, px: 0.5,
+            }}>
+              {/* 첫 카드: 다음 경기 + 주장 전용 섹션 */}
+              {renderUpcomingCard({
+                date: nextMatch.date,
+                time: nextMatch.time,
+                location: nextMatch.location,
+                attendCount: nextMatchAttend,
+                myVoteStatus, myAttendTime,
+                isFirst: true,
+                children: (myCaptainCode && !activeDraft) ? (() => {
+                  const confirmedDraft = draftSession?.status === 'confirmed';
+                  const codes = draftSession?.pickOrder || [];
+                  const reDraftReq = draftSession?.reDraftRequests || {};
+                  const agreedCount = codes.filter((c) => reDraftReq[c]).length;
+                  const myRequested = myCaptainCode && reDraftReq[myCaptainCode];
                   return (
-                    <Badge
-                      variant="dot"
-                      invisible={myVoteStatus !== null}
-                      sx={{
-                        '& .MuiBadge-dot': {
-                          bgcolor: '#FF1744', width: 10, height: 10,
-                          border: '2px solid white',
-                          animation: `voteAlert ${pulseSpeed} ease-in-out infinite`,
-                          '@keyframes voteAlert': {
-                            '0%, 100%': { transform: 'scale(1)', opacity: 1 },
-                            '50%': { transform: 'scale(1.6)', opacity: 0.6 },
-                          },
-                        },
-                      }}
-                    >
-                      <Button
-                        variant="contained" size="small"
-                        startIcon={<BtnIcon sx={{ fontSize: '18px !important' }} />}
-                        endIcon={myVoteStatus === null ? <ArrowForwardIcon /> : null}
-                        onClick={() => navigate('/vote')}
-                        aria-label={cfg.aria}
-                        sx={{
-                          borderRadius: 2, fontWeight: 'bold', px: 2.2, py: 0.8,
-                          bgcolor: cfg.bg, boxShadow: cfg.shadow,
-                          transition: 'all 0.15s ease',
-                          '&:hover': { bgcolor: cfg.bgHover, boxShadow: cfg.shadow },
-                          '&:active': { transform: 'scale(0.96)' },
-                        }}
-                      >
-                        {cfg.label}
-                      </Button>
-                    </Badge>
-                  );
-                })()}
-              </Box>
-              {/* 주장 전용: 포메이션 설정 + 재드래프트 요청 (관리자는 홈에서 안 보임) */}
-              {myCaptainCode && !activeDraft && (() => {
-                const confirmedDraft = draftSession?.status === 'confirmed';
-                const codes = draftSession?.pickOrder || [];
-                const reDraftReq = draftSession?.reDraftRequests || {};
-                const agreedCount = codes.filter((c) => reDraftReq[c]).length;
-                const myRequested = myCaptainCode && reDraftReq[myCaptainCode];
-                return (
-                  <Box sx={{ mt: 1.2, pt: 1.2, borderTop: '1px dashed #E0E0E0' }}>
-                    <Typography sx={{ fontSize: '0.7rem', color: '#E65100', fontWeight: 800, mb: 0.7, letterSpacing: 0.3 }}>
-                      🎖 {myCaptainCode ? `${myCaptainCode}팀 주장 권한` : '관리자 권한'}
-                    </Typography>
-                    {/* 포메이션 설정 */}
-                    {myCaptainCode && (
-                      <Button
-                        fullWidth variant="outlined" size="small"
-                        startIcon={<ShieldIcon sx={{ fontSize: '18px !important' }} />}
-                        onClick={() => navigate(`/player-select?date=${nextMatch.date}`)}
-                        sx={{
-                          borderRadius: 2, fontWeight: 'bold', py: 0.8, mb: 0.7,
-                          borderColor: '#FF6F00', color: '#E65100', borderWidth: 2,
-                          bgcolor: '#FFF8E1',
-                          '&:hover': { bgcolor: '#FFECB3', borderColor: '#E65100', borderWidth: 2 },
-                        }}
-                      >
-                        ⚽ 내 팀 포메이션 설정
-                      </Button>
-                    )}
-                    {/* 재드래프트 요청 (confirmed 상태일 때만) */}
-                    {confirmedDraft && codes.length > 0 && (
-                      <Box sx={{
-                        p: 1, borderRadius: 2, bgcolor: '#F3E5F5', border: '1px solid #E1BEE7',
-                      }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.7 }}>
-                          <Typography sx={{ fontSize: '0.75rem', fontWeight: 800, color: '#6A1B9A', flex: 1 }}>
-                            🔄 재드래프트 요청
-                          </Typography>
-                          {agreedCount > 0 && (
-                            <Chip label={`${agreedCount}/${codes.length} 동의`} size="small"
-                              sx={{ height: 18, fontSize: '0.65rem', bgcolor: '#7B1FA2', color: 'white', fontWeight: 700 }} />
-                          )}
-                        </Box>
-                        {/* 주장별 동의 상태 */}
-                        <Box sx={{ display: 'flex', gap: 0.3, mb: 0.7 }}>
-                          {codes.map((c) => {
-                            const agreed = reDraftReq[c];
-                            return (
-                              <Chip key={c}
-                                label={`${c}${agreed ? ' ✓' : ''}`}
-                                size="small"
-                                sx={{
-                                  height: 18, fontSize: '0.62rem', px: 0.2,
-                                  bgcolor: agreed ? '#2E7D32' : '#EEEEEE',
-                                  color: agreed ? 'white' : '#888',
-                                  fontWeight: 700,
-                                }} />
-                            );
-                          })}
-                        </Box>
-                        <Stack direction="row" spacing={0.5}>
-                          {myCaptainCode && (
-                            myRequested ? (
-                              <Button size="small" variant="outlined"
-                                onClick={handleCancelReDraftRequest}
-                                sx={{
-                                  fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 'auto',
-                                  borderColor: '#999', color: '#666',
-                                }}>
-                                요청 취소
-                              </Button>
-                            ) : (
-                              <Button size="small" variant="contained"
-                                onClick={() => handleReDraftRequest(false)}
+                    <Box sx={{ mt: 1.2, pt: 1.2, borderTop: '1px dashed #E0E0E0' }}>
+                      <Typography sx={{ fontSize: '0.7rem', color: '#E65100', fontWeight: 800, mb: 0.7, letterSpacing: 0.3 }}>
+                        🎖 {myCaptainCode ? `${myCaptainCode}팀 주장 권한` : '관리자 권한'}
+                      </Typography>
+                      {myCaptainCode && (
+                        <Button
+                          fullWidth variant="outlined" size="small"
+                          startIcon={<ShieldIcon sx={{ fontSize: '18px !important' }} />}
+                          onClick={() => navigate(`/player-select?date=${nextMatch.date}`)}
+                          sx={{
+                            borderRadius: 2, fontWeight: 'bold', py: 0.8, mb: 0.7,
+                            borderColor: '#FF6F00', color: '#E65100', borderWidth: 2,
+                            bgcolor: '#FFF8E1',
+                            '&:hover': { bgcolor: '#FFECB3', borderColor: '#E65100', borderWidth: 2 },
+                          }}
+                        >
+                          ⚽ 내 팀 포메이션 설정
+                        </Button>
+                      )}
+                      {confirmedDraft && codes.length > 0 && (
+                        <Box sx={{ p: 1, borderRadius: 2, bgcolor: '#F3E5F5', border: '1px solid #E1BEE7' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.7 }}>
+                            <Typography sx={{ fontSize: '0.75rem', fontWeight: 800, color: '#6A1B9A', flex: 1 }}>
+                              🔄 재드래프트 요청
+                            </Typography>
+                            {agreedCount > 0 && (
+                              <Chip label={`${agreedCount}/${codes.length} 동의`} size="small"
+                                sx={{ height: 18, fontSize: '0.65rem', bgcolor: '#7B1FA2', color: 'white', fontWeight: 700 }} />
+                            )}
+                          </Box>
+                          <Box sx={{ display: 'flex', gap: 0.3, mb: 0.7 }}>
+                            {codes.map((c) => {
+                              const agreed = reDraftReq[c];
+                              return (
+                                <Chip key={c} label={`${c}${agreed ? ' ✓' : ''}`} size="small"
+                                  sx={{
+                                    height: 18, fontSize: '0.62rem', px: 0.2,
+                                    bgcolor: agreed ? '#2E7D32' : '#EEEEEE',
+                                    color: agreed ? 'white' : '#888', fontWeight: 700,
+                                  }} />
+                              );
+                            })}
+                          </Box>
+                          <Stack direction="row" spacing={0.5}>
+                            {myCaptainCode && (
+                              myRequested ? (
+                                <Button size="small" variant="outlined" onClick={handleCancelReDraftRequest}
+                                  sx={{ fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 'auto', borderColor: '#999', color: '#666' }}>
+                                  요청 취소
+                                </Button>
+                              ) : (
+                                <Button size="small" variant="contained" onClick={() => handleReDraftRequest(false)}
+                                  sx={{
+                                    fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 'auto', fontWeight: 700,
+                                    bgcolor: '#7B1FA2', '&:hover': { bgcolor: '#6A1B9A' },
+                                  }}>
+                                  동의
+                                </Button>
+                              )
+                            )}
+                            {canAdmin && (
+                              <Button size="small" variant="contained" onClick={() => handleReDraftRequest(true)}
                                 sx={{
                                   fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 'auto', fontWeight: 700,
-                                  bgcolor: '#7B1FA2',
-                                  '&:hover': { bgcolor: '#6A1B9A' },
+                                  bgcolor: '#E65100', '&:hover': { bgcolor: '#BF360C' },
                                 }}>
-                                동의
+                                즉시 재시작 (admin)
                               </Button>
-                            )
-                          )}
-                          {canAdmin && (
-                            <Button size="small" variant="contained"
-                              onClick={() => handleReDraftRequest(true)}
-                              sx={{
-                                fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 'auto', fontWeight: 700,
-                                bgcolor: '#E65100',
-                                '&:hover': { bgcolor: '#BF360C' },
-                              }}>
-                              즉시 재시작 (admin)
-                            </Button>
-                          )}
-                        </Stack>
-                      </Box>
-                    )}
-                  </Box>
-                );
-              })()}
-            </CardContent>
-          </Card>
+                            )}
+                          </Stack>
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })() : null,
+              })}
+
+              {/* 추가 예정 경기 카드들 */}
+              {extraMatches.map((m) => (
+                <React.Fragment key={m.date}>
+                  {renderUpcomingCard({
+                    date: m.date,
+                    time: m.time,
+                    location: m.location,
+                    attendCount: m.attendCount,
+                    myVoteStatus: m.myVoteStatus,
+                    myAttendTime: m.myAttendTime,
+                    isFirst: false,
+                  })}
+                </React.Fragment>
+              ))}
+            </Box>
+          </Box>
         )}
 
         {/* ── 최근 경기 결과 (가로 스크롤) ── */}
         {recentResults.length > 0 && (
-          <Box sx={{ mb: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, px: 0.5 }}>
+          <Box sx={{ mb: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.2, px: 0.5 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                <SportsSoccerIcon sx={{ color: '#333', fontSize: 20 }} />
-                <Typography sx={{ fontWeight: 'bold', fontSize: '1.05rem' }}>최근 경기</Typography>
+                <SportsSoccerIcon sx={{ color: '#333', fontSize: 22 }} />
+                <Typography sx={{ fontWeight: 800, fontSize: '1.1rem' }}>최근 경기</Typography>
               </Box>
-              <Button size="small" onClick={() => navigate('/results')} endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
-                sx={{ fontSize: '0.8rem', color: '#999' }}>전체보기</Button>
+              <Button size="small" onClick={() => navigate('/results')} endIcon={<ArrowForwardIcon sx={{ fontSize: 15 }} />}
+                sx={{ fontSize: '0.82rem', color: '#999', fontWeight: 600 }}>전체보기</Button>
             </Box>
             <Box sx={{
               display: 'flex', gap: 1.2, overflowX: 'auto', pb: 1,
@@ -784,40 +842,42 @@ function HomePage() {
               {recentResults.map((r) => (
                 <Card key={r.date} onClick={() => navigate('/results')}
                   sx={{
-                    minWidth: 240, maxWidth: 280, flexShrink: 0, scrollSnapAlign: 'start',
+                    minWidth: 260, maxWidth: 300, flexShrink: 0, scrollSnapAlign: 'start',
                     borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.04)',
                     cursor: 'pointer', ...touchCard,
                   }}>
-                  <CardContent sx={{ p: 1.8, '&:last-child': { pb: 1.8 } }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: '#333' }}>
+                  <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.2 }}>
+                      <Typography sx={{ fontSize: '0.95rem', fontWeight: 800, color: '#333' }}>
                         {formatDateWithDay(r.date)}
                       </Typography>
                       {r.winner && (
                         <Chip label={`우승 ${r.winner.replace(/^(팀\s*|Team\s*)/i, '')}`} size="small"
-                          sx={{ fontSize: '0.7rem', height: 22, bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 'bold' }} />
+                          sx={{ fontSize: '0.78rem', height: 26, bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 800, px: 0.3 }} />
                       )}
                     </Box>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.8 }}>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6, mb: 1 }}>
                       {r.matches.slice(0, 6).map((m, mi) => {
                         const isTeam1Win = m.score1 > m.score2;
                         const isTeam2Win = m.score2 > m.score1;
                         return (
                           <Box key={mi} sx={{
-                            display: 'flex', alignItems: 'center', gap: 0.4,
-                            bgcolor: '#F5F7FA', borderRadius: 1.5, px: 0.8, py: 0.3,
+                            display: 'flex', alignItems: 'center', gap: 0.5,
+                            bgcolor: '#F5F7FA', borderRadius: 1.5, px: 1, py: 0.4,
                           }}>
-                            <Typography sx={{ fontSize: '0.75rem', fontWeight: isTeam1Win ? 800 : 400, color: isTeam1Win ? '#1565C0' : '#bbb' }}>{m.team1?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
-                            <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#333' }}>{m.score1}:{m.score2}</Typography>
-                            <Typography sx={{ fontSize: '0.75rem', fontWeight: isTeam2Win ? 800 : 400, color: isTeam2Win ? '#1565C0' : '#bbb' }}>{m.team2?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
+                            <Typography sx={{ fontSize: '0.85rem', fontWeight: isTeam1Win ? 800 : 500, color: isTeam1Win ? '#1565C0' : '#999' }}>{m.team1?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
+                            <Typography sx={{ fontSize: '0.92rem', fontWeight: 900, color: '#333' }}>{m.score1}:{m.score2}</Typography>
+                            <Typography sx={{ fontSize: '0.85rem', fontWeight: isTeam2Win ? 800 : 500, color: isTeam2Win ? '#1565C0' : '#999' }}>{m.team2?.replace(/^(팀\s*|Team\s*)/i, '')}</Typography>
                           </Box>
                         );
                       })}
                     </Box>
                     {r.dailyMvp !== '없음' && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                        <EmojiEventsIcon sx={{ fontSize: 14, color: '#F57C00' }} />
-                        <Typography sx={{ fontSize: '0.72rem', color: '#E65100', fontWeight: 600 }}>MVP {r.dailyMvp}</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.8, pt: 0.8, borderTop: '1px dashed #EEE' }}>
+                        <EmojiEventsIcon sx={{ fontSize: 17, color: '#F57C00' }} />
+                        <Typography sx={{ fontSize: '0.85rem', color: '#E65100', fontWeight: 700 }}>
+                          오늘의 MVP · {r.dailyMvp}
+                        </Typography>
                       </Box>
                     )}
                   </CardContent>
@@ -887,38 +947,71 @@ function HomePage() {
 
         {/* ── MVP 랭킹 ── */}
         {mvpRanking && (mvpRanking.daily.length > 0 || mvpRanking.game.length > 0) && (
-          <Box sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
-            {[
-              { title: '일별 MVP', data: mvpRanking.daily, color: '#E65100', icon: <EmojiEventsIcon sx={{ color: '#F57C00', fontSize: 18 }} /> },
-              { title: '경기별 MVP', data: mvpRanking.game, color: '#FF8F00', icon: <EmojiEventsIcon sx={{ color: '#FFA000', fontSize: 18 }} /> },
-            ].filter(s => s.data.length > 0).map(section => {
-              const medals = ['#FFD700', '#C0C0C0', '#CD7F32'];
-              return (
-                <Card key={section.title} sx={{ flex: 1, borderRadius: 3, boxShadow: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.5, pt: 1.2, pb: 0.5 }}>
-                    {section.icon}
-                    <Typography sx={{ fontWeight: 800, fontSize: '0.82rem', color: section.color }}>{section.title}</Typography>
-                  </Box>
-                  <CardContent sx={{ pt: 0.5, pb: 1, '&:last-child': { pb: 1 } }}>
-                    {section.data.map((p, i) => (
-                      <Box key={p.name} sx={{ display: 'flex', alignItems: 'center', gap: 0.6, py: 0.4 }}>
-                        {i < 3 ? (
-                          <Box sx={{ width: 18, height: 18, borderRadius: '50%', bgcolor: medals[i],
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <Typography sx={{ fontSize: '0.55rem', fontWeight: 900, color: 'white' }}>{i + 1}</Typography>
+          <Box sx={{ mb: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 1.2, px: 0.5 }}>
+              <EmojiEventsIcon sx={{ color: '#F57C00', fontSize: 22 }} />
+              <Typography sx={{ fontWeight: 800, fontSize: '1.1rem' }}>MVP 랭킹</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1.5 }}>
+              {[
+                { title: '일별 MVP', data: mvpRanking.daily, color: '#E65100', iconColor: '#F57C00' },
+                { title: '경기별 MVP', data: mvpRanking.game, color: '#FF8F00', iconColor: '#FFA000' },
+              ].filter(s => s.data.length > 0).map(section => {
+                const medals = ['#FFD700', '#C0C0C0', '#CD7F32'];
+                return (
+                  <Card key={section.title} sx={{ flex: 1, borderRadius: 3, boxShadow: 2, overflow: 'hidden' }}>
+                    <Box sx={{
+                      display: 'flex', alignItems: 'center', gap: 0.6,
+                      px: 1.8, pt: 1.3, pb: 0.8,
+                      borderBottom: '1px solid #F5F5F5',
+                    }}>
+                      <EmojiEventsIcon sx={{ color: section.iconColor, fontSize: 20 }} />
+                      <Typography sx={{ fontWeight: 900, fontSize: '0.95rem', color: section.color }}>
+                        {section.title}
+                      </Typography>
+                    </Box>
+                    <CardContent sx={{ pt: 1, pb: 1.2, px: 1.5, '&:last-child': { pb: 1.2 } }}>
+                      {section.data.map((p, i) => (
+                        <Box key={p.name} sx={{
+                          display: 'flex', alignItems: 'center', gap: 0.8, py: 0.6,
+                          borderBottom: i < section.data.length - 1 ? '1px solid #FAFAFA' : 'none',
+                        }}>
+                          {i < 3 ? (
+                            <Box sx={{
+                              width: 22, height: 22, borderRadius: '50%', bgcolor: medals[i],
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                              boxShadow: `0 2px 4px ${medals[i]}50`,
+                            }}>
+                              <Typography sx={{ fontSize: '0.7rem', fontWeight: 900, color: 'white' }}>{i + 1}</Typography>
+                            </Box>
+                          ) : (
+                            <Typography sx={{
+                              fontSize: '0.82rem', color: '#bbb', width: 22, textAlign: 'center', fontWeight: 700,
+                            }}>{i + 1}</Typography>
+                          )}
+                          <Typography sx={{
+                            fontSize: '0.92rem', fontWeight: i === 0 ? 800 : 600, flex: 1,
+                            color: i === 0 ? '#222' : '#444',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {p.name}
+                          </Typography>
+                          <Box sx={{
+                            bgcolor: `${section.color}12`, borderRadius: 1.2, px: 0.9, py: 0.2,
+                          }}>
+                            <Typography sx={{
+                              fontSize: '0.9rem', fontWeight: 900, color: section.color,
+                            }}>
+                              {p.count}
+                            </Typography>
                           </Box>
-                        ) : (
-                          <Typography sx={{ fontSize: '0.7rem', color: '#bbb', width: 18, textAlign: 'center' }}>{i + 1}</Typography>
-                        )}
-                        <Typography sx={{ fontSize: '0.82rem', fontWeight: i === 0 ? 700 : 400, flex: 1,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</Typography>
-                        <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: section.color }}>{p.count}</Typography>
-                      </Box>
-                    ))}
-                  </CardContent>
-                </Card>
-              );
-            })}
+                        </Box>
+                      ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </Box>
           </Box>
         )}
 

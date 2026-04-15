@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../config/firebase';
 import { ref, get, set, push, remove, update } from 'firebase/database';
 import {
@@ -38,6 +38,7 @@ import { useOnboarding } from '../hooks/useOnboarding';
 
 export default function AdminPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { clubName, isAdmin, isModerator, isMaster, user, emailKey, loading: authLoading, authReady } = useAuth();
   const canAccess = isAdmin || isModerator || isMaster;
 
@@ -87,6 +88,9 @@ export default function AdminPage() {
   // 선수 관리
   const [players, setPlayers] = useState([]);
   const [newPlayerName, setNewPlayerName] = useState('');
+  const [newPlayerNumber, setNewPlayerNumber] = useState('');
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [playerEditDialog, setPlayerEditDialog] = useState(null); // { key, name, jerseyNumber, position, subPosition }
 
   // 권한 추가 다이얼로그
   const [permDialog, setPermDialog] = useState(false);
@@ -170,7 +174,18 @@ export default function AdminPage() {
       key,
       name: val.name || '',
       date: val.date || '',
-    })).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+      jerseyNumber: val.jerseyNumber ?? null,
+      position: val.position || '',
+      subPosition: val.subPosition || '',
+    })).sort((a, b) => {
+      // 등번호가 있으면 등번호 순, 없으면 이름순
+      const aNum = a.jerseyNumber ?? null;
+      const bNum = b.jerseyNumber ?? null;
+      if (aNum !== null && bNum !== null) return aNum - bNum;
+      if (aNum !== null) return -1;
+      if (bNum !== null) return 1;
+      return a.name.localeCompare(b.name, 'ko');
+    });
     setPlayers(arr);
   }, [clubName]);
 
@@ -373,8 +388,19 @@ export default function AdminPage() {
     if (!name) return;
     if (players.some(p => p.name === name)) { alert('이미 등록된 선수입니다.'); return; }
     const today = new Date().toISOString().slice(0, 10);
-    await push(ref(db, `registeredPlayers/${clubName}`), { name, date: today });
+    const num = newPlayerNumber ? parseInt(newPlayerNumber, 10) : null;
+    if (num !== null && (Number.isNaN(num) || num < 0 || num > 99)) {
+      alert('등번호는 0~99 사이 숫자여야 합니다.'); return;
+    }
+    await push(ref(db, `registeredPlayers/${clubName}`), {
+      name,
+      date: today,
+      jerseyNumber: num,
+      position: '',
+      subPosition: '',
+    });
     setNewPlayerName('');
+    setNewPlayerNumber('');
     await loadPlayers();
   };
 
@@ -384,10 +410,26 @@ export default function AdminPage() {
     await loadPlayers();
   };
 
+  const updatePlayerInfo = async (player) => {
+    const updates = {
+      name: player.name,
+      jerseyNumber: player.jerseyNumber,
+      position: player.position || '',
+      subPosition: player.subPosition || '',
+    };
+    const existingSnap = await get(ref(db, `registeredPlayers/${clubName}/${player.key}`));
+    if (existingSnap.exists()) {
+      updates.date = existingSnap.val().date || '';
+    }
+    await update(ref(db, `registeredPlayers/${clubName}/${player.key}`), updates);
+    await loadPlayers();
+  };
+
   const openLeagueAdd = () => {
     setEditingLeague(null);
     const nextId = leagues.length > 0 ? String(Math.max(...leagues.map(l => Number(l.id))) + 1) : '1';
-    setLeagueForm({ id: nextId, leagueName: `${clubName} 리그`, startDate: '', endDate: '' });
+    const currentYear = new Date().getFullYear();
+    setLeagueForm({ id: nextId, leagueName: `${currentYear}년 ${clubName} 리그`, startDate: '', endDate: '' });
     setLeagueDialog(true);
   };
 
@@ -422,8 +464,8 @@ export default function AdminPage() {
   };
 
   /* ── 기록 백업 ── */
-  const runBackup = async () => {
-    if (!window.confirm('전체 기록 백업을 실행하시겠습니까?\n(통계 계산, 데이터 백업 등)')) return;
+  const runBackup = async (opts = {}) => {
+    if (!opts.skipConfirm && !window.confirm('전체 기록 백업을 실행하시겠습니까?\n(통계 계산, 데이터 백업 등)')) return;
     setBackupRunning(true);
     setBackupResults([]);
     const results = [];
@@ -1168,6 +1210,23 @@ export default function AdminPage() {
     setBackupRunning(false);
   };
 
+  // URL query로 통계 재계산 자동 실행 (경기 기록 삭제 후 flow)
+  const [autoTriggered, setAutoTriggered] = useState(false);
+  useEffect(() => {
+    if (autoTriggered || loading || !canAccess) return;
+    const params = new URLSearchParams(location.search);
+    if (params.get('action') === 'rebuild-stats') {
+      setAutoTriggered(true);
+      // query 제거 (새로고침 시 재실행 방지)
+      navigate('/admin', { replace: true });
+      // 약간의 지연 후 자동 실행
+      setTimeout(() => {
+        runBackup({ skipConfirm: true });
+      }, 300);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, canAccess, location.search]);
+
   /* ── 로딩 / 권한 없음 ── */
   if (authLoading || loading) {
     return (
@@ -1570,44 +1629,7 @@ export default function AdminPage() {
         </Paper>
         )}
 
-        {/* 1. 기록 백업 (관리자+마스터) */}
-        {(isAdmin || isMaster) && (
-        <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-            <BackupIcon sx={{ color: '#D32F2F', fontSize: 20 }} />
-            <Typography sx={{ fontWeight: 'bold', color: '#D32F2F', fontSize: '1rem' }}>
-              기록 백업
-            </Typography>
-          </Box>
-          <Typography sx={{ fontSize: '0.8rem', color: '#666', mb: 1.5 }}>
-            데이터·통계 전체 백업 및 계산
-          </Typography>
-          <Button
-            fullWidth variant="contained" color="error"
-            startIcon={backupRunning ? <CircularProgress size={18} color="inherit" /> : <BackupIcon />}
-            disabled={backupRunning}
-            onClick={runBackup}
-            sx={{ borderRadius: 2, py: 1.2, fontWeight: 'bold' }}
-          >
-            {backupRunning ? '백업 진행 중...' : '전체 백업 실행'}
-          </Button>
-
-          {backupResults.length > 0 && (
-            <Box sx={{ mt: 1.5 }}>
-              {backupResults.map((r, i) => (
-                <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.3 }}>
-                  <CheckCircleIcon sx={{ fontSize: 16, color: r.ok ? '#388E3C' : '#D32F2F' }} />
-                  <Typography sx={{ fontSize: '0.8rem', color: r.ok ? '#333' : '#D32F2F' }}>
-                    {r.name}{r.msg ? ` (${r.msg})` : ''}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-          )}
-        </Paper>
-        )}
-
-        {/* 2. 경기일 관리 (운영진 이상) */}
+        {/* 1. 경기일 관리 (운영진 이상) */}
         {(() => {
           const today = new Date().toISOString().slice(0, 10);
           // 다가올 경기 중 가장 가까운 것 (오늘 포함)
@@ -1765,7 +1787,7 @@ export default function AdminPage() {
           );
         })()}
 
-        {/* 3. 리그 관리 (3개 미리보기) */}
+        {/* 2. 리그 관리 (3개 미리보기) */}
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1788,7 +1810,7 @@ export default function AdminPage() {
                 }}>
                   <Box>
                     <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
-                      제{league.id}회 {league.leagueName || '리그'}
+                      {league.leagueName || `${clubName} 리그`}
                     </Typography>
                     <Typography sx={{ fontSize: '0.8rem', color: '#666' }}>
                       {league.startDate} ~ {league.endDate}
@@ -1814,7 +1836,7 @@ export default function AdminPage() {
           )}
         </Paper>
 
-        {/* 4. 권한 관리 (관리자+마스터) */}
+        {/* 3. 권한 관리 (관리자+마스터) */}
         {(isAdmin || isMaster) && (() => {
           const filteredUsers = allowedUsers.filter(u => u.club === clubName);
           return (
@@ -1871,7 +1893,7 @@ export default function AdminPage() {
           );
         })()}
 
-        {/* 5. 선수 관리 (운영진 이상) */}
+        {/* 4. 선수 관리 (운영진 이상) */}
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1882,37 +1904,262 @@ export default function AdminPage() {
             </Box>
           </Box>
 
-          <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
+          <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
             <TextField
-              size="small" fullWidth placeholder="선수 이름 입력"
+              size="small" placeholder="선수 이름"
               value={newPlayerName}
               onChange={e => setNewPlayerName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && addPlayer()}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              sx={{ flex: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+            <TextField
+              size="small" placeholder="등번호"
+              type="number"
+              value={newPlayerNumber}
+              onChange={e => {
+                const v = e.target.value;
+                if (v === '') { setNewPlayerNumber(''); return; }
+                const n = parseInt(v, 10);
+                if (Number.isNaN(n) || n < 0 || n > 99) return;
+                setNewPlayerNumber(String(n));
+              }}
+              onKeyDown={e => e.key === 'Enter' && addPlayer()}
+              inputProps={{ min: 0, max: 99 }}
+              sx={{ width: 80, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             />
             <Button variant="contained" onClick={addPlayer} sx={{ minWidth: 60, borderRadius: 2 }}>추가</Button>
           </Box>
 
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-            {(expandPlayers ? players : players.slice(0, 15)).map(p => (
-              <Chip
-                key={p.key}
-                label={p.name}
-                size="small"
-                onDelete={() => removePlayer(p)}
-                sx={{ fontSize: '0.8rem' }}
-              />
-            ))}
-          </Box>
-          {players.length > 15 && (
-            <Button size="small" fullWidth onClick={() => setExpandPlayers(p => !p)}
-              sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
-              {expandPlayers ? '접기' : `나머지 ${players.length - 15}명 더보기`}
-            </Button>
-          )}
+          {/* 검색 */}
+          <TextField
+            size="small" fullWidth placeholder="🔍 선수 검색"
+            value={playerSearch}
+            onChange={e => setPlayerSearch(e.target.value)}
+            sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#F5F5F7' } }}
+          />
+
+          {(() => {
+            const filtered = playerSearch.trim()
+              ? players.filter(p => (p.name || '').toLowerCase().includes(playerSearch.trim().toLowerCase()))
+              : players;
+            const showList = (playerSearch.trim() || expandPlayers) ? filtered : filtered.slice(0, 15);
+            return (
+              <>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6 }}>
+                  {showList.map(p => {
+                    const hasNum = p.jerseyNumber !== null && p.jerseyNumber !== undefined && p.jerseyNumber !== '';
+                    const hasPos = !!p.position;
+                    const label = (
+                      <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4 }}>
+                        {hasNum && (
+                          <Box component="span" sx={{
+                            bgcolor: '#1565C0', color: 'white', fontWeight: 900,
+                            px: 0.6, borderRadius: 0.8, fontSize: '0.7rem', minWidth: 18, textAlign: 'center',
+                          }}>
+                            {p.jerseyNumber}
+                          </Box>
+                        )}
+                        <Box component="span" sx={{ fontSize: '0.8rem' }}>{p.name}</Box>
+                        {hasPos && (
+                          <Box component="span" sx={{
+                            color: '#7E57C2', fontSize: '0.65rem', fontWeight: 700,
+                            bgcolor: '#F3E5F5', px: 0.5, borderRadius: 0.5,
+                          }}>
+                            {p.position}{p.subPosition ? `/${p.subPosition}` : ''}
+                          </Box>
+                        )}
+                      </Box>
+                    );
+                    return (
+                      <Chip
+                        key={p.key}
+                        label={label}
+                        size="small"
+                        onClick={() => setPlayerEditDialog({ ...p })}
+                        onDelete={() => removePlayer(p)}
+                        sx={{ fontSize: '0.8rem', cursor: 'pointer', bgcolor: '#F5F5F5' }}
+                      />
+                    );
+                  })}
+                  {filtered.length === 0 && (
+                    <Typography sx={{ fontSize: '0.8rem', color: '#999', p: 1 }}>검색 결과 없음</Typography>
+                  )}
+                </Box>
+                {!playerSearch.trim() && filtered.length > 15 && (
+                  <Button size="small" fullWidth onClick={() => setExpandPlayers(p => !p)}
+                    sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
+                    {expandPlayers ? '접기' : `나머지 ${filtered.length - 15}명 더보기`}
+                  </Button>
+                )}
+                <Typography sx={{ fontSize: '0.72rem', color: '#999', mt: 1, textAlign: 'center' }}>
+                  💡 선수를 클릭하면 등번호/포지션을 수정할 수 있습니다
+                </Typography>
+              </>
+            );
+          })()}
         </Paper>
 
+        {/* 5. 기록 백업 (관리자+마스터) — 하단 배치 */}
+        {(isAdmin || isMaster) && (
+        <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2, opacity: 0.95 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <BackupIcon sx={{ color: '#90A4AE', fontSize: 20 }} />
+            <Typography sx={{ fontWeight: 'bold', color: '#546E7A', fontSize: '1rem' }}>
+              기록 백업 (고급)
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: '0.8rem', color: '#666', mb: 1.5 }}>
+            데이터·통계 전체 백업 및 재계산 (경기 기록 삭제 후 사용)
+          </Typography>
+          <Button
+            fullWidth variant="contained"
+            startIcon={backupRunning ? <CircularProgress size={18} color="inherit" /> : <BackupIcon />}
+            disabled={backupRunning}
+            onClick={runBackup}
+            sx={{
+              borderRadius: 2, py: 1.2, fontWeight: 'bold',
+              bgcolor: '#455A64',
+              color: 'white',
+              boxShadow: '0 3px 10px rgba(69,90,100,0.3)',
+              '&:hover': {
+                bgcolor: '#37474F',
+                boxShadow: '0 4px 14px rgba(55,71,79,0.4)',
+              },
+              '&.Mui-disabled': {
+                bgcolor: '#CFD8DC', color: '#90A4AE',
+              },
+            }}
+          >
+            {backupRunning ? '백업 진행 중...' : '전체 백업 실행'}
+          </Button>
+
+          {backupResults.length > 0 && (
+            <Box sx={{ mt: 1.5 }}>
+              {backupResults.map((r, i) => (
+                <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.3 }}>
+                  <CheckCircleIcon sx={{ fontSize: 16, color: r.ok ? '#388E3C' : '#D32F2F' }} />
+                  <Typography sx={{ fontSize: '0.8rem', color: r.ok ? '#333' : '#D32F2F' }}>
+                    {r.name}{r.msg ? ` (${r.msg})` : ''}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Paper>
+        )}
+
       </Container>
+
+      {/* 선수 정보 수정 다이얼로그 (A3) */}
+      <Dialog open={!!playerEditDialog} onClose={() => setPlayerEditDialog(null)} fullWidth maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontWeight: 800, color: '#1565C0' }}>
+          선수 정보 수정
+        </DialogTitle>
+        <DialogContent dividers>
+          {playerEditDialog && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+              <TextField
+                label="이름"
+                size="small"
+                value={playerEditDialog.name || ''}
+                onChange={e => setPlayerEditDialog(p => ({ ...p, name: e.target.value }))}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              />
+              <TextField
+                label="등번호 (0~99)"
+                size="small"
+                type="number"
+                value={playerEditDialog.jerseyNumber ?? ''}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === '') { setPlayerEditDialog(p => ({ ...p, jerseyNumber: null })); return; }
+                  const n = parseInt(v, 10);
+                  if (Number.isNaN(n) || n < 0 || n > 99) return;
+                  setPlayerEditDialog(p => ({ ...p, jerseyNumber: n }));
+                }}
+                inputProps={{ min: 0, max: 99 }}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              />
+              <Box>
+                <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#666', mb: 0.8 }}>1순위 포지션</Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0.8 }}>
+                  <Chip
+                    label="없음"
+                    size="small"
+                    onClick={() => setPlayerEditDialog(p => ({ ...p, position: '', subPosition: '' }))}
+                    sx={{
+                      fontSize: '0.72rem', fontWeight: 700,
+                      bgcolor: !playerEditDialog.position ? '#78909C' : '#F5F5F5',
+                      color: !playerEditDialog.position ? 'white' : '#555',
+                    }}
+                  />
+                  {['GK', 'DF', 'DM', 'MF', 'AM', 'FW'].map(pos => (
+                    <Chip
+                      key={pos}
+                      label={pos}
+                      size="small"
+                      onClick={() => setPlayerEditDialog(p => ({
+                        ...p,
+                        position: pos,
+                        subPosition: p.subPosition === pos ? '' : p.subPosition,
+                      }))}
+                      sx={{
+                        fontSize: '0.75rem', fontWeight: 700,
+                        bgcolor: playerEditDialog.position === pos ? '#2D336B' : '#F5F5F5',
+                        color: playerEditDialog.position === pos ? 'white' : '#555',
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#666', mb: 0.8 }}>
+                  2순위 포지션 <Typography component="span" sx={{ fontSize: '0.7rem', color: '#999' }}>(선택)</Typography>
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0.8 }}>
+                  <Chip
+                    label="없음"
+                    size="small"
+                    onClick={() => setPlayerEditDialog(p => ({ ...p, subPosition: '' }))}
+                    sx={{
+                      fontSize: '0.72rem', fontWeight: 700,
+                      bgcolor: !playerEditDialog.subPosition ? '#78909C' : '#F5F5F5',
+                      color: !playerEditDialog.subPosition ? 'white' : '#555',
+                    }}
+                  />
+                  {['GK', 'DF', 'DM', 'MF', 'AM', 'FW'].filter(pos => pos !== playerEditDialog.position).map(pos => (
+                    <Chip
+                      key={pos}
+                      label={pos}
+                      size="small"
+                      onClick={() => setPlayerEditDialog(p => ({ ...p, subPosition: pos }))}
+                      sx={{
+                        fontSize: '0.75rem', fontWeight: 700,
+                        bgcolor: playerEditDialog.subPosition === pos ? '#7E57C2' : '#F5F5F5',
+                        color: playerEditDialog.subPosition === pos ? 'white' : '#555',
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPlayerEditDialog(null)}>취소</Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              if (!playerEditDialog?.name?.trim()) { alert('이름을 입력하세요.'); return; }
+              await updatePlayerInfo(playerEditDialog);
+              setPlayerEditDialog(null);
+            }}
+          >
+            저장
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 경기일 추가/수정 다이얼로그 */}
       <Dialog open={matchDialog} onClose={() => setMatchDialog(false)} fullWidth maxWidth="xs"
@@ -2154,84 +2401,226 @@ export default function AdminPage() {
         </DialogActions>
       </Dialog>
 
-      {/* 리그 추가/수정 다이얼로그 */}
+      {/* 리그 추가/수정 다이얼로그 — 모던 리디자인 */}
       <Dialog open={leagueDialog} onClose={() => setLeagueDialog(false)} fullWidth maxWidth="xs"
-        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+        PaperProps={{ sx: { borderRadius: 4, overflow: 'hidden', boxShadow: '0 20px 60px rgba(13, 71, 161, 0.25)' } }}>
+        {/* 헤더: 트로피 아이콘 + 타이틀 */}
         <Box sx={{
-          background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 100%)',
-          py: 2.5, px: 3, display: 'flex', alignItems: 'center', gap: 1.5,
+          position: 'relative',
+          background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 70%, #01579B 100%)',
+          pt: 3.5, pb: 2.8, px: 3, textAlign: 'center',
+          overflow: 'hidden',
         }}>
-          <EmojiEventsIcon sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 24 }} />
-          <Typography sx={{ color: 'white', fontWeight: 'bold', fontSize: '1.1rem' }}>
+          {/* 배경 장식 */}
+          <Box sx={{
+            position: 'absolute', top: -30, right: -30,
+            width: 130, height: 130, borderRadius: '50%',
+            bgcolor: 'rgba(255,255,255,0.08)',
+          }} />
+          <Box sx={{
+            position: 'absolute', bottom: -40, left: -20,
+            width: 100, height: 100, borderRadius: '50%',
+            bgcolor: 'rgba(255,255,255,0.05)',
+          }} />
+          {/* 트로피 + 제목 */}
+          <Box sx={{
+            width: 56, height: 56, mx: 'auto', mb: 1.2, borderRadius: '50%',
+            bgcolor: 'rgba(255,255,255,0.18)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            position: 'relative', zIndex: 1,
+          }}>
+            <EmojiEventsIcon sx={{ color: '#FFD54F', fontSize: 32 }} />
+          </Box>
+          <Typography sx={{ color: 'white', fontWeight: 900, fontSize: '1.25rem', letterSpacing: 0.3, position: 'relative', zIndex: 1 }}>
             {editingLeague ? '리그 수정' : '새 리그 만들기'}
           </Typography>
-        </Box>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 0, pt: '20px !important', px: 3, pb: 1 }}>
-
-          {/* 리그 정보 */}
-          <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>
-            리그 정보
+          <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', mt: 0.3, position: 'relative', zIndex: 1 }}>
+            {editingLeague ? '리그 정보를 업데이트합니다' : '새로운 리그 시즌을 시작합니다'}
           </Typography>
-          <Box sx={{ display: 'flex', gap: 1.5, mb: 2.5 }}>
-            <TextField
-              label="회차" size="small"
-              value={leagueForm.id}
-              disabled={!!editingLeague}
-              onChange={e => setLeagueForm(f => ({ ...f, id: e.target.value }))}
-              sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-            <TextField
-              label="리그 이름" size="small"
-              value={leagueForm.leagueName}
-              onChange={e => setLeagueForm(f => ({ ...f, leagueName: e.target.value }))}
-              sx={{ flex: 2.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
+        </Box>
+
+        <DialogContent sx={{ px: 3, pt: '20px !important', pb: 2, bgcolor: '#FAFBFC' }}>
+
+          {/* 🎯 리그 이름 */}
+          <Typography sx={{ fontSize: '0.78rem', color: '#5E6A78', fontWeight: 800, mb: 1, letterSpacing: 0.5 }}>
+            🎯 리그 이름
+          </Typography>
+          <TextField
+            size="small"
+            fullWidth
+            autoFocus
+            placeholder={`예: ${new Date().getFullYear()}년 ${clubName} 리그`}
+            value={leagueForm.leagueName}
+            onChange={e => setLeagueForm(f => ({ ...f, leagueName: e.target.value }))}
+            sx={{
+              mb: 1,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2.5, bgcolor: 'white',
+                fontSize: '0.95rem', fontWeight: 600,
+                '& fieldset': { borderColor: '#E0E6ED' },
+                '&:hover fieldset': { borderColor: '#90CAF9' },
+                '&.Mui-focused fieldset': { borderColor: '#1565C0', borderWidth: 2 },
+              },
+            }}
+          />
+          {/* 빠른 이름 프리셋 */}
+          <Box sx={{ display: 'flex', gap: 0.7, mb: 2.5, flexWrap: 'wrap' }}>
+            {[
+              { label: `${new Date().getFullYear()}년 ${clubName} 리그`, tag: '올해' },
+              { label: `${new Date().getFullYear()}년 상반기 리그`, tag: '상반기' },
+              { label: `${new Date().getFullYear()}년 하반기 리그`, tag: '하반기' },
+            ].map((preset) => (
+              <Chip
+                key={preset.tag}
+                label={preset.tag}
+                size="small"
+                onClick={() => setLeagueForm(f => ({ ...f, leagueName: preset.label }))}
+                sx={{
+                  fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer',
+                  bgcolor: leagueForm.leagueName === preset.label ? '#1565C0' : '#E3F2FD',
+                  color: leagueForm.leagueName === preset.label ? 'white' : '#1565C0',
+                  '&:hover': { bgcolor: leagueForm.leagueName === preset.label ? '#0D47A1' : '#BBDEFB' },
+                }}
+              />
+            ))}
           </Box>
 
-          {/* 기간 */}
-          <Typography sx={{ fontSize: '0.78rem', color: '#999', fontWeight: 600, mb: 0.8, letterSpacing: 0.5 }}>
-            리그 기간
+          {/* 📅 리그 기간 */}
+          <Typography sx={{ fontSize: '0.78rem', color: '#5E6A78', fontWeight: 800, mb: 1, letterSpacing: 0.5 }}>
+            📅 리그 기간
           </Typography>
           <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="ko">
-            <Box sx={{ display: 'flex', gap: 1.2, alignItems: 'center' }}>
+            <Box sx={{
+              display: 'flex', gap: 1, alignItems: 'center',
+              p: 1.2, borderRadius: 2.5, bgcolor: 'white',
+              border: '1px solid #E0E6ED', mb: 1,
+            }}>
               <DatePicker
-                label="시작일 *"
                 value={leagueForm.startDate ? dayjs(leagueForm.startDate) : null}
                 onChange={(v) => setLeagueForm((f) => ({ ...f, startDate: v ? v.format('YYYY-MM-DD') : '' }))}
-                format="YYYY년 MM월 DD일"
+                format="YYYY.MM.DD"
                 maxDate={leagueForm.endDate ? dayjs(leagueForm.endDate) : undefined}
                 slotProps={{
                   textField: {
-                    size: 'small', fullWidth: true,
-                    sx: { '& .MuiOutlinedInput-root': { borderRadius: 2 } },
+                    size: 'small', fullWidth: true, placeholder: '시작일',
+                    sx: {
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 2, fontSize: '0.88rem', fontWeight: 600,
+                        '& fieldset': { border: 'none' },
+                      },
+                    },
                   },
                 }}
               />
-              <Typography sx={{ color: '#bbb', fontWeight: 'bold', flexShrink: 0, fontSize: '1.1rem' }}>~</Typography>
+              <Box sx={{
+                width: 24, height: 2, bgcolor: '#CFD8DC', flexShrink: 0,
+              }} />
               <DatePicker
-                label="종료일 *"
                 value={leagueForm.endDate ? dayjs(leagueForm.endDate) : null}
                 onChange={(v) => setLeagueForm((f) => ({ ...f, endDate: v ? v.format('YYYY-MM-DD') : '' }))}
-                format="YYYY년 MM월 DD일"
+                format="YYYY.MM.DD"
                 minDate={leagueForm.startDate ? dayjs(leagueForm.startDate) : undefined}
                 slotProps={{
                   textField: {
-                    size: 'small', fullWidth: true,
-                    sx: { '& .MuiOutlinedInput-root': { borderRadius: 2 } },
+                    size: 'small', fullWidth: true, placeholder: '종료일',
+                    sx: {
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 2, fontSize: '0.88rem', fontWeight: 600,
+                        '& fieldset': { border: 'none' },
+                      },
+                    },
                   },
                 }}
               />
             </Box>
           </LocalizationProvider>
 
+          {/* 기간 빠른 설정 */}
+          <Box sx={{ display: 'flex', gap: 0.7, mb: 2, flexWrap: 'wrap' }}>
+            {[
+              { label: '1개월', months: 1 },
+              { label: '3개월', months: 3 },
+              { label: '6개월', months: 6 },
+              { label: '1년', months: 12 },
+            ].map((preset) => (
+              <Chip
+                key={preset.label}
+                label={preset.label}
+                size="small"
+                onClick={() => {
+                  const start = leagueForm.startDate ? dayjs(leagueForm.startDate) : dayjs();
+                  const end = start.add(preset.months, 'month').subtract(1, 'day');
+                  setLeagueForm(f => ({
+                    ...f,
+                    startDate: start.format('YYYY-MM-DD'),
+                    endDate: end.format('YYYY-MM-DD'),
+                  }));
+                }}
+                sx={{
+                  fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer',
+                  bgcolor: '#F0F4F8', color: '#546E7A',
+                  '&:hover': { bgcolor: '#E0E6ED', color: '#1565C0' },
+                }}
+              />
+            ))}
+          </Box>
+
+          {/* 기간 요약 (라이브 피드백) */}
+          {leagueForm.startDate && leagueForm.endDate && (() => {
+            const s = dayjs(leagueForm.startDate);
+            const e = dayjs(leagueForm.endDate);
+            const days = e.diff(s, 'day') + 1;
+            const months = Math.round((days / 30) * 10) / 10;
+            return (
+              <Box sx={{
+                p: 1.5, borderRadius: 2, bgcolor: '#E3F2FD',
+                display: 'flex', alignItems: 'center', gap: 1,
+                border: '1px solid #BBDEFB',
+              }}>
+                <Typography sx={{ fontSize: '1.2rem' }}>⏱</Typography>
+                <Box sx={{ flex: 1 }}>
+                  <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: '#0D47A1' }}>
+                    총 {days}일 ({months}개월)
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.72rem', color: '#1565C0' }}>
+                    {s.format('YYYY년 M월 D일')} ~ {e.format('YYYY년 M월 D일')}
+                  </Typography>
+                </Box>
+              </Box>
+            );
+          })()}
+
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5, gap: 1 }}>
-          <Button onClick={() => setLeagueDialog(false)} sx={{ borderRadius: 2, color: '#999' }}>취소</Button>
-          <Button variant="contained" onClick={saveLeague}
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5, gap: 1, bgcolor: '#FAFBFC' }}>
+          <Button
+            onClick={() => setLeagueDialog(false)}
+            sx={{
+              borderRadius: 2.5, color: '#78909C', fontWeight: 700, px: 2.5,
+              '&:hover': { bgcolor: '#ECEFF1' },
+            }}
+          >
+            취소
+          </Button>
+          <Button
+            variant="contained"
+            onClick={saveLeague}
             disabled={!leagueForm.startDate || !leagueForm.endDate}
-            sx={{ borderRadius: 2, bgcolor: '#1565C0', px: 3, fontWeight: 'bold',
-              '&:hover': { bgcolor: '#0D47A1' } }}>
-            {editingLeague ? '수정' : '만들기'}
+            startIcon={editingLeague ? <EditIcon sx={{ fontSize: '18px !important' }} /> : <EmojiEventsIcon sx={{ fontSize: '18px !important' }} />}
+            sx={{
+              borderRadius: 2.5, px: 3, py: 0.9, fontWeight: 800, fontSize: '0.88rem',
+              background: 'linear-gradient(135deg, #1565C0, #0D47A1)',
+              boxShadow: '0 4px 14px rgba(13, 71, 161, 0.35)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #0D47A1, #01579B)',
+                boxShadow: '0 6px 20px rgba(13, 71, 161, 0.45)',
+              },
+              '&.Mui-disabled': {
+                background: '#CFD8DC', color: '#90A4AE',
+              },
+            }}
+          >
+            {editingLeague ? '수정 저장' : '리그 만들기'}
           </Button>
         </DialogActions>
       </Dialog>

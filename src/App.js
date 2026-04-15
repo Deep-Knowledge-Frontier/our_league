@@ -1,15 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { CircularProgress, Box } from '@mui/material';
 import { AuthProvider } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import TeamViewPage from './pages/TeamViewPage';
-import LeaguePage from './pages/LeaguePage';
-import MatchDetailPage from './pages/MatchDetailPage';
-import PlayerSelectPage from './pages/PlayerSelectPage';
-import ScoreRecordPage from './pages/ScoreRecordPage';
-import DraftPage from './pages/DraftPage';
 import TabLayout from './components/layout/TabLayout';
+
+// 큰 페이지들은 lazy-load (초기 번들 축소)
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const TeamViewPage = lazy(() => import('./pages/TeamViewPage'));
+const LeaguePage = lazy(() => import('./pages/LeaguePage'));
+const MatchDetailPage = lazy(() => import('./pages/MatchDetailPage'));
+const PlayerSelectPage = lazy(() => import('./pages/PlayerSelectPage'));
+const ScoreRecordPage = lazy(() => import('./pages/ScoreRecordPage'));
+const DraftPage = lazy(() => import('./pages/DraftPage'));
+
+const PageFallback = () => (
+  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+    <CircularProgress size={32} />
+  </Box>
+);
 
 const TAB_PATHS = ['/home', '/vote', '/results', '/mypage', '/admin'];
 
@@ -78,20 +87,22 @@ function AppContent() {
         </div>
       )}
 
-      <Routes>
-        <Route path="/" element={<LoginPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/team/:date" element={<TeamViewPage />} />
-        <Route path="/league" element={<LeaguePage />} />
-        <Route path="/match/:date/:game" element={<MatchDetailPage />} />
-        <Route path="/player-select" element={<PlayerSelectPage />} />
-        <Route path="/score-record" element={<ScoreRecordPage />} />
-        <Route path="/draft/:date" element={<DraftPage />} />
-        {TAB_PATHS.map((path) => (
-          <Route key={path} path={path} element={null} />
-        ))}
-      </Routes>
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
+          <Route path="/" element={<LoginPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/team/:date" element={<TeamViewPage />} />
+          <Route path="/league" element={<LeaguePage />} />
+          <Route path="/match/:date/:game" element={<MatchDetailPage />} />
+          <Route path="/player-select" element={<PlayerSelectPage />} />
+          <Route path="/score-record" element={<ScoreRecordPage />} />
+          <Route path="/draft/:date" element={<DraftPage />} />
+          {TAB_PATHS.map((path) => (
+            <Route key={path} path={path} element={null} />
+          ))}
+        </Routes>
+      </Suspense>
     </>
   );
 }

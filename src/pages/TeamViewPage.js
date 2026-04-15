@@ -60,6 +60,7 @@ export default function TeamViewPage() {
   const [quarterFormations, setQuarterFormations] = useState({});
   const [teamQuarterTab, setTeamQuarterTab] = useState({ A: 'Q1', B: 'Q1' }); // 팀별 쿼터 기억
   const [formationEnabled, setFormationEnabled] = useState(false);
+  const [formationOpen, setFormationOpen] = useState(false); // 🆕 관리자가 공개했는지
   const activeQuarter = teamQuarterTab[expandFormation === 'B' ? 'B' : 'A'] || 'Q1';
   const setActiveQuarter = (qKey) => {
     const teamCode = expandFormation === 'B' ? 'B' : 'A';
@@ -112,9 +113,12 @@ export default function TeamViewPage() {
     const off8 = onValue(ref(db, `PlayerSelectionByDate/${clubName}/${date}/FormationEnabled`), snap => {
       setFormationEnabled(snap.val() === true);
     });
+    const off9 = onValue(ref(db, `PlayerSelectionByDate/${clubName}/${date}/FormationOpen`), snap => {
+      setFormationOpen(snap.val() === true);
+    });
 
     return () => {
-      off1(); off3(); off4(); off5(); off6(); off7(); off8();
+      off1(); off3(); off4(); off5(); off6(); off7(); off8(); off9();
     };
   }, [clubName, date]);
 
@@ -270,8 +274,25 @@ export default function TeamViewPage() {
 
         <Box sx={{ my: 2.2, height: 1, bgcolor: "rgba(0,0,0,0.12)" }} />
 
+        {/* 🆕 포메이션 아직 공개 안 됨 안내 */}
+        {!formationOpen && (
+          <Box sx={{
+            py: 3, px: 2, textAlign: 'center',
+            bgcolor: '#F5F5F7', borderRadius: 2,
+            border: '1px dashed #CFD8DC', mb: 2,
+          }}>
+            <Typography sx={{ fontSize: '1.4rem', mb: 0.5 }}>🔒</Typography>
+            <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#546E7A', mb: 0.3 }}>
+              포메이션 아직 공개되지 않았어요
+            </Typography>
+            <Typography sx={{ fontSize: '0.78rem', color: '#90A4AE' }}>
+              관리자가 포메이션을 오픈하면 여기에 표시됩니다
+            </Typography>
+          </Box>
+        )}
+
         {/* 축구 2팀 쿼터 뷰 — 관리탭과 동일한 스타일 */}
-        {useQuarterView && (Object.keys(teamFormations).length > 0 || Object.keys(quarterFormations).length > 0) && (() => {
+        {formationOpen && useQuarterView && (Object.keys(teamFormations).length > 0 || Object.keys(quarterFormations).length > 0) && (() => {
           const activeTeamCode = expandFormation === 'B' ? 'B' : 'A';
           const tf = quarterFormations?.[activeTeamCode]?.[activeQuarter] || teamFormations[activeTeamCode] || {};
           const fmId = tf.formationId;
@@ -399,8 +420,8 @@ export default function TeamViewPage() {
           );
         })()}
 
-        {/* 풋살/3팀 포메이션 — 아코디언 스타일 (2팀은 formationEnabled일 때만) */}
-        {!useQuarterView && (Object.keys(teamFormations).length > 0) && (teams.C.length > 0 || formationEnabled) && (
+        {/* 풋살/3팀 포메이션 — 아코디언 스타일 (2팀은 formationEnabled일 때만, 공개 상태에만) */}
+        {formationOpen && !useQuarterView && (Object.keys(teamFormations).length > 0) && (teams.C.length > 0 || formationEnabled) && (
           <Box sx={{ mt: 1 }}>
             <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', mb: 1, textAlign: 'center' }}>
               <SportsSoccerIcon sx={{ fontSize: 18, verticalAlign: 'middle', mr: 0.5, color: '#2E7D32' }} />

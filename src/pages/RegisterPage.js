@@ -63,7 +63,8 @@ function RegisterPage() {
 
   const [formData, setFormData] = useState({
     name: '', height: '', weight: '', birthYear: '',
-    position: '', skill: '', club: '', consentGiven: false,
+    position: '', subPosition: '', jerseyNumber: '',
+    skill: '', club: '', consentGiven: false,
   });
 
   useEffect(() => {
@@ -134,13 +135,23 @@ function RegisterPage() {
         }
       }
       const today = new Date().toISOString().slice(0, 10);
+      const jerseyNum = formData.jerseyNumber ? parseInt(formData.jerseyNumber, 10) : null;
       await set(ref(db, `Users/${emailKey}`), {
         name: finalName, height: parseFloat(formData.height) || 0, weight: parseFloat(formData.weight) || 0,
-        birthYear: formData.birthYear, position: formData.position, skill: formData.skill,
+        birthYear: formData.birthYear,
+        position: formData.position,
+        subPosition: formData.subPosition || '',
+        jerseyNumber: jerseyNum,
+        skill: formData.skill,
         club: formData.club, consentGiven: true, consentDate: today,
       });
       if (!alreadyRegistered) {
-        await push(ref(db, `registeredPlayers/${formData.club}`), { name: finalName, date: today });
+        await push(ref(db, `registeredPlayers/${formData.club}`), {
+          name: finalName, date: today,
+          position: formData.position || '',
+          subPosition: formData.subPosition || '',
+          jerseyNumber: jerseyNum,
+        });
       }
       alert('등록 완료!'); navigate('/home');
     } catch (error) { alert('등록 실패: ' + error.message); }
@@ -274,29 +285,92 @@ function RegisterPage() {
           </Box>
         );
 
-      case 3: // 포지션
+      case 3: // 포지션 1순위 + 2순위 + 등번호
         return (
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1.5 }}>
-            {APP_CONFIG.positions.map(pos => {
-              const info = POSITION_INFO[pos] || { emoji: '⚽', label: pos, desc: pos };
-              const selected = formData.position === pos;
-              return (
-                <Button key={pos} variant={selected ? 'contained' : 'outlined'}
-                  onClick={() => selectPosition(pos)}
-                  sx={{
-                    borderRadius: 3, py: 2, display: 'flex', flexDirection: 'column', gap: 0.3,
-                    textTransform: 'none',
-                    bgcolor: selected ? '#2D336B' : 'transparent',
-                    borderColor: selected ? '#2D336B' : '#ddd',
-                    color: selected ? 'white' : '#333',
-                    '&:hover': { bgcolor: selected ? '#1A1D4E' : '#f5f5f5' },
-                  }}>
-                  <Typography sx={{ fontSize: '1.5rem' }}>{info.emoji}</Typography>
-                  <Typography sx={{ fontWeight: 800, fontSize: '1rem' }}>{info.label}</Typography>
-                  <Typography sx={{ fontSize: '0.72rem', opacity: 0.7 }}>{info.desc}</Typography>
-                </Button>
-              );
-            })}
+          <Box>
+            <Typography sx={{ fontSize: '0.85rem', color: '#666', mb: 1, fontWeight: 700 }}>1순위 포지션 (주요)</Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, mb: 2 }}>
+              {APP_CONFIG.positions.map(pos => {
+                const info = POSITION_INFO[pos] || { emoji: '⚽', label: pos, desc: pos };
+                const selected = formData.position === pos;
+                return (
+                  <Button key={pos} variant={selected ? 'contained' : 'outlined'}
+                    onClick={() => {
+                      setFormData(p => ({
+                        ...p,
+                        position: pos,
+                        // 1순위 = 2순위가 되면 2순위 초기화
+                        subPosition: p.subPosition === pos ? '' : p.subPosition,
+                      }));
+                    }}
+                    sx={{
+                      borderRadius: 2, py: 1.2, display: 'flex', flexDirection: 'column', gap: 0.2,
+                      textTransform: 'none', minHeight: 70,
+                      bgcolor: selected ? '#2D336B' : 'transparent',
+                      borderColor: selected ? '#2D336B' : '#ddd',
+                      color: selected ? 'white' : '#333',
+                      '&:hover': { bgcolor: selected ? '#1A1D4E' : '#f5f5f5' },
+                    }}>
+                    <Typography sx={{ fontSize: '1.2rem' }}>{info.emoji}</Typography>
+                    <Typography sx={{ fontWeight: 800, fontSize: '0.88rem' }}>{info.label}</Typography>
+                  </Button>
+                );
+              })}
+            </Box>
+
+            <Typography sx={{ fontSize: '0.85rem', color: '#666', mb: 1, fontWeight: 700 }}>
+              2순위 포지션 <Typography component="span" sx={{ fontSize: '0.72rem', color: '#999' }}>(선택)</Typography>
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, mb: 2 }}>
+              {APP_CONFIG.positions.filter(p => p !== formData.position).map(pos => {
+                const info = POSITION_INFO[pos] || { emoji: '⚽', label: pos, desc: pos };
+                const selected = formData.subPosition === pos;
+                return (
+                  <Button key={pos} variant={selected ? 'contained' : 'outlined'}
+                    onClick={() => setFormData(p => ({ ...p, subPosition: selected ? '' : pos }))}
+                    sx={{
+                      borderRadius: 2, py: 0.8, fontSize: '0.82rem', fontWeight: 700,
+                      textTransform: 'none',
+                      bgcolor: selected ? '#7E57C2' : 'transparent',
+                      borderColor: selected ? '#7E57C2' : '#ddd',
+                      color: selected ? 'white' : '#555',
+                      '&:hover': { bgcolor: selected ? '#5E35B1' : '#f5f5f5' },
+                    }}>
+                    {info.emoji} {info.label}
+                  </Button>
+                );
+              })}
+            </Box>
+
+            <Typography sx={{ fontSize: '0.85rem', color: '#666', mb: 1, fontWeight: 700 }}>
+              등번호 <Typography component="span" sx={{ fontSize: '0.72rem', color: '#999' }}>(선택 · 1~99)</Typography>
+            </Typography>
+            <TextField
+              fullWidth size="small" type="number"
+              placeholder="예: 10"
+              value={formData.jerseyNumber}
+              onChange={e => {
+                const v = e.target.value;
+                if (v === '') { setFormData(p => ({ ...p, jerseyNumber: '' })); return; }
+                const n = parseInt(v, 10);
+                if (Number.isNaN(n) || n < 0 || n > 99) return;
+                setFormData(p => ({ ...p, jerseyNumber: String(n) }));
+              }}
+              inputProps={{ min: 0, max: 99 }}
+              sx={{ mb: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+
+            <Button
+              fullWidth variant="contained"
+              disabled={!formData.position}
+              onClick={goNext}
+              sx={{
+                mt: 1, py: 1.2, borderRadius: 2, fontWeight: 800,
+                bgcolor: '#2D336B', '&:hover': { bgcolor: '#1A1D4E' },
+              }}
+            >
+              다음
+            </Button>
           </Box>
         );
 
@@ -344,7 +418,13 @@ function RegisterPage() {
 
               <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 1.5 }}>
                 {[
-                  { label: '포지션', value: formData.position || '-' },
+                  {
+                    label: '포지션',
+                    value: formData.position
+                      ? (formData.subPosition ? `${formData.position}/${formData.subPosition}` : formData.position)
+                      : '-',
+                  },
+                  { label: '등번호', value: formData.jerseyNumber ? `#${formData.jerseyNumber}` : '-' },
                   { label: '출생', value: formData.birthYear || '-' },
                   { label: '실력', value: formData.skill || '-' },
                 ].map(item => (

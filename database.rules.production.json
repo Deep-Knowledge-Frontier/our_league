@@ -22,6 +22,11 @@
       }
     },
 
+    "MasterUsers": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('MasterUsers/' + auth.token.email.replace('.', ',')).exists()"
+    },
+
     "clubs": {
       ".read": "auth != null",
       "$clubName": {

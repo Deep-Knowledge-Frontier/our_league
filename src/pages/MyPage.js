@@ -7,6 +7,7 @@ import {
   Divider, Chip, FormControl, InputLabel, Select, MenuItem, LinearProgress, IconButton
 } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
+import NotificationsIcon from '@mui/icons-material/Notifications';
 import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
 import GroupIcon from '@mui/icons-material/Group';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
@@ -18,6 +19,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import HelpDialog from '../components/HelpDialog';
 import ProfileEditDialog from '../components/ProfileEditDialog';
 import AccountDeleteDialog from '../components/AccountDeleteDialog';
+import NotificationSettingsDialog from '../components/NotificationSettingsDialog';
 import OnboardingModal from '../components/OnboardingModal';
 import PositionAvatar from '../components/PositionAvatar';
 import SchoolIcon from '@mui/icons-material/School';
@@ -31,6 +33,7 @@ import {
 } from 'chart.js';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotificationPrefs } from '../hooks/useNotificationPrefs';
 import { calcMean, calcStd, calculateArchetype } from '../utils/stats';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 import { MyPageSkeleton } from '../components/common/SkeletonLoading';
@@ -68,6 +71,8 @@ export default function MyPage() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
   const [accountDeleteOpen, setAccountDeleteOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const notif = useNotificationPrefs(emailKey);
   // 튜토리얼 재생 (null | 'admin' | 'captain')
   const [replayTour, setReplayTour] = useState(null);
   const [memberInfo, setMemberInfo] = useState(null);
@@ -1917,6 +1922,20 @@ export default function MyPage() {
                 </Paper>
               )}
 
+              {/* 알림 설정 그룹 */}
+              <Paper sx={{
+                borderRadius: 3, mb: 1.5, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                overflow: 'hidden', border: '1px solid #F0F0F0',
+              }}>
+                <SettingsRow
+                  icon={<NotificationsIcon sx={{ fontSize: 18, color: '#7E57C2' }} />}
+                  iconColor="#7E57C2"
+                  label={`알림 설정${notif.prefs.enabled ? ' (켜짐)' : ''}`}
+                  onClick={() => setNotificationOpen(true)}
+                  isLast
+                />
+              </Paper>
+
               {/* 계정 액션 그룹 */}
               <Paper sx={{
                 borderRadius: 3, mb: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
@@ -1943,6 +1962,11 @@ export default function MyPage() {
       </Container>
 
       {/* 다이얼로그들 */}
+      <NotificationSettingsDialog
+        open={notificationOpen}
+        onClose={() => setNotificationOpen(false)}
+        notif={notif}
+      />
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       <ProfileEditDialog
         open={profileEditOpen}
