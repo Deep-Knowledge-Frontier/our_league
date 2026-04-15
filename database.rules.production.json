@@ -42,6 +42,16 @@
       }
     },
 
+    "JoinRequests": {
+      ".read": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())",
+      "$clubName": {
+        "$emailKey": {
+          ".read": "auth != null && $emailKey == auth.token.email.replace('.', ',')",
+          ".write": "auth != null && ($emailKey == auth.token.email.replace('.', ',') || root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+        }
+      }
+    },
+
     "LocationPresets": {
       ".read": "auth != null",
       "$clubName": {

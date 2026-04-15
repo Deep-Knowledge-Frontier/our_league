@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ref, set, get, push } from 'firebase/database';
 import {
   Container, TextField, Button, Typography, Checkbox,
@@ -49,7 +49,9 @@ const SKILL_INFO = [
 
 function RegisterPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, emailKey } = useAuth();
+  const clubFromUrl = searchParams.get('club');
 
   const [step, setStep] = useState(0);
   const [slideDir, setSlideDir] = useState('right'); // 'right' or 'left'
@@ -77,10 +79,19 @@ function RegisterPage() {
           emoji: val.emoji || '',
         })).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
         setClubList(clubs);
+        // 🆕 URL에 ?club=XXX 이 있으면 해당 클럽 자동 선택 + 클럽 선택 단계 스킵
+        if (clubFromUrl) {
+          const decoded = decodeURIComponent(clubFromUrl);
+          if (clubs.some(c => c.name === decoded)) {
+            setFormData(p => ({ ...p, club: decoded }));
+            setStep(1); // 클럽 선택(0) 건너뛰고 이름 입력부터
+          }
+        }
       }
       setLoadingClubs(false);
     }).catch(() => setLoadingClubs(false));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubFromUrl]);
 
   const goNext = () => { setSlideDir('right'); setStep(s => Math.min(s + 1, TOTAL_STEPS - 1)); };
   const goBack = () => { setSlideDir('left'); setStep(s => Math.max(s - 1, 0)); };
@@ -114,46 +125,47 @@ function RegisterPage() {
     if (!formData.name || !formData.birthYear || !formData.club) { alert('필수 정보를 입력해주세요.'); return; }
     if (!user || !emailKey) { alert('로그인 정보가 없습니다.'); navigate('/'); return; }
     try {
+      // 이미 가입된 계정 체크
       const existingSnap = await get(ref(db, `Users/${emailKey}`));
-      if (existingSnap.exists() && existingSnap.val().club) {
+      if (existingSnap.exists() && existingSnap.val().club && !existingSnap.val().pending) {
         alert('이미 등록된 계정입니다.'); navigate('/home'); return;
-      }
-      const playersSnap = await get(ref(db, `registeredPlayers/${formData.club}`));
-      const existingNames = playersSnap.exists() ? Object.values(playersSnap.val()).map(p => p.name) : [];
-      let finalName = formData.name.trim();
-      let alreadyRegistered = false;
-      if (existingNames.includes(finalName)) {
-        const choice = window.confirm(
-          `${formData.club}에 "${finalName}" 이름이 이미 있습니다.\n\n[확인] 본인입니다\n[취소] 동명이인입니다`
-        );
-        if (choice) { alreadyRegistered = true; }
-        else {
-          let num = 2;
-          while (existingNames.includes(`${formData.name.trim()}(${num})`)) num++;
-          finalName = `${formData.name.trim()}(${num})`;
-          if (!window.confirm(`"${finalName}"(으)로 등록됩니다. 진행할까요?`)) return;
-        }
       }
       const today = new Date().toISOString().slice(0, 10);
       const jerseyNum = formData.jerseyNumber ? parseInt(formData.jerseyNumber, 10) : null;
-      await set(ref(db, `Users/${emailKey}`), {
-        name: finalName, height: parseFloat(formData.height) || 0, weight: parseFloat(formData.weight) || 0,
+
+      // 🆕 JoinRequests에 pending 상태로 저장 (관리자 승인 대기)
+      await set(ref(db, `JoinRequests/${formData.club}/${emailKey}`), {
+        name: formData.name.trim(),
+        height: parseFloat(formData.height) || 0,
+        weight: parseFloat(formData.weight) || 0,
         birthYear: formData.birthYear,
         position: formData.position,
         subPosition: formData.subPosition || '',
         jerseyNumber: jerseyNum,
         skill: formData.skill,
-        club: formData.club, consentGiven: true, consentDate: today,
+        club: formData.club,
+        email: user.email || '',
+        requestedAt: new Date().toISOString(),
+        status: 'pending',
       });
-      if (!alreadyRegistered) {
-        await push(ref(db, `registeredPlayers/${formData.club}`), {
-          name: finalName, date: today,
-          position: formData.position || '',
-          subPosition: formData.subPosition || '',
-          jerseyNumber: jerseyNum,
-        });
-      }
-      alert('등록 완료!'); navigate('/home');
+
+      // Users에는 pending 플래그로 저장 (로그인 상태 유지 + 대기 화면 표시용)
+      await set(ref(db, `Users/${emailKey}`), {
+        name: formData.name.trim(),
+        height: parseFloat(formData.height) || 0,
+        weight: parseFloat(formData.weight) || 0,
+        birthYear: formData.birthYear,
+        position: formData.position,
+        subPosition: formData.subPosition || '',
+        jerseyNumber: jerseyNum,
+        skill: formData.skill,
+        club: formData.club,
+        consentGiven: true, consentDate: today,
+        pending: true, // 🆕 승인 대기 상태
+      });
+
+      alert('가입 신청이 완료되었습니다.\n관리자 승인 후 이용하실 수 있습니다.');
+      navigate('/pending');
     } catch (error) { alert('등록 실패: ' + error.message); }
   };
 

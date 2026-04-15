@@ -43,7 +43,8 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
   const [error, setError] = useState(null);
   const [form, setForm] = useState({
     name: '', birthYear: '', height: '', weight: '',
-    position: '', skill: '', club: '',
+    position: '', subPosition: '', jerseyNumber: '',
+    skill: '', club: '',
   });
 
   useEffect(() => {
@@ -57,7 +58,10 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
           setForm({
             name: d.name || '', birthYear: d.birthYear || '',
             height: d.height || '', weight: d.weight || '',
-            position: d.position || '', skill: d.skill || '', club: d.club || '',
+            position: d.position || '',
+            subPosition: d.subPosition || '',
+            jerseyNumber: d.jerseyNumber != null ? String(d.jerseyNumber) : '',
+            skill: d.skill || '', club: d.club || '',
           });
         }
       })
@@ -74,17 +78,48 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
     setSaving(true);
     setError(null);
     try {
+      const jerseyNum = form.jerseyNumber === '' ? null : Number(form.jerseyNumber);
+      if (jerseyNum !== null && (Number.isNaN(jerseyNum) || jerseyNum < 0 || jerseyNum > 99)) {
+        setError('등번호는 0~99 사이여야 합니다.');
+        setSaving(false);
+        return;
+      }
       const payload = {
         name: form.name.trim(),
         birthYear: form.birthYear,
         height: form.height === '' ? null : Number(form.height),
         weight: form.weight === '' ? null : Number(form.weight),
         position: form.position,
+        subPosition: form.subPosition || '',
+        jerseyNumber: jerseyNum,
         skill: form.skill,
         club: form.club,
         updatedAt: Date.now(),
       };
       await update(ref(db, `Users/${emailKey}`), payload);
+
+      // registeredPlayers에도 반영 — 이름이 일치하는 엔트리를 찾아 업데이트
+      if (form.club) {
+        try {
+          const regSnap = await get(ref(db, `registeredPlayers/${form.club}`));
+          if (regSnap.exists()) {
+            const regData = regSnap.val() || {};
+            const matchedKey = Object.entries(regData)
+              .find(([, v]) => v && v.name === form.name.trim())?.[0];
+            if (matchedKey) {
+              await update(ref(db, `registeredPlayers/${form.club}/${matchedKey}`), {
+                position: form.position || '',
+                subPosition: form.subPosition || '',
+                jerseyNumber: jerseyNum,
+              });
+            }
+          }
+        } catch (regErr) {
+          // registeredPlayers 업데이트 실패는 치명적이지 않음
+          console.error('registeredPlayers 동기화 실패:', regErr);
+        }
+      }
+
       if (onSaved) onSaved(payload);
       onClose();
     } catch (e) {
@@ -123,11 +158,26 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <PositionAvatar position={form.position} size={48} showLabel />
             <Box sx={{ flex: 1 }}>
-              <Typography sx={{ fontWeight: 800, fontSize: '1.1rem', lineHeight: 1.2 }}>
-                {form.name || '이름'}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                {form.jerseyNumber && (
+                  <Box sx={{
+                    bgcolor: 'rgba(255,255,255,0.2)',
+                    color: 'white',
+                    fontWeight: 900, fontSize: '0.82rem',
+                    px: 0.8, py: 0.2, borderRadius: 0.8,
+                    minWidth: 28, textAlign: 'center',
+                  }}>
+                    #{form.jerseyNumber}
+                  </Box>
+                )}
+                <Typography sx={{ fontWeight: 800, fontSize: '1.1rem', lineHeight: 1.2 }}>
+                  {form.name || '이름'}
+                </Typography>
+              </Box>
               <Typography sx={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.6)' }}>
-                {form.club || '클럽'} · {form.position || '포지션'} · {form.skill || '실력'}
+                {form.club || '클럽'} · {form.position || '포지션'}
+                {form.subPosition ? `/${form.subPosition}` : ''}
+                {' · '}{form.skill || '실력'}
               </Typography>
             </Box>
           </Box>
@@ -211,22 +261,36 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
 
             <Divider />
 
-            {/* ── 포지션 ── */}
+            {/* ── 포지션 (1순위 + 2순위) + 등번호 ── */}
             <Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 1 }}>
                 <SportsSoccerIcon sx={{ fontSize: 18, color: '#2E7D32' }} />
                 <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#2E7D32', letterSpacing: 0.3 }}>
-                  포지션
+                  포지션 & 등번호
                 </Typography>
               </Box>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6 }}>
+
+              {/* 1순위 포지션 */}
+              <Typography sx={{ fontSize: '0.72rem', color: '#666', fontWeight: 700, mb: 0.6 }}>
+                1순위 포지션 (주요)
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6, mb: 1.5 }}>
                 {POSITIONS.map((p) => {
                   const active = form.position === p.value;
                   return (
                     <Chip
                       key={p.value}
                       label={`${p.emoji} ${p.label}`}
-                      onClick={() => setField('position', active ? '' : p.value)}
+                      onClick={() => {
+                        if (active) {
+                          setField('position', '');
+                          setField('subPosition', '');
+                        } else {
+                          setField('position', p.value);
+                          // 1순위 = 2순위가 되면 2순위 초기화
+                          if (form.subPosition === p.value) setField('subPosition', '');
+                        }
+                      }}
                       sx={{
                         fontWeight: active ? 900 : 600,
                         fontSize: '0.82rem',
@@ -243,6 +307,74 @@ export default function ProfileEditDialog({ open, onClose, emailKey, onSaved }) 
                     />
                   );
                 })}
+              </Box>
+
+              {/* 2순위 포지션 */}
+              <Typography sx={{ fontSize: '0.72rem', color: '#666', fontWeight: 700, mb: 0.6 }}>
+                2순위 포지션 <Typography component="span" sx={{ fontSize: '0.65rem', color: '#999' }}>(선택)</Typography>
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6, mb: 1.5 }}>
+                {POSITIONS.filter((p) => p.value !== form.position).map((p) => {
+                  const active = form.subPosition === p.value;
+                  return (
+                    <Chip
+                      key={p.value}
+                      label={`${p.emoji} ${p.label}`}
+                      onClick={() => setField('subPosition', active ? '' : p.value)}
+                      sx={{
+                        fontWeight: active ? 900 : 600,
+                        fontSize: '0.78rem',
+                        height: 30,
+                        bgcolor: active ? '#7E57C2' : '#F5F5F5',
+                        color: active ? 'white' : '#555',
+                        border: active ? '2px solid #7E57C2' : '1px solid transparent',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                        boxShadow: active ? '0 3px 8px rgba(126,87,194,0.4)' : 'none',
+                        '&:hover': { bgcolor: active ? '#7E57C2' : '#E0E0E0' },
+                      }}
+                    />
+                  );
+                })}
+              </Box>
+
+              {/* 등번호 */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography sx={{ fontSize: '0.72rem', color: '#666', fontWeight: 700, minWidth: 60 }}>
+                  등번호
+                </Typography>
+                <TextField
+                  size="small"
+                  type="number"
+                  placeholder="0~99"
+                  value={form.jerseyNumber}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '') { setField('jerseyNumber', ''); return; }
+                    const n = parseInt(v, 10);
+                    if (Number.isNaN(n) || n < 0 || n > 99) return;
+                    setField('jerseyNumber', String(n));
+                  }}
+                  inputProps={{ min: 0, max: 99 }}
+                  sx={{
+                    width: 100,
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2,
+                      fontWeight: 800,
+                      '& input': { textAlign: 'center', fontSize: '1rem' },
+                    },
+                  }}
+                />
+                {form.jerseyNumber && (
+                  <Box sx={{
+                    bgcolor: '#1565C0', color: 'white',
+                    fontWeight: 900, fontSize: '0.95rem',
+                    px: 1, py: 0.3, borderRadius: 1,
+                    minWidth: 34, textAlign: 'center',
+                  }}>
+                    #{form.jerseyNumber}
+                  </Box>
+                )}
               </Box>
             </Box>
 

@@ -10,6 +10,7 @@ const NOTIF_TYPES = [
   { key: 'draftStart', label: '드래프트 시작', desc: '내가 주장인 경기의 드래프트가 시작되면' },
   { key: 'draftTurn', label: '내 드래프트 차례', desc: '스네이크 드래프트에서 내 픽 차례가 되면' },
   { key: 'matchResult', label: '경기 결과 / MVP 발표', desc: '오늘 경기의 MVP가 선정되면' },
+  { key: 'joinRequest', label: '신규 가입 신청 (관리자)', desc: '새 회원이 가입을 신청하면 (관리자/운영진만)' },
 ];
 
 export default function NotificationSettingsDialog({ open, onClose, notif }) {

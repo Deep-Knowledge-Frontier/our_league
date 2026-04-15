@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../config/firebase';
-import { ref, get, set, push, remove, update } from 'firebase/database';
+import { ref, get, set, push, remove, update, onValue } from 'firebase/database';
 import {
   Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
   TextField, IconButton, Dialog, DialogTitle, DialogContent,
@@ -31,6 +31,7 @@ import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
 import HomeIcon from '@mui/icons-material/Home';
 import SearchIcon from '@mui/icons-material/Search';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useAuth } from '../contexts/AuthContext';
 import OnboardingModal from '../components/OnboardingModal';
@@ -112,6 +113,10 @@ export default function AdminPage() {
   const [backupRunning, setBackupRunning] = useState(false);
   const [backupResults, setBackupResults] = useState([]);
 
+  // 🆕 가입 신청 관리 (B3)
+  const [joinRequests, setJoinRequests] = useState([]);
+  const [joinRequestDialog, setJoinRequestDialog] = useState(null);
+
   /* ── 장소 프리셋 로드 ── */
   const loadLocationPresets = useCallback(async () => {
     if (!clubName) return;
@@ -167,7 +172,20 @@ export default function AdminPage() {
 
   /* ── 선수 관리 ── */
   const loadPlayers = useCallback(async () => {
+    // 1) registeredPlayers (선수 목록)
     const snap = await get(ref(db, `registeredPlayers/${clubName}`));
+    // 2) Users (Google 로그인으로 가입한 유저의 이름을 수집)
+    const usersSnap = await get(ref(db, 'Users'));
+    const googleRegisteredNames = new Set();
+    if (usersSnap.exists()) {
+      const users = usersSnap.val() || {};
+      Object.values(users).forEach((u) => {
+        if (u && u.club === clubName && u.name) {
+          googleRegisteredNames.add(u.name);
+        }
+      });
+    }
+
     if (!snap.exists()) { setPlayers([]); return; }
     const data = snap.val();
     const arr = Object.entries(data).map(([key, val]) => ({
@@ -177,6 +195,7 @@ export default function AdminPage() {
       jerseyNumber: val.jerseyNumber ?? null,
       position: val.position || '',
       subPosition: val.subPosition || '',
+      isGoogleUser: googleRegisteredNames.has(val.name || ''),
     })).sort((a, b) => {
       // 등번호가 있으면 등번호 순, 없으면 이름순
       const aNum = a.jerseyNumber ?? null;
@@ -243,6 +262,77 @@ export default function AdminPage() {
     };
     loadData();
   }, [authReady, user, canAccess, isAdmin, isModerator, isMaster, emailKey, navigate, loadMatchDates, loadAllowedUsers, loadPlayers, loadLeagues, loadLocationPresets]);
+
+  /* ── 🆕 가입 신청 실시간 구독 (B3) ── */
+  useEffect(() => {
+    if (!canAccess || !clubName) return;
+    return onValue(ref(db, `JoinRequests/${clubName}`), (snap) => {
+      const data = snap.val() || {};
+      const arr = Object.entries(data)
+        .map(([emailKey, val]) => ({ emailKey, ...val }))
+        .filter((r) => r.status === 'pending')
+        .sort((a, b) => (b.requestedAt || '').localeCompare(a.requestedAt || ''));
+      setJoinRequests(arr);
+    });
+  }, [canAccess, clubName]);
+
+  /* ── 🆕 가입 승인 / 거부 ── */
+  const approveJoinRequest = async (req) => {
+    try {
+      const emailKey = req.emailKey;
+      const today = new Date().toISOString().slice(0, 10);
+      const updates = {};
+
+      // 1) registeredPlayers에 추가 (동명이인 체크)
+      const playersSnap = await get(ref(db, `registeredPlayers/${clubName}`));
+      const existingNames = playersSnap.exists() ? Object.values(playersSnap.val()).map(p => p.name) : [];
+      let finalName = req.name;
+      if (existingNames.includes(finalName)) {
+        let num = 2;
+        while (existingNames.includes(`${req.name}(${num})`)) num++;
+        finalName = `${req.name}(${num})`;
+      }
+      const newPlayerKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
+      updates[`registeredPlayers/${clubName}/${newPlayerKey}`] = {
+        name: finalName, date: today,
+        position: req.position || '',
+        subPosition: req.subPosition || '',
+        jerseyNumber: req.jerseyNumber ?? null,
+      };
+
+      // 2) Users에서 pending 해제 + 이름 업데이트(동명이인 처리됐을 수 있음)
+      updates[`Users/${emailKey}/pending`] = null;
+      updates[`Users/${emailKey}/name`] = finalName;
+      updates[`Users/${emailKey}/approvedAt`] = new Date().toISOString();
+
+      // 3) JoinRequests 삭제
+      updates[`JoinRequests/${clubName}/${emailKey}`] = null;
+
+      await update(ref(db), updates);
+      alert(`${finalName}님의 가입을 승인했습니다.`);
+      setJoinRequestDialog(null);
+    } catch (e) {
+      alert('승인 실패: ' + e.message);
+    }
+  };
+
+  const rejectJoinRequest = async (req) => {
+    if (!window.confirm(`${req.name}님의 가입을 거부하시겠습니까?\n\n사용자는 같은 정보로 다시 신청할 수 있습니다.`)) return;
+    try {
+      const emailKey = req.emailKey;
+      const updates = {};
+      // JoinRequests 삭제
+      updates[`JoinRequests/${clubName}/${emailKey}`] = null;
+      // Users에서 pending 및 club 정보 제거 (다시 신청 가능하도록)
+      updates[`Users/${emailKey}/pending`] = null;
+      updates[`Users/${emailKey}/club`] = null;
+      await update(ref(db), updates);
+      alert(`${req.name}님의 가입을 거부했습니다.`);
+      setJoinRequestDialog(null);
+    } catch (e) {
+      alert('거부 실패: ' + e.message);
+    }
+  };
 
   /* ── 경기일 저장 ── */
   const saveMatchDate = async () => {
@@ -1549,6 +1639,62 @@ export default function AdminPage() {
         </Paper>
         )}
 
+        {/* 🆕 0-1. 가입 신청 관리 (pending 요청이 있을 때만 표시) */}
+        {canAccess && joinRequests.length > 0 && (
+          <Paper sx={{
+            borderRadius: 3, p: 2, mb: 2, boxShadow: 3,
+            background: 'linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%)',
+            border: '2px solid #FFC107',
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+              <Typography sx={{ fontSize: '1.4rem' }}>🔔</Typography>
+              <Box sx={{ flex: 1 }}>
+                <Typography sx={{ fontWeight: 900, fontSize: '1rem', color: '#E65100' }}>
+                  새 가입 신청 {joinRequests.length}건
+                </Typography>
+                <Typography sx={{ fontSize: '0.78rem', color: '#BF360C' }}>
+                  승인 대기 중인 회원을 확인해주세요
+                </Typography>
+              </Box>
+            </Box>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {joinRequests.map((req) => (
+                <Box
+                  key={req.emailKey}
+                  onClick={() => setJoinRequestDialog(req)}
+                  sx={{
+                    p: 1.2, borderRadius: 2,
+                    bgcolor: 'white', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 1,
+                    border: '1px solid #FFE082',
+                    transition: 'all 0.15s',
+                    '&:hover': { boxShadow: 3, borderColor: '#F57F17' },
+                  }}
+                >
+                  <Box sx={{
+                    width: 36, height: 36, borderRadius: '50%',
+                    bgcolor: '#FFF3E0',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#E65100', fontWeight: 900, fontSize: '0.9rem',
+                    flexShrink: 0,
+                  }}>
+                    {req.jerseyNumber != null ? `#${req.jerseyNumber}` : req.name?.[0] || '?'}
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 800, fontSize: '0.92rem', color: '#333' }}>
+                      {req.name}
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.7rem', color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {req.position}{req.subPosition ? `/${req.subPosition}` : ''} · {req.birthYear}년생 · {req.email}
+                    </Typography>
+                  </Box>
+                  <ChevronRightIcon sx={{ color: '#BDBDBD', fontSize: 20 }} />
+                </Box>
+              ))}
+            </Box>
+          </Paper>
+        )}
+
         {/* 0. 시작 가이드 (리그 또는 경기일 미설정 시) */}
         {(isAdmin || isMaster) && (leagues.length === 0 || matchDates.length === 0) && (
         <Paper sx={{
@@ -1904,6 +2050,85 @@ export default function AdminPage() {
             </Box>
           </Box>
 
+          {/* 🆕 팀 가입 링크 (복사 + 카카오톡 공유) */}
+          {clubName && (() => {
+            const joinUrl = `${window.location.origin}/register?club=${encodeURIComponent(clubName)}`;
+            const shareText = `${clubName} 가입 링크입니다. 아래 링크로 가입해주세요:\n${joinUrl}`;
+            const handleCopy = async () => {
+              try {
+                await navigator.clipboard.writeText(joinUrl);
+                alert('가입 링크가 복사되었습니다.\n카카오톡 등에 붙여넣기 해주세요.');
+              } catch {
+                alert('복사 실패. 직접 선택해서 복사해주세요:\n' + joinUrl);
+              }
+            };
+            const handleShare = async () => {
+              if (navigator.share) {
+                try {
+                  await navigator.share({
+                    title: `${clubName} 가입`,
+                    text: shareText,
+                    url: joinUrl,
+                  });
+                } catch {}
+              } else {
+                // 데스크톱 fallback: 클립보드 복사 안내
+                try {
+                  await navigator.clipboard.writeText(shareText);
+                  alert('링크가 복사되었습니다. 카카오톡에 붙여넣기 하세요.');
+                } catch {
+                  alert(shareText);
+                }
+              }
+            };
+            return (
+              <Box sx={{
+                mb: 1.8, p: 1.5, borderRadius: 2,
+                bgcolor: '#FFFDE7', border: '1px solid #FFF59D',
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 0.8 }}>
+                  <Typography sx={{ fontSize: '1rem' }}>🔗</Typography>
+                  <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: '#F57F17', flex: 1 }}>
+                    팀 가입 링크
+                  </Typography>
+                </Box>
+                <Typography sx={{
+                  fontSize: '0.72rem', color: '#666', mb: 1,
+                  bgcolor: 'white', p: 0.8, borderRadius: 1,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  border: '1px solid #F0E68C',
+                }}>
+                  {joinUrl}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 0.8 }}>
+                  <Button
+                    size="small" variant="outlined" fullWidth
+                    onClick={handleCopy}
+                    sx={{
+                      borderRadius: 1.5, fontSize: '0.78rem', fontWeight: 700,
+                      borderColor: '#F57F17', color: '#F57F17',
+                      '&:hover': { bgcolor: '#FFF8E1', borderColor: '#E65100' },
+                    }}
+                  >
+                    📋 링크 복사
+                  </Button>
+                  <Button
+                    size="small" variant="contained" fullWidth
+                    onClick={handleShare}
+                    sx={{
+                      borderRadius: 1.5, fontSize: '0.78rem', fontWeight: 700,
+                      bgcolor: '#FEE500', color: '#3C1E1E',
+                      boxShadow: '0 2px 6px rgba(254,229,0,0.4)',
+                      '&:hover': { bgcolor: '#FDD835', boxShadow: '0 3px 8px rgba(254,229,0,0.5)' },
+                    }}
+                  >
+                    💬 카카오톡 공유
+                  </Button>
+                </Box>
+              </Box>
+            );
+          })()}
+
           <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
             <TextField
               size="small" placeholder="선수 이름"
@@ -1977,7 +2202,15 @@ export default function AdminPage() {
                         size="small"
                         onClick={() => setPlayerEditDialog({ ...p })}
                         onDelete={() => removePlayer(p)}
-                        sx={{ fontSize: '0.8rem', cursor: 'pointer', bgcolor: '#F5F5F5' }}
+                        sx={{
+                          fontSize: '0.8rem', cursor: 'pointer',
+                          bgcolor: p.isGoogleUser ? '#E8F5E9' : '#F5F5F5',
+                          border: p.isGoogleUser ? '1px solid #A5D6A7' : '1px solid transparent',
+                          '& .MuiChip-deleteIcon': {
+                            color: p.isGoogleUser ? '#81C784' : undefined,
+                            '&:hover': { color: p.isGoogleUser ? '#388E3C' : undefined },
+                          },
+                        }}
                       />
                     );
                   })}
@@ -1991,7 +2224,18 @@ export default function AdminPage() {
                     {expandPlayers ? '접기' : `나머지 ${filtered.length - 15}명 더보기`}
                   </Button>
                 )}
-                <Typography sx={{ fontSize: '0.72rem', color: '#999', mt: 1, textAlign: 'center' }}>
+                {/* 범례 */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1.2, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+                    <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: '#E8F5E9', border: '1px solid #A5D6A7' }} />
+                    <Typography sx={{ fontSize: '0.68rem', color: '#666', fontWeight: 600 }}>가입 회원</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+                    <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: '#F5F5F5', border: '1px solid #E0E0E0' }} />
+                    <Typography sx={{ fontSize: '0.68rem', color: '#666', fontWeight: 600 }}>수동 등록</Typography>
+                  </Box>
+                </Box>
+                <Typography sx={{ fontSize: '0.72rem', color: '#999', mt: 0.8, textAlign: 'center' }}>
                   💡 선수를 클릭하면 등번호/포지션을 수정할 수 있습니다
                 </Typography>
               </>
@@ -2049,6 +2293,89 @@ export default function AdminPage() {
         )}
 
       </Container>
+
+      {/* 🆕 가입 신청 승인 다이얼로그 (B3) */}
+      <Dialog open={!!joinRequestDialog} onClose={() => setJoinRequestDialog(null)} fullWidth maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+        <Box sx={{
+          background: 'linear-gradient(135deg, #FF9800 0%, #E65100 100%)',
+          py: 2.2, px: 2.5, textAlign: 'center',
+        }}>
+          <Typography sx={{ fontSize: '1.4rem', mb: 0.5 }}>🔔</Typography>
+          <Typography sx={{ color: 'white', fontWeight: 900, fontSize: '1.05rem' }}>
+            가입 신청 검토
+          </Typography>
+        </Box>
+        <DialogContent sx={{ pt: '20px !important', px: 3, pb: 2 }}>
+          {joinRequestDialog && (
+            <Box>
+              {/* 이름 + 등번호 */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, mb: 2 }}>
+                {joinRequestDialog.jerseyNumber != null && (
+                  <Box sx={{
+                    width: 44, height: 44, borderRadius: '50%',
+                    bgcolor: '#1565C0', color: 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 900, fontSize: '1.1rem',
+                  }}>
+                    {joinRequestDialog.jerseyNumber}
+                  </Box>
+                )}
+                <Box sx={{ flex: 1 }}>
+                  <Typography sx={{ fontWeight: 900, fontSize: '1.15rem', color: '#222' }}>
+                    {joinRequestDialog.name}
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.72rem', color: '#888' }}>
+                    {joinRequestDialog.email}
+                  </Typography>
+                </Box>
+              </Box>
+
+              {/* 정보 그리드 */}
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.2, mb: 1.5 }}>
+                {[
+                  { label: '포지션 1순위', value: joinRequestDialog.position || '-' },
+                  { label: '포지션 2순위', value: joinRequestDialog.subPosition || '-' },
+                  { label: '출생년도', value: joinRequestDialog.birthYear || '-' },
+                  { label: '실력', value: joinRequestDialog.skill || '-' },
+                  { label: '키', value: joinRequestDialog.height ? `${joinRequestDialog.height}cm` : '-' },
+                  { label: '몸무게', value: joinRequestDialog.weight ? `${joinRequestDialog.weight}kg` : '-' },
+                ].map((item) => (
+                  <Box key={item.label} sx={{
+                    p: 1, borderRadius: 1.5, bgcolor: '#F5F5F7',
+                  }}>
+                    <Typography sx={{ fontSize: '0.68rem', color: '#999', fontWeight: 700 }}>{item.label}</Typography>
+                    <Typography sx={{ fontSize: '0.88rem', color: '#333', fontWeight: 700 }}>{item.value}</Typography>
+                  </Box>
+                ))}
+              </Box>
+
+              <Typography sx={{ fontSize: '0.7rem', color: '#bbb', textAlign: 'right' }}>
+                신청일: {joinRequestDialog.requestedAt?.slice(0, 10) || '-'}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button
+            onClick={() => joinRequestDialog && rejectJoinRequest(joinRequestDialog)}
+            sx={{ borderRadius: 2, color: '#C62828', fontWeight: 700 }}
+          >
+            거부
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => joinRequestDialog && approveJoinRequest(joinRequestDialog)}
+            sx={{
+              borderRadius: 2, px: 3, fontWeight: 800,
+              bgcolor: '#2E7D32',
+              '&:hover': { bgcolor: '#1B5E20' },
+            }}
+          >
+            승인
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 선수 정보 수정 다이얼로그 (A3) */}
       <Dialog open={!!playerEditDialog} onClose={() => setPlayerEditDialog(null)} fullWidth maxWidth="xs"

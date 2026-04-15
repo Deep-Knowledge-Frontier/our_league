@@ -12,16 +12,18 @@ import { useNotificationPrefs } from './useNotificationPrefs';
  * 2. 드래프트 시작 (주장에게)
  * 3. 내 드래프트 차례 (해당 주장에게)
  * 4. 경기 결과/MVP 발표 (당일 경기 참가자에게)
+ * 5. 🆕 신규 가입 신청 (관리자/운영진에게)
  *
  * App.js 또는 TabLayout에서 한 번만 호출하면 됨.
  */
 export function useGlobalNotifications() {
-  const { clubName, userName, emailKey, authReady } = useAuth();
+  const { clubName, userName, emailKey, authReady, isAdmin, isModerator } = useAuth();
   const { prefs, notify } = useNotificationPrefs(emailKey);
   // 이전 상태 추적 (상태 변화 감지)
   const prevDraftStatusRef = useRef(null);
   const prevPickIdxRef = useRef(-1);
   const prevMvpRef = useRef(null);
+  const prevJoinKeysRef = useRef(null);
 
   // ─── 1. 투표 마감 D-day/D-1 체크 (앱 로드 시 + 30분 간격) ───
   useEffect(() => {
@@ -210,4 +212,47 @@ export function useGlobalNotifications() {
       prevMvpRef.current = null;
     };
   }, [authReady, clubName, userName, prefs.enabled, prefs.matchResult, notify]);
+
+  // ─── 5. 🆕 신규 가입 신청 감지 (관리자/운영진) ───
+  useEffect(() => {
+    if (!authReady || !clubName) return;
+    if (!isAdmin && !isModerator) return;
+    if (!prefs.enabled || !prefs.joinRequest) return;
+
+    const joinRef = ref(db, `JoinRequests/${clubName}`);
+    const unsub = onValue(joinRef, (snap) => {
+      const data = snap.val() || {};
+      const currentKeys = new Set(Object.keys(data));
+      const prev = prevJoinKeysRef.current;
+
+      // 첫 로드는 알림 생략 (현재 pending 상태를 기준점으로 저장)
+      if (prev === null) {
+        prevJoinKeysRef.current = currentKeys;
+        return;
+      }
+
+      // 새로 추가된 신청 찾기
+      const newOnes = [...currentKeys].filter((k) => !prev.has(k));
+      newOnes.forEach((emailKey) => {
+        const req = data[emailKey];
+        if (req?.status === 'pending') {
+          notify(
+            '🔔 새 가입 신청',
+            `${req.name || '신청자'}님이 ${clubName} 가입을 신청했어요.`,
+            {
+              dedupeKey: `join-${emailKey}`,
+              url: '/admin',
+            }
+          );
+        }
+      });
+
+      prevJoinKeysRef.current = currentKeys;
+    });
+
+    return () => {
+      unsub();
+      prevJoinKeysRef.current = null;
+    };
+  }, [authReady, clubName, isAdmin, isModerator, prefs.enabled, prefs.joinRequest, notify]);
 }

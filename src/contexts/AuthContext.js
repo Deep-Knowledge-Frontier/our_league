@@ -95,6 +95,8 @@ export function AuthProvider({ children }) {
 
   const userName = isDemoGuest ? '체험 사용자' : (userData?.name || user?.displayName || user?.email?.split('@')[0] || '');
   const realClubName = userData?.club || '';
+  // 🆕 가입 승인 대기 상태
+  const isPending = !!(userData?.pending === true);
   // 마스터 체크: DB `MasterUsers/{emailKey}` 우선, env 이메일 리스트는 하위 호환 fallback
   // (env 이메일은 빌드 번들에 포함되므로 점진적으로 제거 예정 — 초기 seed 전환 후)
   const isMasterEnv = !!(user?.email && APP_CONFIG.masterEmails?.includes(user.email.toLowerCase()));
@@ -114,6 +116,7 @@ export function AuthProvider({ children }) {
     isAdmin,
     isModerator,
     isMaster,
+    isPending,
     authReady,
     loading,
     viewingClub,

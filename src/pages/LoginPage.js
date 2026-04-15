@@ -214,7 +214,12 @@ function LoginPage() {
           const emailKey = getSafeEmailKey(u.email);
           const snapshot = await get(child(ref(db), `Users/${emailKey}`));
           if (snapshot.exists() && snapshot.val()?.consentGiven && snapshot.val()?.club) {
-            setTargetPath('/home');
+            // 🆕 승인 대기 중이면 pending 페이지로
+            if (snapshot.val()?.pending === true) {
+              setTargetPath('/pending');
+            } else {
+              setTargetPath('/home');
+            }
           } else {
             // 클럽 미선택 또는 미등록 유저 → 회원가입
             setTargetPath('/register');

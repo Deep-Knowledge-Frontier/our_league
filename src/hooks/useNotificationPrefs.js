@@ -8,6 +8,7 @@ const DEFAULT_PREFS = {
   draftStart: true,
   draftTurn: true,
   matchResult: true,
+  joinRequest: true, // 🆕 가입 신청 알림 (관리자/운영진용)
 };
 
 /**

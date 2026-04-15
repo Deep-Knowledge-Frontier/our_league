@@ -7,6 +7,7 @@ import TabLayout from './components/layout/TabLayout';
 
 // 큰 페이지들은 lazy-load (초기 번들 축소)
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const PendingApprovalPage = lazy(() => import('./pages/PendingApprovalPage'));
 const TeamViewPage = lazy(() => import('./pages/TeamViewPage'));
 const LeaguePage = lazy(() => import('./pages/LeaguePage'));
 const MatchDetailPage = lazy(() => import('./pages/MatchDetailPage'));
@@ -92,6 +93,7 @@ function AppContent() {
           <Route path="/" element={<LoginPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/pending" element={<PendingApprovalPage />} />
           <Route path="/team/:date" element={<TeamViewPage />} />
           <Route path="/league" element={<LeaguePage />} />
           <Route path="/match/:date/:game" element={<MatchDetailPage />} />
