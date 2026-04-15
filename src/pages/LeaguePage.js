@@ -6,7 +6,6 @@ import {
   Container, Paper, Typography, Box, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, CircularProgress, Button,
   useMediaQuery, Chip, ToggleButton, ToggleButtonGroup, TextField, InputAdornment, IconButton,
-  Tabs, Tab,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -21,8 +20,7 @@ function LeaguePage() {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { clubName, isDemoGuest, isAdmin, isModerator, isMaster } = useAuth();
-  const canSeeMembers = isAdmin || isModerator || isMaster;
+  const { clubName, isDemoGuest } = useAuth();
 
   const { leagueNumber, startDate, endDate } = location.state || {};
   const dataClub = isDemoGuest ? DEMO_CLUB : clubName;
@@ -34,115 +32,7 @@ function LeaguePage() {
   const [sortBy, setSortBy] = useState('attackPts');
   const [searchQuery, setSearchQuery] = useState('');
   const [nameMap, setNameMap] = useState(null);
-  // 🆕 회원 명단 탭 (B1+B2)
-  const [activeTab, setActiveTab] = useState(0);
-  const [memberList, setMemberList] = useState([]);
-  const [memberLoading, setMemberLoading] = useState(false);
-  const [memberSort, setMemberSort] = useState('jersey');
-  const [memberSearch, setMemberSearch] = useState('');
   const dn = (name) => (isDemoGuest && nameMap) ? anonymize(name, nameMap) : name;
-
-  // 🆕 회원 명단 로드 (관리자 전용)
-  useEffect(() => {
-    if (activeTab !== 1 || !canSeeMembers || !clubName) return;
-    setMemberLoading(true);
-    (async () => {
-      try {
-        const [usersSnap, regSnap, statsSnap, dailySnap] = await Promise.all([
-          get(ref(db, 'Users')),
-          get(ref(db, `registeredPlayers/${clubName}`)),
-          get(ref(db, `PlayerStatsBackup_6m/${clubName}`)),
-          get(ref(db, `DailyResultsBackup/${clubName}`)),
-        ]);
-
-        // registeredPlayers를 이름 → 데이터 맵으로 변환
-        const regMap = {};
-        if (regSnap.exists()) {
-          Object.values(regSnap.val() || {}).forEach((p) => {
-            if (p?.name) regMap[p.name] = p;
-          });
-        }
-
-        // 6개월 통계
-        const statsMap = statsSnap.exists() ? statsSnap.val() : {};
-
-        // 최근 참석일: DailyResultsBackup 스캔
-        const lastAttendByName = {};
-        if (dailySnap.exists()) {
-          const dailyData = dailySnap.val() || {};
-          const sortedDates = Object.keys(dailyData).sort().reverse();
-          for (const date of sortedDates) {
-            const matches = dailyData[date]?.matches || [];
-            const arr = Array.isArray(matches) ? matches : Object.values(matches);
-            arr.forEach((m) => {
-              const t1Players = m?.team1Players || [];
-              const t2Players = m?.team2Players || [];
-              const allP = [
-                ...(Array.isArray(t1Players) ? t1Players : Object.values(t1Players || {})),
-                ...(Array.isArray(t2Players) ? t2Players : Object.values(t2Players || {})),
-              ].filter(Boolean);
-              allP.forEach((name) => {
-                if (!lastAttendByName[name]) lastAttendByName[name] = date;
-              });
-            });
-          }
-        }
-
-        // Users에서 같은 클럽 멤버만 추출 (Google 가입 회원)
-        const members = [];
-        if (usersSnap.exists()) {
-          const users = usersSnap.val() || {};
-          Object.entries(users).forEach(([emailKey, u]) => {
-            if (u?.club !== clubName) return;
-            if (u?.pending === true) return; // 미승인 제외
-            const reg = regMap[u.name] || {};
-            const stat = statsMap[u.name] || {};
-            members.push({
-              emailKey,
-              name: u.name || '',
-              jerseyNumber: u.jerseyNumber ?? reg.jerseyNumber ?? null,
-              position: u.position || reg.position || '',
-              subPosition: u.subPosition || reg.subPosition || '',
-              birthYear: u.birthYear || '',
-              height: u.height || '',
-              weight: u.weight || '',
-              skill: u.skill || '',
-              attendanceRate: stat.attendanceRate || 0,
-              participatedMatches: stat.participatedMatches || 0,
-              lastAttend: lastAttendByName[u.name] || '',
-              source: 'google',
-            });
-          });
-        }
-
-        // registeredPlayers 중 Users에 없는 (관리자 수동 등록) 선수 추가
-        const usersNames = new Set(members.map((m) => m.name));
-        Object.values(regMap).forEach((p) => {
-          if (!p.name || usersNames.has(p.name)) return;
-          const stat = statsMap[p.name] || {};
-          members.push({
-            emailKey: '',
-            name: p.name,
-            jerseyNumber: p.jerseyNumber ?? null,
-            position: p.position || '',
-            subPosition: p.subPosition || '',
-            birthYear: '', height: '', weight: '', skill: '',
-            attendanceRate: stat.attendanceRate || 0,
-            participatedMatches: stat.participatedMatches || 0,
-            lastAttend: lastAttendByName[p.name] || '',
-            source: 'manual',
-          });
-        });
-
-        setMemberList(members);
-      } catch (e) {
-        console.error('회원 명단 로드 실패:', e);
-        setMemberList([]);
-      } finally {
-        setMemberLoading(false);
-      }
-    })();
-  }, [activeTab, canSeeMembers, clubName]);
 
   useEffect(() => {
     if (!dataClub || !startDate || !endDate) {
@@ -435,166 +325,8 @@ function LeaguePage() {
           </Typography>
         </Box>
 
-        {/* 🆕 탭: 리그 / 회원 명단 (관리자만) */}
-        {canSeeMembers && (
-          <Tabs
-            value={activeTab}
-            onChange={(_, v) => setActiveTab(v)}
-            sx={{
-              mb: 2,
-              borderRadius: 2,
-              bgcolor: 'white',
-              boxShadow: 1,
-              minHeight: 40,
-              '& .MuiTab-root': {
-                fontSize: '0.85rem', fontWeight: 700, minHeight: 40, py: 1,
-              },
-              '& .Mui-selected': { color: '#2D336B' },
-              '& .MuiTabs-indicator': { bgcolor: '#2D336B', height: 3 },
-            }}
-            variant="fullWidth"
-          >
-            <Tab label="🏆 리그" />
-            <Tab label="👥 회원 명단" />
-          </Tabs>
-        )}
-
-        {/* ===== 회원 명단 탭 ===== */}
-        {activeTab === 1 && canSeeMembers && (() => {
-          const filtered = memberList.filter((m) => {
-            if (!memberSearch.trim()) return true;
-            return (m.name || '').toLowerCase().includes(memberSearch.trim().toLowerCase());
-          }).sort((a, b) => {
-            if (memberSort === 'jersey') {
-              const aN = a.jerseyNumber ?? 999;
-              const bN = b.jerseyNumber ?? 999;
-              return aN - bN;
-            }
-            if (memberSort === 'name') return (a.name || '').localeCompare(b.name || '', 'ko');
-            if (memberSort === 'attend') return (b.attendanceRate || 0) - (a.attendanceRate || 0);
-            if (memberSort === 'lastAttend') return (b.lastAttend || '').localeCompare(a.lastAttend || '');
-            return 0;
-          });
-
-          return (
-            <Box>
-              {/* 정렬 + 검색 */}
-              <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-                <ToggleButtonGroup
-                  value={memberSort}
-                  exclusive
-                  onChange={(_, v) => v && setMemberSort(v)}
-                  size="small"
-                  sx={{ '& .MuiToggleButton-root': { fontSize: '0.72rem', py: 0.5, px: 1 } }}
-                >
-                  <ToggleButton value="jersey">등번호</ToggleButton>
-                  <ToggleButton value="name">이름</ToggleButton>
-                  <ToggleButton value="attend">참석률</ToggleButton>
-                  <ToggleButton value="lastAttend">최근 참석</ToggleButton>
-                </ToggleButtonGroup>
-              </Box>
-              <TextField
-                fullWidth size="small"
-                placeholder="이름 검색"
-                value={memberSearch}
-                onChange={(e) => setMemberSearch(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon sx={{ fontSize: 18, color: '#999' }} />
-                    </InputAdornment>
-                  ),
-                  endAdornment: memberSearch && (
-                    <InputAdornment position="end">
-                      <IconButton size="small" onClick={() => setMemberSearch('')}>
-                        <ClearIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-                sx={{ mb: 1.5, bgcolor: 'white', borderRadius: 1 }}
-              />
-              <Typography sx={{ fontSize: '0.78rem', color: '#666', mb: 1, textAlign: 'right' }}>
-                총 <b>{filtered.length}</b>명
-              </Typography>
-
-              {memberLoading ? (
-                <Box display="flex" justifyContent="center" mt={4}>
-                  <CircularProgress size={28} />
-                </Box>
-              ) : (
-                <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: 2 }}>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: '#2D336B' }}>
-                        <TableCell sx={{ ...headerCellStyle, color: 'white', fontWeight: 800 }}>#</TableCell>
-                        <TableCell sx={{ ...headerCellStyle, color: 'white', fontWeight: 800, textAlign: 'left' }}>이름</TableCell>
-                        <TableCell sx={{ ...headerCellStyle, color: 'white', fontWeight: 800 }}>포지션</TableCell>
-                        <TableCell sx={{ ...headerCellStyle, color: 'white', fontWeight: 800 }}>출생</TableCell>
-                        <TableCell sx={{ ...headerCellStyle, color: 'white', fontWeight: 800 }}>키/몸무게</TableCell>
-                        <TableCell sx={{ ...headerCellStyle, color: 'white', fontWeight: 800 }}>실력</TableCell>
-                        <TableCell sx={{ ...headerCellStyle, color: 'white', fontWeight: 800 }}>참석률</TableCell>
-                        <TableCell sx={{ ...headerCellStyle, color: 'white', fontWeight: 800 }}>최근</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {filtered.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={8} align="center" sx={{ py: 3, color: '#999' }}>
-                            회원이 없습니다
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        filtered.map((m) => (
-                          <TableRow key={`${m.emailKey || m.name}`} sx={{
-                            '&:hover': { bgcolor: '#FAFBFC' },
-                            bgcolor: m.source === 'google' ? '#F1F8E9' : 'white',
-                          }}>
-                            <TableCell sx={{ ...cellStyle, fontWeight: 900, color: '#1565C0' }}>
-                              {m.jerseyNumber != null ? m.jerseyNumber : '-'}
-                            </TableCell>
-                            <TableCell sx={{ ...cellStyle, fontWeight: 800, textAlign: 'left' }}>
-                              {m.name}
-                            </TableCell>
-                            <TableCell sx={{ ...cellStyle }}>
-                              {m.position || '-'}{m.subPosition ? `/${m.subPosition}` : ''}
-                            </TableCell>
-                            <TableCell sx={cellStyle}>{m.birthYear || '-'}</TableCell>
-                            <TableCell sx={cellStyle}>
-                              {m.height || m.weight ? `${m.height || '-'}/${m.weight || '-'}` : '-'}
-                            </TableCell>
-                            <TableCell sx={cellStyle}>{m.skill || '-'}</TableCell>
-                            <TableCell sx={{ ...cellStyle, fontWeight: 700, color: m.attendanceRate >= 50 ? '#2E7D32' : '#888' }}>
-                              {m.attendanceRate ? `${Math.round(m.attendanceRate)}%` : '-'}
-                            </TableCell>
-                            <TableCell sx={{ ...cellStyle, fontSize: '0.7rem', color: '#888' }}>
-                              {m.lastAttend ? m.lastAttend.slice(5) : '-'}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-
-              {/* 범례 */}
-              <Box sx={{ display: 'flex', gap: 1.5, mt: 1.5, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                  <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: '#F1F8E9', border: '1px solid #C5E1A5' }} />
-                  <Typography sx={{ fontSize: '0.7rem', color: '#666' }}>가입 회원</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                  <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: 'white', border: '1px solid #E0E0E0' }} />
-                  <Typography sx={{ fontSize: '0.7rem', color: '#666' }}>수동 등록</Typography>
-                </Box>
-              </Box>
-            </Box>
-          );
-        })()}
-
         {/* ===== 팀 순위표 ===== */}
-        {activeTab === 0 && (loading ? (
+        {loading ? (
           <Box display="flex" justifyContent="center" mt={5}><CircularProgress /></Box>
         ) : (
           <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: 3 }}>
@@ -633,10 +365,9 @@ function LeaguePage() {
               </TableBody>
             </Table>
           </TableContainer>
-        ))}
+        )}
 
-        {/* ===== 선수별 통계 (탭 0에서만) ===== */}
-        {activeTab === 0 && <>
+        {/* ===== 선수별 통계 ===== */}
         <Box sx={{ mt: 4, mb: 2 }}>
           <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#2D336B', mb: 1 }}>
             선수별 통계
@@ -838,7 +569,6 @@ function LeaguePage() {
             </TableContainer>
           </>
         )}
-        </>}
       </Container>
     </div>
   );

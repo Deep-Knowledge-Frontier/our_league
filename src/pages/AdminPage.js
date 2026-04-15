@@ -6,7 +6,9 @@ import {
   Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
   TextField, IconButton, Dialog, DialogTitle, DialogContent,
   DialogActions, Chip, Select, MenuItem, FormControl, InputLabel,
-  Divider, Alert
+  Divider, Alert,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -32,6 +34,7 @@ import HomeIcon from '@mui/icons-material/Home';
 import SearchIcon from '@mui/icons-material/Search';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useAuth } from '../contexts/AuthContext';
 import OnboardingModal from '../components/OnboardingModal';
@@ -116,6 +119,18 @@ export default function AdminPage() {
   // 🆕 가입 신청 관리 (B3)
   const [joinRequests, setJoinRequests] = useState([]);
   const [joinRequestDialog, setJoinRequestDialog] = useState(null);
+
+  // 🆕 팀 삭제/복원 (마스터 전용)
+  const [deleteClubDialog, setDeleteClubDialog] = useState(null); // { club, step: 1|2, confirmText: '' }
+  const [deletedClubs, setDeletedClubs] = useState([]);
+  const [deletedClubsExpanded, setDeletedClubsExpanded] = useState(false);
+
+  // 🆕 회원 명단 다이얼로그
+  const [memberListDialog, setMemberListDialog] = useState(false);
+  const [memberList, setMemberList] = useState([]);
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [memberSort, setMemberSort] = useState('jersey');
+  const [memberSearch, setMemberSearch] = useState('');
 
   /* ── 장소 프리셋 로드 ── */
   const loadLocationPresets = useCallback(async () => {
@@ -225,11 +240,12 @@ export default function AdminPage() {
 
     const loadData = async () => {
       try {
-        // 마스터: 팀 목록 + 클럽 생성 요청 로드
+        // 마스터: 팀 목록 + 클럽 생성 요청 + 삭제된 팀 로드
         if (isMaster) {
-          const [clubsSnap, reqSnap] = await Promise.all([
+          const [clubsSnap, reqSnap, deletedSnap] = await Promise.all([
             get(ref(db, 'clubs')),
             get(ref(db, 'ClubRequests')),
+            get(ref(db, 'DeletedClubs')),
           ]);
           if (clubsSnap.exists()) {
             const data = clubsSnap.val();
@@ -239,6 +255,10 @@ export default function AdminPage() {
             setClubRequests(Object.entries(reqSnap.val())
               .map(([key, val]) => ({ key, ...val }))
               .filter(r => r.status === 'pending'));
+          }
+          if (deletedSnap.exists()) {
+            const data = deletedSnap.val();
+            setDeletedClubs(Object.entries(data).map(([key, val]) => ({ key, ...val })));
           }
         }
 
@@ -283,29 +303,64 @@ export default function AdminPage() {
       const today = new Date().toISOString().slice(0, 10);
       const updates = {};
 
-      // 1) registeredPlayers에 추가 (동명이인 체크)
+      // 1) registeredPlayers에서 동일 이름 체크
       const playersSnap = await get(ref(db, `registeredPlayers/${clubName}`));
-      const existingNames = playersSnap.exists() ? Object.values(playersSnap.val()).map(p => p.name) : [];
-      let finalName = req.name;
-      if (existingNames.includes(finalName)) {
-        let num = 2;
-        while (existingNames.includes(`${req.name}(${num})`)) num++;
-        finalName = `${req.name}(${num})`;
-      }
-      const newPlayerKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
-      updates[`registeredPlayers/${clubName}/${newPlayerKey}`] = {
-        name: finalName, date: today,
-        position: req.position || '',
-        subPosition: req.subPosition || '',
-        jerseyNumber: req.jerseyNumber ?? null,
-      };
+      const playersData = playersSnap.exists() ? playersSnap.val() : {};
+      const existingEntry = Object.entries(playersData).find(([, p]) => p?.name === req.name);
 
-      // 2) Users에서 pending 해제 + 이름 업데이트(동명이인 처리됐을 수 있음)
+      let finalName = req.name;
+      let registeredPlayerKey;
+
+      if (existingEntry) {
+        // 🆕 이미 같은 이름 선수가 존재 → 관리자에게 확인
+        const [existingKey, existingData] = existingEntry;
+        const confirmMerge = window.confirm(
+          `이미 "${req.name}" 이름의 선수가 등록되어 있습니다.\n\n` +
+          `[확인] 동일 선수로 연결 (관리자가 미리 추가해둔 선수)\n` +
+          `     → 기존 엔트리의 포지션/등번호를 가입 정보로 업데이트\n\n` +
+          `[취소] 동명이인으로 별도 추가 ("${req.name}(2)"로 생성)`
+        );
+        if (confirmMerge) {
+          // 기존 엔트리를 UPDATE (새 엔트리 생성 X)
+          registeredPlayerKey = existingKey;
+          updates[`registeredPlayers/${clubName}/${existingKey}`] = {
+            name: existingData.name, // 기존 이름 유지
+            date: existingData.date || today,
+            position: req.position || existingData.position || '',
+            subPosition: req.subPosition || existingData.subPosition || '',
+            jerseyNumber: req.jerseyNumber ?? existingData.jerseyNumber ?? null,
+          };
+        } else {
+          // 동명이인 처리: (2), (3) ... 접미사
+          const allNames = Object.values(playersData).map(p => p?.name).filter(Boolean);
+          let num = 2;
+          while (allNames.includes(`${req.name}(${num})`)) num++;
+          finalName = `${req.name}(${num})`;
+          registeredPlayerKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
+          updates[`registeredPlayers/${clubName}/${registeredPlayerKey}`] = {
+            name: finalName, date: today,
+            position: req.position || '',
+            subPosition: req.subPosition || '',
+            jerseyNumber: req.jerseyNumber ?? null,
+          };
+        }
+      } else {
+        // 2) 동일 이름 없음 → 신규 추가
+        registeredPlayerKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
+        updates[`registeredPlayers/${clubName}/${registeredPlayerKey}`] = {
+          name: finalName, date: today,
+          position: req.position || '',
+          subPosition: req.subPosition || '',
+          jerseyNumber: req.jerseyNumber ?? null,
+        };
+      }
+
+      // 3) Users에서 pending 해제 + 이름 업데이트 (동명이인 처리됐을 수 있음)
       updates[`Users/${emailKey}/pending`] = null;
       updates[`Users/${emailKey}/name`] = finalName;
       updates[`Users/${emailKey}/approvedAt`] = new Date().toISOString();
 
-      // 3) JoinRequests 삭제
+      // 4) JoinRequests 삭제
       updates[`JoinRequests/${clubName}/${emailKey}`] = null;
 
       await update(ref(db), updates);
@@ -500,19 +555,139 @@ export default function AdminPage() {
     await loadPlayers();
   };
 
-  const updatePlayerInfo = async (player) => {
-    const updates = {
-      name: player.name,
-      jerseyNumber: player.jerseyNumber,
-      position: player.position || '',
-      subPosition: player.subPosition || '',
-    };
-    const existingSnap = await get(ref(db, `registeredPlayers/${clubName}/${player.key}`));
-    if (existingSnap.exists()) {
-      updates.date = existingSnap.val().date || '';
+  // 🆕 회원 명단 로드 (관리탭 다이얼로그용)
+  const loadMemberList = useCallback(async () => {
+    if (!clubName) return;
+    setMemberLoading(true);
+    try {
+      const [usersSnap, regSnap, statsSnap, dailySnap] = await Promise.all([
+        get(ref(db, 'Users')),
+        get(ref(db, `registeredPlayers/${clubName}`)),
+        get(ref(db, `PlayerStatsBackup_6m/${clubName}`)),
+        get(ref(db, `DailyResultsBackup/${clubName}`)),
+      ]);
+
+      // 🆕 registeredPlayers = 신뢰 원본 (선수 관리 카운트와 1:1 일치)
+      const regEntries = [];
+      if (regSnap.exists()) {
+        Object.entries(regSnap.val() || {}).forEach(([k, p]) => {
+          if (p?.name) regEntries.push({ key: k, ...p });
+        });
+      }
+
+      // Users 에서 해당 클럽 멤버 이름으로 인덱싱 (병합용)
+      const userByName = {};
+      if (usersSnap.exists()) {
+        const users = usersSnap.val() || {};
+        Object.entries(users).forEach(([emailKey, u]) => {
+          if (u?.club !== clubName) return;
+          if (u?.pending === true) return;
+          if (u.name) userByName[u.name] = { ...u, emailKey };
+        });
+      }
+
+      const statsMap = statsSnap.exists() ? statsSnap.val() : {};
+
+      // 🆕 최근 참석일: DailyResultsBackup의 날짜 키 기준으로
+      // PlayerSelectionByDate/{club}/{date}/AttandPlayer 병렬 조회
+      // (matchesArr에는 team1Players/team2Players가 없어서 직접 조회 필요)
+      const lastAttendByName = {};
+      if (dailySnap.exists()) {
+        const playedDates = Object.keys(dailySnap.val() || {}).sort().reverse();
+        const limit = Math.min(playedDates.length, 120); // 최근 120회 경기일만
+        const recentDates = playedDates.slice(0, limit);
+        const attendSnaps = await Promise.all(
+          recentDates.map((d) =>
+            get(ref(db, `PlayerSelectionByDate/${clubName}/${d}/AttandPlayer`))
+          )
+        );
+        recentDates.forEach((date, i) => {
+          const snap = attendSnaps[i];
+          if (!snap.exists()) return;
+          const v = snap.val() || {};
+          const all = [
+            ...(Array.isArray(v.A) ? v.A : []),
+            ...(Array.isArray(v.B) ? v.B : []),
+            ...(Array.isArray(v.C) ? v.C : []),
+          ].filter(Boolean);
+          all.forEach((name) => {
+            if (!lastAttendByName[name]) lastAttendByName[name] = date;
+          });
+        });
+      }
+
+      // 🆕 registeredPlayers 1:1 매핑 (중복 방지 + 카운트 정확)
+      const members = regEntries.map((p) => {
+        const user = userByName[p.name];
+        const stat = statsMap[p.name] || {};
+        return {
+          emailKey: user?.emailKey || '',
+          registeredPlayerKey: p.key,
+          name: p.name,
+          jerseyNumber: p.jerseyNumber ?? user?.jerseyNumber ?? null,
+          position: p.position || user?.position || '',
+          subPosition: p.subPosition || user?.subPosition || '',
+          birthYear: user?.birthYear || '',
+          height: user?.height || '',
+          weight: user?.weight || '',
+          skill: user?.skill || '',
+          attendanceRate: stat.attendanceRate || 0,
+          participatedMatches: stat.participatedMatches || 0,
+          lastAttend: lastAttendByName[p.name] || '',
+          source: user ? 'google' : 'manual',
+        };
+      });
+
+      setMemberList(members);
+    } catch (e) {
+      console.error('회원 명단 로드 실패:', e);
+      setMemberList([]);
+    } finally {
+      setMemberLoading(false);
     }
-    await update(ref(db, `registeredPlayers/${clubName}/${player.key}`), updates);
+  }, [clubName]);
+
+  // 다이얼로그 열릴 때 로드
+  useEffect(() => {
+    if (memberListDialog) loadMemberList();
+  }, [memberListDialog, loadMemberList]);
+
+  const updatePlayerInfo = async (player) => {
+    // registeredPlayers 업데이트
+    const regKey = player.key || player.registeredPlayerKey;
+    if (regKey) {
+      const regUpdates = {
+        name: player.name,
+        jerseyNumber: player.jerseyNumber,
+        position: player.position || '',
+        subPosition: player.subPosition || '',
+      };
+      const existingSnap = await get(ref(db, `registeredPlayers/${clubName}/${regKey}`));
+      if (existingSnap.exists()) {
+        regUpdates.date = existingSnap.val().date || '';
+      }
+      await update(ref(db, `registeredPlayers/${clubName}/${regKey}`), regUpdates);
+    }
+
+    // Users 업데이트 (Google 로그인 회원일 때)
+    if (player.emailKey) {
+      const userUpdates = {
+        name: player.name,
+        jerseyNumber: player.jerseyNumber,
+        position: player.position || '',
+        subPosition: player.subPosition || '',
+      };
+      // 추가 필드 (optional)
+      if (player.birthYear !== undefined) userUpdates.birthYear = player.birthYear || '';
+      if (player.height !== undefined) userUpdates.height = player.height ? Number(player.height) : 0;
+      if (player.weight !== undefined) userUpdates.weight = player.weight ? Number(player.weight) : 0;
+      if (player.skill !== undefined) userUpdates.skill = player.skill || '';
+      await update(ref(db, `Users/${player.emailKey}`), userUpdates);
+    }
+
     await loadPlayers();
+    // 회원 명단 다이얼로그가 열려 있으면 갱신
+    if (memberListDialog) await loadMemberList();
   };
 
   const openLeagueAdd = () => {
@@ -1390,13 +1565,66 @@ export default function AdminPage() {
     }
   };
 
-  const handleDeleteClub = async (clubKey) => {
-    if (!window.confirm(`"${clubKey}" 팀을 삭제하시겠습니까?\n(팀 데이터는 삭제되지 않습니다)`)) return;
+  // 🆕 팀 삭제: 2단계 확인 + soft delete (DeletedClubs 백업)
+  const handleDeleteClub = (clubKey) => {
+    const club = clubsList.find(c => c.key === clubKey);
+    if (!club) return;
+    // 1단계: 팀 정보 보여주고 확인
+    setDeleteClubDialog({ club, step: 1, confirmText: '' });
+  };
+
+  const confirmDeleteClub = async () => {
+    if (!deleteClubDialog) return;
+    const club = deleteClubDialog.club;
     try {
-      await remove(ref(db, `clubs/${clubKey}`));
-      setClubsList(prev => prev.filter(c => c.key !== clubKey));
+      // DeletedClubs 백업 (복원용)
+      await set(ref(db, `DeletedClubs/${club.key}`), {
+        ...club,
+        deletedAt: new Date().toISOString(),
+        deletedBy: user?.email || 'master',
+      });
+      // clubs에서 제거
+      await remove(ref(db, `clubs/${club.key}`));
+      setClubsList(prev => prev.filter(c => c.key !== club.key));
+      setDeleteClubDialog(null);
+      alert(`"${club.name}" 팀이 삭제되었습니다.\n삭제된 팀 목록에서 복원할 수 있습니다.`);
     } catch (e) {
       alert('팀 삭제 실패: ' + e.message);
+    }
+  };
+
+  const handleRestoreClub = async (club) => {
+    if (!window.confirm(`"${club.name}" 팀을 복원하시겠습니까?`)) return;
+    try {
+      // 동일 이름 재사용 중인지 체크
+      const existSnap = await get(ref(db, `clubs/${club.key}`));
+      if (existSnap.exists()) {
+        alert('같은 이름의 팀이 이미 존재합니다. 먼저 기존 팀을 삭제하거나 이름을 변경하세요.');
+        return;
+      }
+      // clubs에 복원 (삭제 메타데이터 제거)
+      // eslint-disable-next-line no-unused-vars
+      const { deletedAt, deletedBy, key, ...clubData } = club;
+      await set(ref(db, `clubs/${club.key}`), clubData);
+      // DeletedClubs 에서 제거
+      await remove(ref(db, `DeletedClubs/${club.key}`));
+      setClubsList(prev => [...prev, club]);
+      setDeletedClubs(prev => prev.filter(c => c.key !== club.key));
+      alert(`"${club.name}" 팀이 복원되었습니다.`);
+    } catch (e) {
+      alert('팀 복원 실패: ' + e.message);
+    }
+  };
+
+  const handlePermanentDeleteClub = async (club) => {
+    if (!window.confirm(`"${club.name}" 팀을 완전히 삭제합니다.\n\n이 작업은 되돌릴 수 없습니다. 계속할까요?`)) return;
+    if (!window.confirm(`정말 복원 불가능하게 삭제하시겠습니까?\n\n"${club.name}" 팀`)) return;
+    try {
+      await remove(ref(db, `DeletedClubs/${club.key}`));
+      setDeletedClubs(prev => prev.filter(c => c.key !== club.key));
+      alert('완전 삭제되었습니다.');
+    } catch (e) {
+      alert('완전 삭제 실패: ' + e.message);
     }
   };
 
@@ -1584,6 +1812,67 @@ export default function AdminPage() {
 
                 {clubsList.length === 0 && (
                   <Typography color="textSecondary" align="center" sx={{ py: 2 }}>등록된 팀이 없습니다.</Typography>
+                )}
+
+                {/* 🆕 삭제된 팀 (복원 가능) */}
+                {deletedClubs.length > 0 && (
+                  <Box sx={{ mt: 2 }}>
+                    <Box
+                      onClick={() => setDeletedClubsExpanded(!deletedClubsExpanded)}
+                      sx={{
+                        display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer',
+                        py: 1, px: 1.5, borderRadius: 2, bgcolor: '#FFEBEE',
+                        border: '1px dashed #EF9A9A',
+                      }}
+                    >
+                      <DeleteIcon sx={{ color: '#C62828', fontSize: 18 }} />
+                      <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: '#C62828', flex: 1 }}>
+                        삭제된 팀 ({deletedClubs.length})
+                      </Typography>
+                      {deletedClubsExpanded ? <ExpandLessIcon sx={{ color: '#C62828' }} /> : <ExpandMoreIcon sx={{ color: '#C62828' }} />}
+                    </Box>
+                    {deletedClubsExpanded && (
+                      <Box sx={{ mt: 1 }}>
+                        {deletedClubs.map((club) => (
+                          <Box key={club.key} sx={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            py: 1, px: 1.5, mb: 0.5, bgcolor: '#FAFAFA',
+                            borderRadius: 2, border: '1px solid #E0E0E0',
+                          }}>
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Typography sx={{ fontWeight: 600, fontSize: '0.9rem', color: '#666', textDecoration: 'line-through' }}>
+                                {club.name}
+                              </Typography>
+                              <Typography sx={{ fontSize: '0.7rem', color: '#999' }}>
+                                삭제: {club.deletedAt ? club.deletedAt.slice(0, 10) : '-'}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
+                              <Button
+                                size="small" variant="contained"
+                                onClick={() => handleRestoreClub(club)}
+                                sx={{
+                                  fontSize: '0.7rem', minWidth: 'auto', px: 1.2, py: 0.4,
+                                  bgcolor: '#388E3C',
+                                  '&:hover': { bgcolor: '#2E7D32' },
+                                }}
+                              >
+                                복원
+                              </Button>
+                              <IconButton
+                                size="small"
+                                title="완전 삭제"
+                                onClick={() => handlePermanentDeleteClub(club)}
+                                sx={{ color: '#C62828' }}
+                              >
+                                <DeleteForeverIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+                          </Box>
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
                 )}
               </Box>
             )}
@@ -1933,120 +2222,24 @@ export default function AdminPage() {
           );
         })()}
 
-        {/* 2. 리그 관리 (3개 미리보기) */}
-        <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <EmojiEventsIcon sx={{ color: '#1565C0', fontSize: 20 }} />
-              <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '1rem' }}>리그 관리</Typography>
-              {leagues.length > 0 && <Chip label={`${leagues.length}개`} size="small"
-                sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#E3F2FD', color: '#1565C0' }} />}
-            </Box>
-            <Button size="small" startIcon={<AddIcon />} onClick={openLeagueAdd}>추가</Button>
-          </Box>
-
-          {leagues.length === 0 ? (
-            <Typography sx={{ color: '#999', textAlign: 'center', py: 2, fontSize: '0.85rem' }}>등록된 리그가 없습니다.</Typography>
-          ) : (
-            <>
-              {(expandLeagues ? leagues : leagues.slice(0, 3)).map(league => (
-                <Box key={league.id} sx={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  py: 1, px: 1.5, borderRadius: 2, mb: 0.5, bgcolor: '#F5F7FA',
-                }}>
-                  <Box>
-                    <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
-                      {league.leagueName || `${clubName} 리그`}
-                    </Typography>
-                    <Typography sx={{ fontSize: '0.8rem', color: '#666' }}>
-                      {league.startDate} ~ {league.endDate}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', flexShrink: 0 }}>
-                    <IconButton size="small" onClick={() => openLeagueEdit(league)}>
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => deleteLeague(league)}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </Box>
-              ))}
-              {leagues.length > 3 && (
-                <Button size="small" fullWidth onClick={() => setExpandLeagues(p => !p)}
-                  sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
-                  {expandLeagues ? '접기' : `나머지 ${leagues.length - 3}개 더보기`}
-                </Button>
-              )}
-            </>
-          )}
-        </Paper>
-
-        {/* 3. 권한 관리 (관리자+마스터) */}
-        {(isAdmin || isMaster) && (() => {
-          const filteredUsers = allowedUsers.filter(u => u.club === clubName);
-          return (
-        <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <SecurityIcon sx={{ color: '#1565C0', fontSize: 20 }} />
-              <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '1rem' }}>권한 관리</Typography>
-              {filteredUsers.length > 0 && <Chip label={`${filteredUsers.length}명`} size="small"
-                sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#E3F2FD', color: '#1565C0' }} />}
-            </Box>
-            {(isAdmin || isMaster) && <Button size="small" startIcon={<AddIcon />} onClick={() => setPermDialog(true)}>추가</Button>}
-          </Box>
-
-          {filteredUsers.length === 0 ? (
-            <Typography sx={{ color: '#999', textAlign: 'center', py: 2, fontSize: '0.85rem' }}>등록된 사용자가 없습니다.</Typography>
-          ) : (
-            <>
-              {(expandPerms ? filteredUsers : filteredUsers.slice(0, 3)).map((u) => (
-                <Box key={`${u.role}-${u.emailKey}`} sx={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  py: 0.8, px: 1.5, borderRadius: 2, mb: 0.5,
-                  bgcolor: roleBg[u.role] || '#F5F7FA',
-                  borderLeft: `4px solid ${roleColor[u.role]}`,
-                }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: '#333' }}>{u.name}</Typography>
-                    <Chip label={roleLabel[u.role]} size="small"
-                      sx={{ fontSize: '0.7rem', height: 22, bgcolor: roleColor[u.role], color: 'white', fontWeight: 'bold' }} />
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    {canEditRole(u.role) && (
-                      <IconButton size="small" sx={{ color: '#90A4AE' }} onClick={() => openEditPerm(u)}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                    {(isAdmin || isMaster) && (
-                      <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => removePermission(u)}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </Box>
-                </Box>
-              ))}
-              {filteredUsers.length > 3 && (
-                <Button size="small" fullWidth onClick={() => setExpandPerms(p => !p)}
-                  sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
-                  {expandPerms ? '접기' : `나머지 ${filteredUsers.length - 3}명 더보기`}
-                </Button>
-              )}
-            </>
-          )}
-        </Paper>
-          );
-        })()}
-
-        {/* 4. 선수 관리 (운영진 이상) */}
+        {/* 2. 선수 관리 (운영진 이상) — 경기일 관리 다음 배치 */}
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <PeopleIcon sx={{ color: '#1565C0', fontSize: 20 }} />
               <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '1rem' }}>선수 관리</Typography>
-              <Chip label={`${players.length}명`} size="small"
-                sx={{ fontSize: '0.75rem', height: 22, bgcolor: '#E3F2FD', color: '#1565C0' }} />
+              <Chip
+                label={`${players.length}명`}
+                size="small"
+                clickable
+                onClick={() => setMemberListDialog(true)}
+                title="회원 명단 상세 보기"
+                sx={{
+                  fontSize: '0.75rem', height: 24, fontWeight: 800,
+                  bgcolor: '#1565C0', color: 'white',
+                  '&:hover': { bgcolor: '#0D47A1' },
+                }}
+              />
             </Box>
           </Box>
 
@@ -2243,6 +2436,112 @@ export default function AdminPage() {
           })()}
         </Paper>
 
+        {/* 3. 리그 관리 (3개 미리보기) */}
+        <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <EmojiEventsIcon sx={{ color: '#1565C0', fontSize: 20 }} />
+              <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '1rem' }}>리그 관리</Typography>
+              {leagues.length > 0 && <Chip label={`${leagues.length}개`} size="small"
+                sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#E3F2FD', color: '#1565C0' }} />}
+            </Box>
+            <Button size="small" startIcon={<AddIcon />} onClick={openLeagueAdd}>추가</Button>
+          </Box>
+
+          {leagues.length === 0 ? (
+            <Typography sx={{ color: '#999', textAlign: 'center', py: 2, fontSize: '0.85rem' }}>등록된 리그가 없습니다.</Typography>
+          ) : (
+            <>
+              {(expandLeagues ? leagues : leagues.slice(0, 3)).map(league => (
+                <Box key={league.id} sx={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  py: 1, px: 1.5, borderRadius: 2, mb: 0.5, bgcolor: '#F5F7FA',
+                }}>
+                  <Box>
+                    <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
+                      {league.leagueName || `${clubName} 리그`}
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.8rem', color: '#666' }}>
+                      {league.startDate} ~ {league.endDate}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                    <IconButton size="small" onClick={() => openLeagueEdit(league)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => deleteLeague(league)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                </Box>
+              ))}
+              {leagues.length > 3 && (
+                <Button size="small" fullWidth onClick={() => setExpandLeagues(p => !p)}
+                  sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
+                  {expandLeagues ? '접기' : `나머지 ${leagues.length - 3}개 더보기`}
+                </Button>
+              )}
+            </>
+          )}
+        </Paper>
+
+        {/* 4. 권한 관리 (관리자+마스터) */}
+        {(isAdmin || isMaster) && (() => {
+          const filteredUsers = allowedUsers.filter(u => u.club === clubName);
+          return (
+        <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <SecurityIcon sx={{ color: '#1565C0', fontSize: 20 }} />
+              <Typography sx={{ fontWeight: 'bold', color: '#1565C0', fontSize: '1rem' }}>권한 관리</Typography>
+              {filteredUsers.length > 0 && <Chip label={`${filteredUsers.length}명`} size="small"
+                sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#E3F2FD', color: '#1565C0' }} />}
+            </Box>
+            {(isAdmin || isMaster) && <Button size="small" startIcon={<AddIcon />} onClick={() => setPermDialog(true)}>추가</Button>}
+          </Box>
+
+          {filteredUsers.length === 0 ? (
+            <Typography sx={{ color: '#999', textAlign: 'center', py: 2, fontSize: '0.85rem' }}>등록된 사용자가 없습니다.</Typography>
+          ) : (
+            <>
+              {(expandPerms ? filteredUsers : filteredUsers.slice(0, 3)).map((u) => (
+                <Box key={`${u.role}-${u.emailKey}`} sx={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  py: 0.8, px: 1.5, borderRadius: 2, mb: 0.5,
+                  bgcolor: roleBg[u.role] || '#F5F7FA',
+                  borderLeft: `4px solid ${roleColor[u.role]}`,
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: '#333' }}>{u.name}</Typography>
+                    <Chip label={roleLabel[u.role]} size="small"
+                      sx={{ fontSize: '0.7rem', height: 22, bgcolor: roleColor[u.role], color: 'white', fontWeight: 'bold' }} />
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    {canEditRole(u.role) && (
+                      <IconButton size="small" sx={{ color: '#90A4AE' }} onClick={() => openEditPerm(u)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                    {(isAdmin || isMaster) && (
+                      <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => removePermission(u)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Box>
+                </Box>
+              ))}
+              {filteredUsers.length > 3 && (
+                <Button size="small" fullWidth onClick={() => setExpandPerms(p => !p)}
+                  sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
+                  {expandPerms ? '접기' : `나머지 ${filteredUsers.length - 3}명 더보기`}
+                </Button>
+              )}
+            </>
+          )}
+        </Paper>
+          );
+        })()}
+
         {/* 5. 기록 백업 (관리자+마스터) — 하단 배치 */}
         {(isAdmin || isMaster) && (
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2, opacity: 0.95 }}>
@@ -2293,6 +2592,319 @@ export default function AdminPage() {
         )}
 
       </Container>
+
+      {/* 🆕 회원 명단 다이얼로그 */}
+      <Dialog
+        open={memberListDialog}
+        onClose={() => setMemberListDialog(false)}
+        fullWidth maxWidth="md"
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <Box sx={{
+          background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 100%)',
+          py: 2, px: 2.5, display: 'flex', alignItems: 'center', gap: 1.5,
+        }}>
+          <PeopleIcon sx={{ color: 'white', fontSize: 24 }} />
+          <Typography sx={{ color: 'white', fontWeight: 900, fontSize: '1.05rem', flex: 1 }}>
+            회원 명단
+          </Typography>
+          <Chip label={`${memberList.length}명`} size="small"
+            sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 800 }} />
+        </Box>
+        <DialogContent sx={{ px: 2, pt: '16px !important', pb: 1 }}>
+          {/* 정렬 + 검색 */}
+          <Box sx={{ display: 'flex', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
+            <ToggleButtonGroup
+              value={memberSort}
+              exclusive
+              onChange={(_, v) => v && setMemberSort(v)}
+              size="small"
+              sx={{ '& .MuiToggleButton-root': { fontSize: '0.7rem', py: 0.4, px: 0.9 } }}
+            >
+              <ToggleButton value="jersey">등번호</ToggleButton>
+              <ToggleButton value="name">이름</ToggleButton>
+              <ToggleButton value="attend">참석률</ToggleButton>
+              <ToggleButton value="lastAttend">최근참석</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+          <TextField
+            fullWidth size="small"
+            placeholder="이름 검색"
+            value={memberSearch}
+            onChange={(e) => setMemberSearch(e.target.value)}
+            sx={{ mb: 1.5 }}
+          />
+          <Typography sx={{ fontSize: '0.72rem', color: '#666', mb: 0.6, textAlign: 'right' }}>
+            💡 행을 클릭하면 정보를 수정할 수 있습니다 · <b>최근</b>: 마지막 참석일(MM-DD)
+          </Typography>
+
+          {memberLoading ? (
+            <Box display="flex" justifyContent="center" py={3}>
+              <CircularProgress size={28} />
+            </Box>
+          ) : (() => {
+            const filtered = memberList.filter((m) => {
+              if (!memberSearch.trim()) return true;
+              return (m.name || '').toLowerCase().includes(memberSearch.trim().toLowerCase());
+            }).sort((a, b) => {
+              if (memberSort === 'jersey') {
+                const aN = a.jerseyNumber ?? 999;
+                const bN = b.jerseyNumber ?? 999;
+                return aN - bN;
+              }
+              if (memberSort === 'name') return (a.name || '').localeCompare(b.name || '', 'ko');
+              if (memberSort === 'attend') return (b.attendanceRate || 0) - (a.attendanceRate || 0);
+              if (memberSort === 'lastAttend') return (b.lastAttend || '').localeCompare(a.lastAttend || '');
+              return 0;
+            });
+            return (
+              <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: 1, maxHeight: '55vh' }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      {[
+                        { label: '등번호', w: 48 },
+                        { label: '이름', w: 0 },
+                        { label: '포지션', w: 0 },
+                        { label: '출생', w: 42 },
+                        { label: '키/몸무게', w: 72 },
+                        { label: '실력', w: 44 },
+                        { label: '참석률', w: 52 },
+                        { label: '최근', w: 56 },
+                      ].map((col) => (
+                        <TableCell
+                          key={col.label}
+                          sx={{
+                            bgcolor: '#1565C0', color: 'white', fontWeight: 900,
+                            fontSize: '0.72rem', py: 0.8, px: 0.6,
+                            whiteSpace: 'nowrap', textAlign: 'center',
+                            width: col.w || 'auto',
+                          }}
+                        >
+                          {col.label}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {filtered.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} align="center" sx={{ py: 3, color: '#999' }}>
+                          회원이 없습니다
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filtered.map((m) => (
+                        <TableRow
+                          key={`${m.emailKey || m.name}`}
+                          onClick={() => setPlayerEditDialog({
+                            ...m,
+                            key: m.registeredPlayerKey || '',
+                          })}
+                          sx={{
+                            cursor: 'pointer',
+                            bgcolor: m.source === 'google' ? '#F1F8E9' : 'white',
+                            '&:hover': { bgcolor: m.source === 'google' ? '#E8F5E9' : '#F5F5F7' },
+                          }}
+                        >
+                          <TableCell sx={{
+                            fontWeight: 900, color: '#1565C0',
+                            fontSize: '0.82rem', textAlign: 'center',
+                            py: 0.6, px: 0.6,
+                          }}>
+                            {m.jerseyNumber != null ? m.jerseyNumber : '-'}
+                          </TableCell>
+                          <TableCell sx={{
+                            fontWeight: 700, fontSize: '0.82rem',
+                            py: 0.6, px: 0.6,
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {m.name}
+                          </TableCell>
+                          <TableCell sx={{
+                            fontSize: '0.76rem', textAlign: 'center',
+                            py: 0.6, px: 0.6,
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {m.position || '-'}{m.subPosition ? `/${m.subPosition}` : ''}
+                          </TableCell>
+                          <TableCell sx={{
+                            fontSize: '0.76rem', textAlign: 'center',
+                            py: 0.6, px: 0.4,
+                          }}>
+                            {m.birthYear ? `${String(m.birthYear).slice(-2)}년` : '-'}
+                          </TableCell>
+                          <TableCell sx={{
+                            fontSize: '0.72rem', textAlign: 'center',
+                            py: 0.6, px: 0.4,
+                            color: '#666',
+                          }}>
+                            {m.height || m.weight ? `${m.height || '-'}/${m.weight || '-'}` : '-'}
+                          </TableCell>
+                          <TableCell sx={{
+                            fontSize: '0.76rem', textAlign: 'center',
+                            py: 0.6, px: 0.4,
+                          }}>
+                            {m.skill || '-'}
+                          </TableCell>
+                          <TableCell sx={{
+                            fontSize: '0.76rem', textAlign: 'center',
+                            py: 0.6, px: 0.4,
+                            fontWeight: 700,
+                            color: m.attendanceRate >= 50 ? '#2E7D32' : '#888',
+                          }}>
+                            {m.attendanceRate ? `${Math.round(m.attendanceRate)}%` : '-'}
+                          </TableCell>
+                          <TableCell sx={{
+                            fontSize: '0.7rem', textAlign: 'center',
+                            py: 0.6, px: 0.4,
+                            color: '#888',
+                          }}>
+                            {m.lastAttend ? m.lastAttend.slice(5) : '-'}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            );
+          })()}
+
+          {/* 범례 */}
+          <Box sx={{ display: 'flex', gap: 1.5, mt: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+              <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: '#F1F8E9', border: '1px solid #C5E1A5' }} />
+              <Typography sx={{ fontSize: '0.68rem', color: '#666' }}>가입 회원</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+              <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: 'white', border: '1px solid #E0E0E0' }} />
+              <Typography sx={{ fontSize: '0.68rem', color: '#666' }}>수동 등록</Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 2, pb: 2 }}>
+          <Button onClick={() => setMemberListDialog(false)} sx={{ borderRadius: 2, fontWeight: 700 }}>
+            닫기
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🆕 팀 삭제 2단계 확인 다이얼로그 */}
+      <Dialog
+        open={!!deleteClubDialog}
+        onClose={() => setDeleteClubDialog(null)}
+        fullWidth maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <Box sx={{
+          background: 'linear-gradient(135deg, #C62828 0%, #B71C1C 100%)',
+          py: 2.2, px: 2.5, textAlign: 'center',
+        }}>
+          <Typography sx={{ fontSize: '1.6rem', mb: 0.3 }}>⚠️</Typography>
+          <Typography sx={{ color: 'white', fontWeight: 900, fontSize: '1.05rem' }}>
+            팀 삭제 {deleteClubDialog?.step === 2 ? '(최종 확인)' : ''}
+          </Typography>
+        </Box>
+        <DialogContent sx={{ pt: '20px !important', px: 3, pb: 2 }}>
+          {deleteClubDialog && (
+            <Box>
+              {deleteClubDialog.step === 1 ? (
+                <>
+                  <Box sx={{
+                    p: 1.8, mb: 2, borderRadius: 2,
+                    bgcolor: '#FFEBEE', border: '1px solid #FFCDD2',
+                  }}>
+                    <Typography sx={{ fontWeight: 900, fontSize: '1.05rem', color: '#B71C1C', textAlign: 'center' }}>
+                      {deleteClubDialog.club.name}
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.72rem', color: '#C62828', textAlign: 'center', mt: 0.3 }}>
+                      {deleteClubDialog.club.type === 'football' ? '축구' : '풋살'}
+                      {deleteClubDialog.club.region ? ` · ${deleteClubDialog.club.region}` : ''}
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontSize: '0.88rem', color: '#333', mb: 1.5 }}>
+                    이 팀을 삭제하시겠습니까?
+                  </Typography>
+                  <Box sx={{
+                    p: 1.5, borderRadius: 2, bgcolor: '#FFF8E1',
+                    border: '1px solid #FFE082', mb: 1,
+                  }}>
+                    <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, color: '#E65100', mb: 0.3 }}>
+                      💾 안전 삭제 (복원 가능)
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.72rem', color: '#6D4C41', lineHeight: 1.5 }}>
+                      팀 등록 정보만 "삭제된 팀" 목록으로 이동합니다.<br />
+                      선수/경기 기록은 그대로 유지되며, 언제든지 복원할 수 있습니다.
+                    </Typography>
+                  </Box>
+                </>
+              ) : (
+                <>
+                  <Typography sx={{ fontSize: '1rem', fontWeight: 800, color: '#C62828', mb: 1.5, textAlign: 'center' }}>
+                    정말 삭제하시겠습니까?
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.85rem', color: '#555', mb: 2, textAlign: 'center' }}>
+                    <b>{deleteClubDialog.club.name}</b> 팀이 "삭제된 팀"<br />
+                    목록으로 이동합니다.
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.78rem', color: '#888', mb: 1 }}>
+                    확인을 위해 팀 이름을 입력하세요:
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    autoFocus
+                    placeholder={deleteClubDialog.club.name}
+                    value={deleteClubDialog.confirmText}
+                    onChange={(e) => setDeleteClubDialog(d => ({ ...d, confirmText: e.target.value }))}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 2,
+                        '& fieldset': { borderColor: '#EF9A9A' },
+                        '&.Mui-focused fieldset': { borderColor: '#C62828' },
+                      },
+                    }}
+                  />
+                </>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button
+            onClick={() => setDeleteClubDialog(null)}
+            sx={{ borderRadius: 2, color: '#666', fontWeight: 700 }}
+          >
+            취소
+          </Button>
+          {deleteClubDialog?.step === 1 ? (
+            <Button
+              variant="contained" color="error"
+              onClick={() => setDeleteClubDialog(d => ({ ...d, step: 2 }))}
+              sx={{
+                borderRadius: 2, px: 3, fontWeight: 800,
+                bgcolor: '#C62828', '&:hover': { bgcolor: '#B71C1C' },
+              }}
+            >
+              다음
+            </Button>
+          ) : (
+            <Button
+              variant="contained" color="error"
+              disabled={deleteClubDialog?.confirmText !== deleteClubDialog?.club?.name}
+              onClick={confirmDeleteClub}
+              sx={{
+                borderRadius: 2, px: 3, fontWeight: 800,
+                bgcolor: '#C62828', '&:hover': { bgcolor: '#B71C1C' },
+                '&.Mui-disabled': { bgcolor: '#E0E0E0', color: '#999' },
+              }}
+            >
+              삭제
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
 
       {/* 🆕 가입 신청 승인 다이얼로그 (B3) */}
       <Dialog open={!!joinRequestDialog} onClose={() => setJoinRequestDialog(null)} fullWidth maxWidth="xs"
@@ -2470,6 +3082,60 @@ export default function AdminPage() {
                   ))}
                 </Box>
               </Box>
+
+              {/* 🆕 개인정보 (가입 회원만) */}
+              {playerEditDialog.emailKey && (
+                <>
+                  <Divider sx={{ my: 0.5 }} />
+                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#7B1FA2', letterSpacing: 0.3 }}>
+                    👤 개인정보 (가입 회원)
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1.2 }}>
+                    <TextField
+                      label="출생년도"
+                      size="small"
+                      type="number"
+                      placeholder="예: 1990"
+                      value={playerEditDialog.birthYear || ''}
+                      onChange={e => setPlayerEditDialog(p => ({ ...p, birthYear: e.target.value }))}
+                      inputProps={{ min: 1950, max: new Date().getFullYear() }}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    />
+                    <FormControl size="small">
+                      <InputLabel>실력</InputLabel>
+                      <Select
+                        label="실력"
+                        value={playerEditDialog.skill || ''}
+                        onChange={e => setPlayerEditDialog(p => ({ ...p, skill: e.target.value }))}
+                        sx={{ borderRadius: 2 }}
+                      >
+                        <MenuItem value="">-</MenuItem>
+                        {['상', '상-중', '중', '중-하', '하', '하하'].map(s => (
+                          <MenuItem key={s} value={s}>{s}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <TextField
+                      label="키 (cm)"
+                      size="small"
+                      type="number"
+                      placeholder="175"
+                      value={playerEditDialog.height || ''}
+                      onChange={e => setPlayerEditDialog(p => ({ ...p, height: e.target.value }))}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    />
+                    <TextField
+                      label="몸무게 (kg)"
+                      size="small"
+                      type="number"
+                      placeholder="70"
+                      value={playerEditDialog.weight || ''}
+                      onChange={e => setPlayerEditDialog(p => ({ ...p, weight: e.target.value }))}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    />
+                  </Box>
+                </>
+              )}
             </Box>
           )}
         </DialogContent>

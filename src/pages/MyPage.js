@@ -712,19 +712,36 @@ export default function MyPage() {
     return history;
   }, [weeklyStandings, userName, rankThreshold, currentRank]);
 
-  const graphContainerRef = useRef(null);
   const fgRef = useRef(null);
-  const [graphWidth, setGraphWidth] = useState(300);
+  const [graphWidth, setGraphWidth] = useState(0);
+  // 🆕 Callback ref: DOM에 attach되는 순간 setState 트리거 → useEffect 확실히 실행
+  const [graphContainerEl, setGraphContainerEl] = useState(null);
+  const graphContainerRef = useCallback((el) => {
+    setGraphContainerEl(el);
+  }, []);
   const MIN_GAMES = 5;
 
+  // ResizeObserver + rAF 으로 컨테이너 너비 정확히 추적
   useEffect(() => {
+    if (!graphContainerEl) return;
+    let rafId = null;
     const measure = () => {
-      if (graphContainerRef.current) setGraphWidth(graphContainerRef.current.offsetWidth);
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const w = graphContainerEl.clientWidth;
+        if (w > 0) setGraphWidth(w);
+      });
     };
     measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(graphContainerEl);
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [networkGraph]);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [graphContainerEl]);
 
   const graphData = useMemo(() => {
     if (!networkGraph) return null;
@@ -1682,8 +1699,17 @@ export default function MyPage() {
                 {MIN_GAMES}경기 이상 함께한 선수 연결 · 드래그/핀치로 탐색
               </Typography>
             </Box>
-            <Box ref={graphContainerRef} sx={{ bgcolor: '#ffffff' }}>
-              {graphWidth > 0 && (
+            <Box
+              ref={graphContainerRef}
+              sx={{
+                width: '100%',
+                bgcolor: '#ffffff',
+                overflow: 'hidden',
+                position: 'relative',
+                height: 420,
+              }}
+            >
+              {graphWidth > 0 ? (
                 <ForceGraph2D
                   ref={fgRef}
                   graphData={graphData}
@@ -1724,6 +1750,14 @@ export default function MyPage() {
                   cooldownTicks={200}
                   onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
                 />
+              ) : (
+                <Box sx={{
+                  position: 'absolute', inset: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#bbb', fontSize: '0.85rem',
+                }}>
+                  관계도 로딩 중...
+                </Box>
               )}
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, py: 1.2, flexWrap: 'wrap' }}>
