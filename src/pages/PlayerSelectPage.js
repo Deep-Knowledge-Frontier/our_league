@@ -273,6 +273,7 @@ export default function PlayerSelectPage() {
   // 해당 경기일에 이미 기록된 경기 결과가 있는지 (DailyResultsBackup 체크)
   const [hasMatchResults, setHasMatchResults] = useState(false);
   const [swapMatch, setSwapMatch] = useState(null);  // index of match being swapped
+  const [matchOrderEditMode, setMatchOrderEditMode] = useState(false); // 🆕 순서 변경 모드 (실수 방지)
 
   // 포메이션 관리
   const [clubType, setClubType] = useState('futsal');
@@ -607,17 +608,17 @@ export default function PlayerSelectPage() {
     if (picked.length < 2) { alert('최소 2명 이상 선택해주세요.'); return; }
     const result = snakeDraft(picked, teamCount, statsMap);
     const newTeams = { A: result[0] || [], B: result[1] || [], C: teamCount === 3 ? (result[2] || []) : [] };
+    const newKeyPop = pickTwoRandom(picked);
     setTeams(newTeams);
-    setKeyPop(pickTwoRandom(picked));
-    if (matchOrder.length === 0) {
-      const order = generateDefaultMatchOrder(teamCount);
-      setMatchOrder(order);
-    }
+    setKeyPop(newKeyPop);
+    const newOrder = matchOrder.length === 0 ? generateDefaultMatchOrder(teamCount) : matchOrder;
+    if (matchOrder.length === 0) setMatchOrder(newOrder);
+
     // 팀별 포메이션 자동 배치
     const fmId = clubFormation || getDefaultFormation(clubType);
     const fmDef = getFormations(clubType)[fmId];
+    const newTf = {};
     if (fmDef) {
-      const newTf = {};
       ['A', 'B', ...(teamCount === 3 ? ['C'] : [])].forEach(code => {
         const teamPlayers = newTeams[code] || [];
         if (teamPlayers.length > 0) {
@@ -625,8 +626,34 @@ export default function PlayerSelectPage() {
         }
       });
       setTeamFormations(newTf);
-      set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`), newTf);
     }
+
+    // 🆕 팀 로스터 + 포메이션 + keyPop + MatchOrder 모두 DB에 즉시 저장
+    // QuarterFormation은 이전 편성의 유령 선수 방지 위해 초기화
+    const base = `PlayerSelectionByDate/${clubName}/${dateParam}`;
+    const updates = {
+      [`${base}/AttandPlayer/A`]: newTeams.A,
+      [`${base}/AttandPlayer/B`]: newTeams.B,
+      [`${base}/AttandPlayer/C`]: teamCount === 3 ? newTeams.C : null,
+      [`${base}/keyPop`]: newKeyPop.slice(0, 2),
+      [`${base}/TeamFormation`]: fmDef ? newTf : null,
+      [`${base}/QuarterFormation`]: null, // 이전 쿼터별 배치 정리
+    };
+    if (newOrder.length > 0) updates[`${base}/MatchOrder`] = newOrder;
+    update(ref(db), updates).then(() => {
+      setQuarterFormations({});
+    }).catch((e) => {
+      console.error('자동편성 저장 실패:', e);
+      alert('편성 저장 실패: ' + e.message);
+    });
+
+    // 저장된 팀 스냅샷 갱신 (saveTeams의 rebuild 오작동 방지)
+    savedTeamsRef.current = {
+      A: [...newTeams.A], B: [...newTeams.B],
+      C: teamCount === 3 ? [...newTeams.C] : [],
+    };
+    setHasSavedTeams(true);
+
     setShowResult(true);
     setIsAiOptimized(false);
     setSynergyScores(null);
@@ -637,24 +664,21 @@ export default function PlayerSelectPage() {
     if (picked.length < 2) { alert('최소 2명 이상 선택해주세요.'); return; }
 
     setAiOptimizing(true);
-    // setTimeout으로 UI 블로킹 방지
     setTimeout(() => {
-      // 1단계: Snake Draft로 초기 해
       const initial = snakeDraft(picked, teamCount, statsMap);
-      // 2단계: 스왑 최적화
       const { teams: optimized, synergyScores: synScores } = optimizeTeams(initial, teamCount, statsMap, networkData);
       const newTeams = { A: optimized[0] || [], B: optimized[1] || [], C: teamCount === 3 ? (optimized[2] || []) : [] };
+      const newKeyPop = pickTwoRandom(picked);
       setTeams(newTeams);
-      setKeyPop(pickTwoRandom(picked));
-      if (matchOrder.length === 0) {
-        const order = generateDefaultMatchOrder(teamCount);
-        setMatchOrder(order);
-      }
+      setKeyPop(newKeyPop);
+      const newOrder = matchOrder.length === 0 ? generateDefaultMatchOrder(teamCount) : matchOrder;
+      if (matchOrder.length === 0) setMatchOrder(newOrder);
+
       // 포메이션 자동 배치
       const fmId = clubFormation || getDefaultFormation(clubType);
       const fmDef = getFormations(clubType)[fmId];
+      const newTf = {};
       if (fmDef) {
-        const newTf = {};
         ['A', 'B', ...(teamCount === 3 ? ['C'] : [])].forEach(code => {
           const teamPlayers = newTeams[code] || [];
           if (teamPlayers.length > 0) {
@@ -662,14 +686,185 @@ export default function PlayerSelectPage() {
           }
         });
         setTeamFormations(newTf);
-        set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/TeamFormation`), newTf);
       }
+
+      // 🆕 팀 로스터 + 포메이션 + keyPop + MatchOrder 모두 DB에 즉시 저장
+      // QuarterFormation은 이전 편성의 유령 선수 방지 위해 초기화
+      const base = `PlayerSelectionByDate/${clubName}/${dateParam}`;
+      const updates = {
+        [`${base}/AttandPlayer/A`]: newTeams.A,
+        [`${base}/AttandPlayer/B`]: newTeams.B,
+        [`${base}/AttandPlayer/C`]: teamCount === 3 ? newTeams.C : null,
+        [`${base}/keyPop`]: newKeyPop.slice(0, 2),
+        [`${base}/TeamFormation`]: fmDef ? newTf : null,
+        [`${base}/QuarterFormation`]: null,
+      };
+      if (newOrder.length > 0) updates[`${base}/MatchOrder`] = newOrder;
+      update(ref(db), updates).then(() => {
+        setQuarterFormations({});
+      }).catch((e) => {
+        console.error('AI 편성 저장 실패:', e);
+        alert('편성 저장 실패: ' + e.message);
+      });
+
+      // 저장된 팀 스냅샷 갱신
+      savedTeamsRef.current = {
+        A: [...newTeams.A], B: [...newTeams.B],
+        C: teamCount === 3 ? [...newTeams.C] : [],
+      };
+      setHasSavedTeams(true);
+
       setShowResult(true);
       setIsAiOptimized(true);
       setSynergyScores(synScores);
       setAiOptimizing(false);
     }, 50);
   }, [selectedPlayers, teamCount, statsMap, networkData, matchOrder, generateDefaultMatchOrder, clubFormation, clubType, clubName, dateParam]);
+
+  // 🆕 자동/AI 편성 전 위험 사전 체크 (경기 기록 / 드래프트 확정 / 포메이션 공개 중)
+  const requestRunDraft = useCallback(async (mode) => {
+    if (!canEdit) return;
+    const picked = Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k);
+    if (picked.length < 2) { alert('최소 2명 이상 선택해주세요.'); return; }
+
+    const risks = [];
+    // 1) 경기 기록
+    if (hasMatchResults) {
+      risks.push('이미 경기 기록이 있습니다. 재편성 시 기록과 팀 구성이 불일치할 수 있습니다.');
+    }
+    // 2) 주장 드래프트 상태
+    try {
+      const draftSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/Draft`));
+      if (draftSnap.exists()) {
+        const d = draftSnap.val();
+        if (d?.status === 'active' || d?.status === 'review') {
+          risks.push('주장 드래프트가 진행 중입니다. 재편성하면 진행 중인 드래프트가 초기화됩니다.');
+        } else if (d?.status === 'confirmed') {
+          risks.push('주장 드래프트로 확정된 팀 구성이 있습니다. 재편성하면 주장이 선정한 구성이 초기화됩니다.');
+        }
+      }
+    } catch {}
+    // 3) 포메이션 공개 중
+    if (formationOpen) {
+      risks.push('포메이션이 선수들에게 공개 중입니다. 재편성하면 선수들이 보는 포메이션이 바뀝니다.');
+    }
+
+    if (risks.length > 0) {
+      setRedeployConfirmDialog({ mode, risks });
+    } else {
+      // 위험 없으면 바로 실행
+      if (mode === 'ai') runAiDraft();
+      else runDraft();
+    }
+  }, [canEdit, selectedPlayers, hasMatchResults, formationOpen, clubName, dateParam, runDraft, runAiDraft]);
+
+  // 🆕 팀 수 변경 요청 — 안전 검증 후 변경
+  const requestTeamCountChange = useCallback(async (newCount) => {
+    if (!canEdit) return;
+    if (newCount === teamCount) return;
+
+    // 🔴 HARD BLOCK 1: 경기 기록이 있는 경우
+    if (hasMatchResults) {
+      alert(
+        '⚠️ 이미 경기 기록이 저장되어 있어 팀 수를 변경할 수 없습니다.\n\n' +
+        '팀 수를 변경하려면 먼저 경기 기록을 삭제해주세요:\n' +
+        '→ 아래 "경기 기록 삭제" 버튼 이용'
+      );
+      return;
+    }
+
+    // 🔴 HARD BLOCK 2: 주장 드래프트 진행 중/확정 상태
+    try {
+      const draftSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/Draft`));
+      if (draftSnap.exists()) {
+        const d = draftSnap.val();
+        if (['active', 'review', 'confirmed'].includes(d?.status)) {
+          const stateLabel = d.status === 'confirmed' ? '확정된' : '진행 중인';
+          alert(
+            `⚠️ 주장 드래프트가 ${stateLabel} 상태입니다.\n\n` +
+            '팀 수를 변경하려면 먼저 드래프트를 취소해주세요:\n' +
+            '→ 홈 > 드래프트 입장 > 취소'
+          );
+          return;
+        }
+      }
+    } catch {}
+
+    // 🟠 SOFT CHECK: 편성됐거나 포메이션 공개 중이면 확인 다이얼로그
+    const softWarnings = [];
+    const hasAssignedTeams = hasSavedTeams
+      || teams.A.length > 0 || teams.B.length > 0 || teams.C.length > 0;
+    if (hasAssignedTeams) {
+      if (newCount === 2 && teamCount === 3 && teams.C.length > 0) {
+        softWarnings.push(`C팀 선수 ${teams.C.length}명이 편성에서 제거됩니다. 다시 편성하면 A/B팀에 재분배됩니다.`);
+      }
+      if (newCount === 3 && teamCount === 2) {
+        softWarnings.push('기존 A/B팀 구성은 유지되지만 C팀은 비어있습니다. 3팀 편성을 위해 "자동/AI 편성"을 다시 실행해야 합니다.');
+      }
+      softWarnings.push(`경기 순서가 ${newCount}팀용으로 재설정됩니다.`);
+      if (Object.keys(teamFormations).length > 0) {
+        softWarnings.push('기존 포메이션 데이터가 정리됩니다.');
+      }
+    }
+    if (formationOpen) {
+      softWarnings.push('포메이션이 선수들에게 공개 중입니다. 변경 시 선수들이 보는 구성이 바뀝니다.');
+    }
+
+    if (softWarnings.length > 0) {
+      setTeamCountChangeDialog({ newCount, currentCount: teamCount, softWarnings });
+      return;
+    }
+
+    // 빈 상태 → 즉시 변경
+    setTeamCount(newCount);
+  }, [canEdit, teamCount, hasMatchResults, teams, hasSavedTeams, formationOpen, teamFormations, clubName, dateParam]);
+
+  // 🆕 팀 수 변경 확정 실행
+  const confirmTeamCountChange = useCallback(async () => {
+    const dlg = teamCountChangeDialog;
+    if (!dlg) return;
+    const { newCount, currentCount } = dlg;
+
+    try {
+      const base = `PlayerSelectionByDate/${clubName}/${dateParam}`;
+      const updates = {};
+
+      // 3→2: C팀 관련 모든 데이터 제거
+      if (newCount === 2 && currentCount === 3) {
+        updates[`${base}/AttandPlayer/C`] = null;
+        updates[`${base}/TeamFormation/C`] = null;
+        updates[`${base}/QuarterFormation/C`] = null;
+        updates[`${base}/TeamCaptains/C`] = null;
+      }
+
+      // matchOrder 재생성
+      const newOrder = generateDefaultMatchOrder(newCount);
+      updates[`${base}/MatchOrder`] = newOrder;
+
+      await update(ref(db), updates);
+
+      // 로컬 state 업데이트
+      setTeamCount(newCount);
+      setMatchOrder(newOrder);
+      if (newCount === 2 && currentCount === 3) {
+        setTeams(prev => ({ ...prev, C: [] }));
+        setTeamFormations(prev => {
+          const next = { ...prev };
+          delete next.C;
+          return next;
+        });
+        setQuarterFormations(prev => {
+          const next = { ...prev };
+          delete next.C;
+          return next;
+        });
+        savedTeamsRef.current.C = [];
+      }
+      setTeamCountChangeDialog(null);
+    } catch (e) {
+      alert('팀 수 변경 실패: ' + e.message);
+    }
+  }, [teamCountChangeDialog, clubName, dateParam, generateDefaultMatchOrder]);
 
   const saveTeams = useCallback(async (teamsToSave, keyPopToSave, cb) => {
     const base = `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`;
@@ -776,6 +971,10 @@ export default function PlayerSelectPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [quarterDecreaseDialog, setQuarterDecreaseDialog] = useState(null); // { targetCount, lostQuarters }
+  // 🆕 자동/AI 편성 전 재편성 확인 다이얼로그
+  const [redeployConfirmDialog, setRedeployConfirmDialog] = useState(null); // { mode: 'draft'|'ai', risks: [...] }
+  // 🆕 팀 수 변경 확인 다이얼로그
+  const [teamCountChangeDialog, setTeamCountChangeDialog] = useState(null); // { newCount, currentCount, softWarnings: [...] }
   const [hasDeletedBackup, setHasDeletedBackup] = useState(false);
 
   // 삭제: 백업 후 삭제
@@ -939,7 +1138,12 @@ export default function PlayerSelectPage() {
               </Box>
             )}
             <Typography sx={{ fontSize: '0.85rem', color: '#666' }}>팀수:</Typography>
-            <ToggleButtonGroup value={teamCount} exclusive onChange={(e, v) => v && setTeamCount(v)} size="small">
+            <ToggleButtonGroup
+              value={teamCount}
+              exclusive
+              onChange={(e, v) => { if (v) requestTeamCountChange(v); }}
+              size="small"
+            >
               <ToggleButton value={2} sx={{ px: 1.5, py: 0.3, fontSize: '0.8rem' }}>2팀</ToggleButton>
               <ToggleButton value={3} sx={{ px: 1.5, py: 0.3, fontSize: '0.8rem' }}>3팀</ToggleButton>
             </ToggleButtonGroup>
@@ -966,10 +1170,10 @@ export default function PlayerSelectPage() {
         {canEdit && (
           <>
             <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-              <Button variant="contained" fullWidth startIcon={<ShuffleIcon />} onClick={runDraft}
+              <Button variant="contained" fullWidth startIcon={<ShuffleIcon />} onClick={() => requestRunDraft('draft')}
                 sx={{ borderRadius: 2, fontWeight: 'bold', bgcolor: '#1565C0' }}>자동 편성</Button>
               <Button variant="contained" fullWidth startIcon={aiOptimizing ? <CircularProgress size={18} color="inherit" /> : <AutoFixHighIcon />}
-                onClick={runAiDraft} disabled={aiOptimizing}
+                onClick={() => requestRunDraft('ai')} disabled={aiOptimizing}
                 sx={{
                   borderRadius: 2, fontWeight: 'bold', color: 'white',
                   background: 'linear-gradient(135deg, #7B1FA2, #4A148C)',
@@ -1009,7 +1213,7 @@ export default function PlayerSelectPage() {
             {canEdit && !editMode && (
               <Box sx={{ display: 'flex', gap: 0.5 }}>
                 <IconButton size="small" onClick={startEdit}><EditIcon fontSize="small" /></IconButton>
-                <IconButton size="small" onClick={runDraft}><ShuffleIcon fontSize="small" /></IconButton>
+                <IconButton size="small" onClick={() => requestRunDraft('draft')}><ShuffleIcon fontSize="small" /></IconButton>
               </Box>
             )}
             {editMode && (
@@ -1129,36 +1333,66 @@ export default function PlayerSelectPage() {
           {!editMode && matchOrder.length > 0 && teamCount > 2 && (
             <Box sx={{ mt: 2 }}>
               <Divider sx={{ mb: 1.5 }} />
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, gap: 0.5 }}>
                 <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#333', flex: 1 }}>
                   경기 순서
                 </Typography>
                 {canEdit && (
-                  <Chip label="초기화" size="small" onClick={() => {
-                    const order = generateDefaultMatchOrder(teamCount);
-                    setMatchOrder(order);
-                    setSwapMatch(null);
-                    set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/MatchOrder`), order);
-                  }} sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600 }} />
+                  <>
+                    {/* 🆕 순서변경 / 완료 토글 */}
+                    <Button
+                      size="small"
+                      variant={matchOrderEditMode ? 'contained' : 'outlined'}
+                      startIcon={<SwapHorizIcon sx={{ fontSize: '16px !important' }} />}
+                      onClick={() => {
+                        setMatchOrderEditMode(v => !v);
+                        setSwapMatch(null);
+                      }}
+                      sx={{
+                        fontSize: '0.72rem', fontWeight: 700, py: 0.3, px: 1.2, minWidth: 'auto',
+                        borderRadius: 2,
+                        bgcolor: matchOrderEditMode ? '#FF9800' : 'transparent',
+                        color: matchOrderEditMode ? 'white' : '#FF9800',
+                        borderColor: '#FF9800',
+                        '&:hover': {
+                          bgcolor: matchOrderEditMode ? '#F57C00' : '#FFF3E0',
+                          borderColor: '#F57C00',
+                        },
+                      }}
+                    >
+                      {matchOrderEditMode ? '완료' : '순서변경'}
+                    </Button>
+                    {matchOrderEditMode && (
+                      <Chip label="초기화" size="small" onClick={() => {
+                        if (!window.confirm('경기 순서를 기본값으로 초기화하시겠습니까?')) return;
+                        const order = generateDefaultMatchOrder(teamCount);
+                        setMatchOrder(order);
+                        setSwapMatch(null);
+                        set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/MatchOrder`), order);
+                      }} sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600, bgcolor: '#FFE0B2', color: '#E65100' }} />
+                    )}
+                  </>
                 )}
               </Box>
-              {canEdit && swapMatch !== null && (
-                <Typography sx={{ fontSize: '0.73rem', color: '#FF9800', fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
-                  {swapMatch + 1}경기를 교체할 경기를 터치하세요
+              {matchOrderEditMode && (
+                <Typography sx={{ fontSize: '0.73rem', color: '#E65100', fontWeight: 600, mb: 0.8, textAlign: 'center' }}>
+                  {swapMatch !== null
+                    ? `💡 ${swapMatch + 1}경기와 교체할 경기를 터치하세요`
+                    : '💡 첫 번째 경기를 터치하세요 (변경하려는 경기)'}
                 </Typography>
               )}
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                 {matchOrder.map((match, idx) => {
                   const isSelected = swapMatch === idx;
+                  const clickable = canEdit && matchOrderEditMode;
                   return (
                     <Chip key={idx}
                       label={`${idx + 1}. ${getTeamShortLabel(match[0])} vs ${getTeamShortLabel(match[1])}`}
                       size="small"
                       onClick={() => {
-                        if (!canEdit) return;
+                        if (!clickable) return; // 🆕 편집 모드일 때만 swap
                         if (swapMatch === null) { setSwapMatch(idx); return; }
                         if (swapMatch === idx) { setSwapMatch(null); return; }
-                        // swap
                         const newOrder = [...matchOrder];
                         [newOrder[swapMatch], newOrder[idx]] = [newOrder[idx], newOrder[swapMatch]];
                         setMatchOrder(newOrder);
@@ -1167,10 +1401,16 @@ export default function PlayerSelectPage() {
                       }}
                       sx={{
                         fontSize: '0.75rem', fontWeight: 600,
-                        bgcolor: isSelected ? '#FFD600' : '#F5F5F5',
+                        bgcolor: isSelected ? '#FFD600' : clickable ? '#FFF8E1' : '#F5F5F5',
                         color: isSelected ? '#333' : '#555',
-                        border: isSelected ? '2px solid #FF9800' : '1px solid #E0E0E0',
-                        cursor: canEdit ? 'pointer' : 'default',
+                        border: isSelected
+                          ? '2px solid #FF9800'
+                          : clickable ? '1px dashed #FFB300' : '1px solid #E0E0E0',
+                        cursor: clickable ? 'pointer' : 'default',
+                        transition: 'all 0.15s',
+                        '&:hover': clickable && !isSelected ? {
+                          bgcolor: '#FFE082', borderColor: '#FF9800',
+                        } : {},
                       }}
                     />
                   );
@@ -1764,6 +2004,128 @@ export default function PlayerSelectPage() {
           )}
         </Paper>
       )}
+
+      {/* 🆕 팀 수 변경 확인 다이얼로그 */}
+      <Dialog
+        open={!!teamCountChangeDialog}
+        onClose={() => setTeamCountChangeDialog(null)}
+        maxWidth="xs" fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900, color: '#E65100', display: 'flex', alignItems: 'center', gap: 1 }}>
+          ⚠️ 팀 수 변경 확인
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5,
+            mb: 2, p: 1.5, borderRadius: 2,
+            bgcolor: '#E3F2FD', border: '1px solid #BBDEFB',
+          }}>
+            <Typography sx={{ fontSize: '1.1rem', fontWeight: 900, color: '#1565C0' }}>
+              {teamCountChangeDialog?.currentCount}팀
+            </Typography>
+            <Typography sx={{ fontSize: '1.2rem', color: '#888' }}>→</Typography>
+            <Typography sx={{ fontSize: '1.1rem', fontWeight: 900, color: '#E65100' }}>
+              {teamCountChangeDialog?.newCount}팀
+            </Typography>
+          </Box>
+
+          <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#E65100', mb: 1 }}>
+            다음 작업이 수행됩니다:
+          </Typography>
+          <Box sx={{
+            p: 1.5, borderRadius: 2, bgcolor: '#FFF8E1',
+            border: '1px solid #FFE082', mb: 1.5,
+          }}>
+            {teamCountChangeDialog?.softWarnings.map((msg, i) => (
+              <Box key={i} sx={{
+                display: 'flex', gap: 0.8, alignItems: 'flex-start',
+                mb: i < teamCountChangeDialog.softWarnings.length - 1 ? 1 : 0,
+              }}>
+                <Typography sx={{ fontSize: '0.85rem', color: '#E65100', flexShrink: 0 }}>•</Typography>
+                <Typography sx={{ fontSize: '0.82rem', color: '#6D4C41', lineHeight: 1.5 }}>
+                  {msg}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+          <Typography sx={{ fontSize: '0.75rem', color: '#888' }}>
+            💡 경기 기록이 있거나 주장 드래프트 진행 중이면 팀 수를 변경할 수 없습니다.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setTeamCountChangeDialog(null)} sx={{ color: '#666', fontWeight: 700 }}>
+            취소
+          </Button>
+          <Button
+            variant="contained"
+            onClick={confirmTeamCountChange}
+            sx={{
+              borderRadius: 2, px: 3, fontWeight: 800,
+              bgcolor: '#E65100', '&:hover': { bgcolor: '#BF360C' },
+            }}
+          >
+            변경하기
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🆕 자동/AI 편성 재편성 확인 다이얼로그 */}
+      <Dialog
+        open={!!redeployConfirmDialog}
+        onClose={() => setRedeployConfirmDialog(null)}
+        maxWidth="xs" fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900, color: '#C62828', display: 'flex', alignItems: 'center', gap: 1 }}>
+          ⚠️ 재편성 확인
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: '0.88rem', mb: 1.5, color: '#333' }}>
+            <b>{redeployConfirmDialog?.mode === 'ai' ? 'AI 편성' : '자동 편성'}</b>을 실행하려고 합니다.
+          </Typography>
+          <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#E65100', mb: 1 }}>
+            다음 사항에 주의하세요:
+          </Typography>
+          <Box sx={{
+            p: 1.5, borderRadius: 2, bgcolor: '#FFF8E1',
+            border: '1px solid #FFE082', mb: 1.5,
+          }}>
+            {redeployConfirmDialog?.risks.map((risk, i) => (
+              <Box key={i} sx={{ display: 'flex', gap: 0.8, alignItems: 'flex-start', mb: i < redeployConfirmDialog.risks.length - 1 ? 1 : 0 }}>
+                <Typography sx={{ fontSize: '0.85rem', color: '#E65100', flexShrink: 0 }}>•</Typography>
+                <Typography sx={{ fontSize: '0.82rem', color: '#6D4C41', lineHeight: 1.5 }}>
+                  {risk}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+          <Typography sx={{ fontSize: '0.78rem', color: '#999' }}>
+            재편성하면 현재 팀 구성이 새 편성으로 덮어씌워집니다.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setRedeployConfirmDialog(null)} sx={{ color: '#666', fontWeight: 700 }}>
+            취소
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={() => {
+              const mode = redeployConfirmDialog?.mode;
+              setRedeployConfirmDialog(null);
+              if (mode === 'ai') runAiDraft();
+              else runDraft();
+            }}
+            sx={{
+              borderRadius: 2, px: 3, fontWeight: 800,
+              bgcolor: '#E65100', '&:hover': { bgcolor: '#BF360C' },
+            }}
+          >
+            재편성 진행
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 쿼터/경기 수 감소 확인 다이얼로그 */}
       <Dialog open={!!quarterDecreaseDialog} onClose={() => setQuarterDecreaseDialog(null)} maxWidth="xs" fullWidth>
