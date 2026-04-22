@@ -273,6 +273,7 @@ export default function PlayerSelectPage() {
   // 해당 경기일에 이미 기록된 경기 결과가 있는지 (DailyResultsBackup 체크)
   const [hasMatchResults, setHasMatchResults] = useState(false);
   const [swapMatch, setSwapMatch] = useState(null);  // index of match being swapped
+  const [matchOrderEditMode, setMatchOrderEditMode] = useState(false); // 🆕 3팀 경기순서 편집 모드 (실수 방지)
 
   // 포메이션 관리
   const [clubType, setClubType] = useState('futsal');
@@ -957,7 +958,34 @@ export default function PlayerSelectPage() {
               </Box>
             )}
             <Typography sx={{ fontSize: '0.85rem', color: '#666' }}>팀수:</Typography>
-            <ToggleButtonGroup value={teamCount} exclusive onChange={(e, v) => v && setTeamCount(v)} size="small">
+            <ToggleButtonGroup
+              value={teamCount}
+              exclusive
+              onChange={(e, v) => {
+                if (!v || v === teamCount) return;
+                setTeamCount(v);
+                // 🆕 경기 순서는 팀수에 따라 다르므로 새 팀수 기준으로 재생성 후 DB 저장
+                const newOrder = generateDefaultMatchOrder(v);
+                setMatchOrder(newOrder);
+                setSwapMatch(null);
+                setMatchOrderEditMode(false);
+                const base = `PlayerSelectionByDate/${clubName}/${dateParam}`;
+                const upd = { [`${base}/MatchOrder`]: newOrder };
+                // 🆕 3팀 -> 2팀 전환: C팀 로스터/포메이션 정리 (teamCount는 C 유무로 복원되므로 AttandPlayer/C 제거가 핵심)
+                if (v === 2) {
+                  upd[`${base}/AttandPlayer/C`] = null;
+                  upd[`${base}/TeamFormation/C`] = null;
+                  setTeams((prev) => ({ ...prev, C: [] }));
+                  setTeamFormations((prev) => {
+                    const next = { ...prev };
+                    delete next.C;
+                    return next;
+                  });
+                }
+                update(ref(db), upd).catch((e) => console.error('팀수 변경 저장 실패:', e));
+              }}
+              size="small"
+            >
               <ToggleButton value={2} sx={{ px: 1.5, py: 0.3, fontSize: '0.8rem' }}>2팀</ToggleButton>
               <ToggleButton value={3} sx={{ px: 1.5, py: 0.3, fontSize: '0.8rem' }}>3팀</ToggleButton>
             </ToggleButtonGroup>
@@ -1147,36 +1175,66 @@ export default function PlayerSelectPage() {
           {!editMode && matchOrder.length > 0 && teamCount > 2 && (
             <Box sx={{ mt: 2 }}>
               <Divider sx={{ mb: 1.5 }} />
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, gap: 0.5 }}>
                 <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#333', flex: 1 }}>
                   경기 순서
                 </Typography>
                 {canEdit && (
-                  <Chip label="초기화" size="small" onClick={() => {
-                    const order = generateDefaultMatchOrder(teamCount);
-                    setMatchOrder(order);
-                    setSwapMatch(null);
-                    set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/MatchOrder`), order);
-                  }} sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600 }} />
+                  <>
+                    {/* 🆕 순서변경 / 완료 토글 — 실수로 순서가 바뀌는 것 방지 */}
+                    <Button
+                      size="small"
+                      variant={matchOrderEditMode ? 'contained' : 'outlined'}
+                      startIcon={<SwapHorizIcon sx={{ fontSize: '16px !important' }} />}
+                      onClick={() => {
+                        setMatchOrderEditMode((v) => !v);
+                        setSwapMatch(null);
+                      }}
+                      sx={{
+                        fontSize: '0.72rem', fontWeight: 700, py: 0.3, px: 1.2, minWidth: 'auto',
+                        borderRadius: 2,
+                        bgcolor: matchOrderEditMode ? '#FF9800' : 'transparent',
+                        color: matchOrderEditMode ? 'white' : '#FF9800',
+                        borderColor: '#FF9800',
+                        '&:hover': {
+                          bgcolor: matchOrderEditMode ? '#F57C00' : '#FFF3E0',
+                          borderColor: '#F57C00',
+                        },
+                      }}
+                    >
+                      {matchOrderEditMode ? '완료' : '순서변경'}
+                    </Button>
+                    {matchOrderEditMode && (
+                      <Chip label="초기화" size="small" onClick={() => {
+                        if (!window.confirm('경기 순서를 기본값으로 초기화하시겠습니까?')) return;
+                        const order = generateDefaultMatchOrder(teamCount);
+                        setMatchOrder(order);
+                        setSwapMatch(null);
+                        set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/MatchOrder`), order);
+                      }} sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600, bgcolor: '#FFE0B2', color: '#E65100' }} />
+                    )}
+                  </>
                 )}
               </Box>
-              {canEdit && swapMatch !== null && (
-                <Typography sx={{ fontSize: '0.73rem', color: '#FF9800', fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
-                  {swapMatch + 1}경기를 교체할 경기를 터치하세요
+              {matchOrderEditMode && (
+                <Typography sx={{ fontSize: '0.73rem', color: '#E65100', fontWeight: 600, mb: 0.8, textAlign: 'center' }}>
+                  {swapMatch !== null
+                    ? `💡 ${swapMatch + 1}경기와 교체할 경기를 터치하세요`
+                    : '💡 순서를 바꿀 경기를 터치하세요'}
                 </Typography>
               )}
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                 {matchOrder.map((match, idx) => {
                   const isSelected = swapMatch === idx;
+                  const clickable = canEdit && matchOrderEditMode;
                   return (
                     <Chip key={idx}
                       label={`${idx + 1}. ${getTeamShortLabel(match[0])} vs ${getTeamShortLabel(match[1])}`}
                       size="small"
                       onClick={() => {
-                        if (!canEdit) return;
+                        if (!clickable) return; // 🆕 편집 모드일 때만 swap
                         if (swapMatch === null) { setSwapMatch(idx); return; }
                         if (swapMatch === idx) { setSwapMatch(null); return; }
-                        // swap
                         const newOrder = [...matchOrder];
                         [newOrder[swapMatch], newOrder[idx]] = [newOrder[idx], newOrder[swapMatch]];
                         setMatchOrder(newOrder);
@@ -1185,10 +1243,16 @@ export default function PlayerSelectPage() {
                       }}
                       sx={{
                         fontSize: '0.75rem', fontWeight: 600,
-                        bgcolor: isSelected ? '#FFD600' : '#F5F5F5',
+                        bgcolor: isSelected ? '#FFD600' : clickable ? '#FFF8E1' : '#F5F5F5',
                         color: isSelected ? '#333' : '#555',
-                        border: isSelected ? '2px solid #FF9800' : '1px solid #E0E0E0',
-                        cursor: canEdit ? 'pointer' : 'default',
+                        border: isSelected
+                          ? '2px solid #FF9800'
+                          : clickable ? '1px dashed #FFB300' : '1px solid #E0E0E0',
+                        cursor: clickable ? 'pointer' : 'default',
+                        transition: 'all 0.15s',
+                        '&:hover': clickable && !isSelected ? {
+                          bgcolor: '#FFE082', borderColor: '#FF9800',
+                        } : {},
                       }}
                     />
                   );
