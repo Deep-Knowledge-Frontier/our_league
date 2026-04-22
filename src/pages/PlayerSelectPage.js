@@ -608,6 +608,15 @@ export default function PlayerSelectPage() {
     const result = snakeDraft(picked, teamCount, statsMap);
     const newTeams = { A: result[0] || [], B: result[1] || [], C: teamCount === 3 ? (result[2] || []) : [] };
     setTeams(newTeams);
+    // 🆕 팀 로스터를 DB에 즉시 저장 (자동 편성 결과가 바로 다른 기기에 반영되도록)
+    {
+      const rosterBase = `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`;
+      update(ref(db), {
+        [`${rosterBase}/A`]: newTeams.A,
+        [`${rosterBase}/B`]: newTeams.B,
+        [`${rosterBase}/C`]: teamCount === 3 ? newTeams.C : null,
+      }).catch((e) => console.error('자동편성 팀 로스터 저장 실패:', e));
+    }
     setKeyPop(pickTwoRandom(picked));
     if (matchOrder.length === 0) {
       const order = generateDefaultMatchOrder(teamCount);
@@ -645,6 +654,15 @@ export default function PlayerSelectPage() {
       const { teams: optimized, synergyScores: synScores } = optimizeTeams(initial, teamCount, statsMap, networkData);
       const newTeams = { A: optimized[0] || [], B: optimized[1] || [], C: teamCount === 3 ? (optimized[2] || []) : [] };
       setTeams(newTeams);
+      // 🆕 팀 로스터를 DB에 즉시 저장 (AI 편성 결과가 바로 다른 기기에 반영되도록)
+      {
+        const rosterBase = `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`;
+        update(ref(db), {
+          [`${rosterBase}/A`]: newTeams.A,
+          [`${rosterBase}/B`]: newTeams.B,
+          [`${rosterBase}/C`]: teamCount === 3 ? newTeams.C : null,
+        }).catch((e) => console.error('AI 편성 팀 로스터 저장 실패:', e));
+      }
       setKeyPop(pickTwoRandom(picked));
       if (matchOrder.length === 0) {
         const order = generateDefaultMatchOrder(teamCount);
