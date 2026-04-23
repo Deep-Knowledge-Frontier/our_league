@@ -361,7 +361,9 @@ function VotePage() {
     if (slots.length < 2) { setOpenAttendMode(false); handleVote(attendDateKey, 'attend'); return; }
     setTimeSlots(slots);
     setStartIdx(0);
-    setEndIdx(Math.min(slots.length - 1, 1));
+    // 🆕 기본값: 첫 시간 ~ 마지막에서 30분 전까지 (마지막 30분 슬롯 제외)
+    // 길이가 2면 (슬롯 1개뿐) 어쩔 수 없이 full 범위 사용
+    setEndIdx(Math.max(1, slots.length - 2));
     setOpenAttendMode(false);
     setOpenAttendTime(true);
   };
