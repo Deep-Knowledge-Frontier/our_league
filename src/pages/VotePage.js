@@ -582,6 +582,13 @@ function VotePage() {
 
                 <Typography variant="body2" sx={{ mb: 2.5, color: 'text.secondary' }}>{renderWeatherLine(weatherInfo)}</Typography>
 
+                {/* 🆕 명단 보기 안내 — Chip 위에 은은한 힌트 */}
+                <Typography sx={{
+                  fontSize: '0.7rem', color: '#999', fontWeight: 500,
+                  mb: 0.6, letterSpacing: 0.2,
+                }}>
+                  👆 탭해서 명단 보기
+                </Typography>
                 <Stack direction="row" justifyContent="center" spacing={1} sx={{ mb: 3 }}>
                   <Chip clickable onClick={() => openNameListDialog(date, 'attend')} label={`참석 ${getCount(date, 'attend')}명`} color="success" variant={myStatus === 'attend' ? 'filled' : 'outlined'} />
                   <Chip clickable onClick={() => openNameListDialog(date, 'absent')} label={`불참 ${getCount(date, 'absent')}명`} color="error" variant={myStatus === 'absent' ? 'filled' : 'outlined'} />
