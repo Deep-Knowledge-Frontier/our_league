@@ -638,14 +638,109 @@ function VotePage() {
         })
       )}
 
-      {/* 참석 모드 선택 */}
-      <Dialog open={openAttendMode} onClose={() => setOpenAttendMode(false)} {...bottomSheetProps}>
-        <DialogTitle sx={{ fontWeight: 'bold' }}>참석</DialogTitle>
-        <DialogContent><DialogContentText>시간을 선택하지 않으면 전체 운동 시간 참석으로 처리됩니다.</DialogContentText></DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenAttendMode(false)} color="inherit">취소</Button>
-          <Button onClick={() => { setOpenAttendMode(false); handleVote(attendDateKey, 'attend'); }} variant="contained" color="success">전체 참석</Button>
-          <Button onClick={openAttendTimeDialog} variant="outlined" color="success">시간 선택</Button>
+      {/* 참석 모드 선택 — 옵션 카드 방식 */}
+      <Dialog open={openAttendMode} onClose={() => setOpenAttendMode(false)} fullWidth maxWidth="xs" {...bottomSheetProps}>
+        <DialogTitle sx={{ textAlign: 'center', pb: 0.5, pt: 2.5 }}>
+          <Typography sx={{ fontSize: '1.6rem', mb: 0.3 }}>🏃</Typography>
+          <Typography sx={{ fontSize: '1.1rem', fontWeight: 800, color: '#1B5E20' }}>
+            참석하기
+          </Typography>
+          <Typography sx={{ fontSize: '0.82rem', color: '#666', mt: 0.5, fontWeight: 500 }}>
+            어떻게 참석하시나요?
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.2 }}>
+            {/* 전체 참석 카드 */}
+            <Box
+              onClick={() => { setOpenAttendMode(false); handleVote(attendDateKey, 'attend'); }}
+              sx={{
+                cursor: 'pointer',
+                borderRadius: 2.5,
+                p: 1.8,
+                background: 'linear-gradient(135deg, #43A047 0%, #2E7D32 100%)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.5,
+                boxShadow: '0 3px 10px rgba(46,125,50,0.3)',
+                transition: 'all 0.18s',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 5px 16px rgba(46,125,50,0.4)',
+                },
+                '&:active': { transform: 'translateY(0)' },
+              }}
+            >
+              <Box sx={{
+                width: 44, height: 44, borderRadius: '50%',
+                bgcolor: 'rgba(255,255,255,0.22)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '1.5rem', flexShrink: 0,
+              }}>
+                ✅
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontSize: '1rem', fontWeight: 800, mb: 0.2 }}>
+                  전체 참석
+                </Typography>
+                <Typography sx={{ fontSize: '0.75rem', opacity: 0.9, lineHeight: 1.4 }}>
+                  운동 시간 전체 함께해요
+                </Typography>
+              </Box>
+              <Typography sx={{ fontSize: '1.3rem', opacity: 0.75, flexShrink: 0 }}>›</Typography>
+            </Box>
+
+            {/* 시간 선택 카드 */}
+            <Box
+              onClick={openAttendTimeDialog}
+              sx={{
+                cursor: 'pointer',
+                borderRadius: 2.5,
+                p: 1.8,
+                bgcolor: 'white',
+                border: '2px solid #E0E0E0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.5,
+                transition: 'all 0.18s',
+                '&:hover': {
+                  borderColor: '#FF9800',
+                  bgcolor: '#FFF8E1',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(255,152,0,0.18)',
+                },
+                '&:active': { transform: 'translateY(0)' },
+              }}
+            >
+              <Box sx={{
+                width: 44, height: 44, borderRadius: '50%',
+                bgcolor: '#FFF3E0',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '1.35rem', flexShrink: 0,
+                border: '1px solid #FFE0B2',
+              }}>
+                ⏱️
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontSize: '1rem', fontWeight: 800, color: '#E65100', mb: 0.2 }}>
+                  시간 선택
+                </Typography>
+                <Typography sx={{ fontSize: '0.75rem', color: '#666', lineHeight: 1.4 }}>
+                  일부 시간만 참석해요
+                </Typography>
+              </Box>
+              <Typography sx={{ fontSize: '1.3rem', color: '#FF9800', opacity: 0.7, flexShrink: 0 }}>›</Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', pb: 2, pt: 0.5 }}>
+          <Button
+            onClick={() => setOpenAttendMode(false)}
+            sx={{ color: '#888', fontWeight: 600, fontSize: '0.88rem' }}
+          >
+            취소
+          </Button>
         </DialogActions>
       </Dialog>
 
