@@ -6,7 +6,7 @@ import {
   Grid, CircularProgress, Chip, Stack, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText, Slide,
   List, ListItem, ListItemText, Divider, ListItemButton, ListItemIcon,
-  TextField, IconButton,
+  TextField, IconButton, Avatar,
   FormControl, InputLabel, Select, MenuItem
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -761,30 +761,172 @@ function VotePage() {
         </DialogActions>
       </Dialog>
 
-      {/* 명단 보기 */}
-      <Dialog open={openList} onClose={closeNameListDialog} {...bottomSheetProps}>
-        <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
-          <Typography variant="h6" fontWeight="bold">{dialogDateStr}</Typography>
-          <Typography variant="subtitle1" color="primary" sx={{ mt: 0.5 }}>{dialogSubTitle}</Typography>
-        </DialogTitle>
-        <DialogContent dividers>
-          {listNames.length === 0 ? <Typography color="textSecondary" align="center" sx={{ px: 2 }}>명단이 없습니다.</Typography> : (
-            <List dense sx={{ p: 0 }}>
-              {listNames.map((n, idx) => {
-                const suffix = dialogType === 'attend' ? ` (${getAttendLabel(votesData[dialogDateKey], n)})` : '';
-                return (
-                  <React.Fragment key={`${n}-${idx}`}>
-                    <ListItem sx={{ justifyContent: 'center', px: 3 }}>
-                      <ListItemText primary={`${idx + 1}. ${n}${suffix}`} primaryTypographyProps={{ align: 'center', fontSize: '0.9rem' }} />
-                    </ListItem>
-                    {idx !== listNames.length - 1 && <Divider />}
-                  </React.Fragment>
-                );
-              })}
-            </List>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ justifyContent: 'center', pb: 2 }}><Button onClick={closeNameListDialog} variant="contained" size="small">닫기</Button></DialogActions>
+      {/* 명단 보기 — 타입별 테마 + 아바타 + 시간 Chip */}
+      <Dialog open={openList} onClose={closeNameListDialog} fullWidth maxWidth="xs" {...bottomSheetProps}>
+        {(() => {
+          // 타입별 테마
+          const theme = dialogType === 'attend'
+            ? { label: '참석', main: '#2E7D32', light: '#E8F5E9', dark: '#1B5E20', grad: 'linear-gradient(135deg,#43A047,#2E7D32)', emoji: '✅' }
+            : dialogType === 'absent'
+            ? { label: '불참', main: '#C62828', light: '#FFEBEE', dark: '#B71C1C', grad: 'linear-gradient(135deg,#EF5350,#C62828)', emoji: '❌' }
+            : { label: '미정', main: '#E65100', light: '#FFF3E0', dark: '#BF360C', grad: 'linear-gradient(135deg,#FB8C00,#E65100)', emoji: '❓' };
+
+          // 참석 명단: 전체 / 부분으로 분리하고 각 사람의 시간 라벨 계산
+          const enriched = listNames.map((raw) => {
+            const isGuest = String(raw).includes('(용병)');
+            const cleanName = isGuest ? String(raw).replace(/\s*\(용병\)\s*/, '') : String(raw);
+            const timeLabel = dialogType === 'attend' ? getAttendLabel(votesData[dialogDateKey], raw) : null;
+            const isPartial = timeLabel && timeLabel !== '전체';
+            return { raw, cleanName, isGuest, timeLabel, isPartial };
+          });
+          const fullCount = dialogType === 'attend' ? enriched.filter((e) => !e.isPartial).length : 0;
+          const partialCount = dialogType === 'attend' ? enriched.filter((e) => e.isPartial).length : 0;
+
+          // 이름 첫 글자로 아바타 배경 색 결정 (해시)
+          const avatarPalette = ['#1976D2', '#388E3C', '#D32F2F', '#F57C00', '#7B1FA2', '#00796B', '#5D4037', '#455A64', '#C2185B', '#303F9F'];
+          const pickAvatarColor = (name) => {
+            let h = 0;
+            for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+            return avatarPalette[h % avatarPalette.length];
+          };
+
+          return (
+            <>
+              {/* 헤더 — 타입별 그라데이션 */}
+              <Box sx={{ background: theme.grad, color: 'white', px: 2.5, pt: 2, pb: 1.8 }}>
+                <Typography sx={{ fontSize: '0.75rem', opacity: 0.9, fontWeight: 600, letterSpacing: 0.5 }}>
+                  {dialogDateStr}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 0.4 }}>
+                  <Typography sx={{ fontSize: '1.3rem', fontWeight: 800 }}>
+                    {theme.emoji} {theme.label} 명단
+                  </Typography>
+                  <Typography sx={{ fontSize: '2rem', fontWeight: 900, ml: 'auto', fontFeatureSettings: '"tnum"' }}>
+                    {listNames.length}
+                    <Typography component="span" sx={{ fontSize: '0.9rem', fontWeight: 700, opacity: 0.9, ml: 0.3 }}>명</Typography>
+                  </Typography>
+                </Box>
+                {/* 참석 통계 (참석 타입만) */}
+                {dialogType === 'attend' && listNames.length > 0 && (
+                  <Box sx={{ display: 'flex', gap: 0.8, mt: 1.2 }}>
+                    <Chip
+                      size="small"
+                      label={`전체 참석 ${fullCount}명`}
+                      sx={{
+                        bgcolor: 'rgba(255,255,255,0.22)', color: 'white', fontWeight: 700,
+                        fontSize: '0.72rem', border: '1px solid rgba(255,255,255,0.3)', height: 24,
+                      }}
+                    />
+                    {partialCount > 0 && (
+                      <Chip
+                        size="small"
+                        icon={<AccessTimeIcon sx={{ fontSize: '13px !important', color: 'white !important' }} />}
+                        label={`부분 참석 ${partialCount}명`}
+                        sx={{
+                          bgcolor: 'rgba(255,255,255,0.22)', color: 'white', fontWeight: 700,
+                          fontSize: '0.72rem', border: '1px solid rgba(255,255,255,0.3)', height: 24,
+                        }}
+                      />
+                    )}
+                  </Box>
+                )}
+              </Box>
+
+              {/* 리스트 본문 */}
+              <DialogContent sx={{ p: 1.2, bgcolor: '#FAFBFC' }}>
+                {listNames.length === 0 ? (
+                  <Box sx={{ py: 4, textAlign: 'center', color: '#999' }}>
+                    <Typography sx={{ fontSize: '2rem', mb: 0.5, opacity: 0.3 }}>📭</Typography>
+                    <Typography sx={{ fontSize: '0.88rem' }}>명단이 없습니다.</Typography>
+                  </Box>
+                ) : (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.6 }}>
+                    {enriched.map((e, idx) => (
+                      <Box
+                        key={`${e.raw}-${idx}`}
+                        sx={{
+                          display: 'flex', alignItems: 'center', gap: 1.2,
+                          bgcolor: 'white', borderRadius: 2, px: 1.2, py: 0.9,
+                          borderLeft: `4px solid ${e.isPartial ? '#FF9800' : theme.main}`,
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                          transition: 'all 0.15s',
+                          '&:hover': { boxShadow: '0 2px 6px rgba(0,0,0,0.08)', transform: 'translateY(-1px)' },
+                        }}
+                      >
+                        {/* 순번 */}
+                        <Typography sx={{
+                          fontSize: '0.7rem', fontWeight: 700, color: '#999',
+                          minWidth: 18, textAlign: 'right', fontFeatureSettings: '"tnum"',
+                        }}>
+                          {idx + 1}
+                        </Typography>
+                        {/* 아바타 */}
+                        <Avatar sx={{
+                          width: 32, height: 32, fontSize: '0.85rem', fontWeight: 800,
+                          bgcolor: e.isGuest ? '#888' : pickAvatarColor(e.cleanName),
+                          color: 'white',
+                          border: e.isGuest ? '2px dashed #BDBDBD' : 'none',
+                        }}>
+                          {e.cleanName.charAt(0)}
+                        </Avatar>
+                        {/* 이름 + 용병 배지 */}
+                        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Typography sx={{
+                            fontSize: '0.92rem', fontWeight: 700, color: '#222',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {e.cleanName}
+                          </Typography>
+                          {e.isGuest && (
+                            <Chip label="용병" size="small" sx={{
+                              height: 18, fontSize: '0.62rem', fontWeight: 700,
+                              bgcolor: '#F5F5F5', color: '#666', border: '1px solid #E0E0E0',
+                            }} />
+                          )}
+                        </Box>
+                        {/* 참석 시간 Chip */}
+                        {dialogType === 'attend' && (
+                          e.isPartial ? (
+                            <Chip
+                              icon={<AccessTimeIcon sx={{ fontSize: '13px !important' }} />}
+                              label={e.timeLabel}
+                              size="small"
+                              sx={{
+                                height: 24, fontSize: '0.7rem', fontWeight: 700,
+                                bgcolor: '#FFF3E0', color: '#E65100',
+                                border: '1px solid #FFE0B2',
+                                '& .MuiChip-icon': { color: '#E65100' },
+                              }}
+                            />
+                          ) : (
+                            <Chip label="전체" size="small" sx={{
+                              height: 24, fontSize: '0.72rem', fontWeight: 800,
+                              bgcolor: theme.light, color: theme.dark,
+                              border: `1px solid ${theme.main}33`,
+                            }} />
+                          )
+                        )}
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+              </DialogContent>
+
+              <DialogActions sx={{ justifyContent: 'center', pb: 2, pt: 1.2 }}>
+                <Button
+                  onClick={closeNameListDialog}
+                  variant="contained"
+                  sx={{
+                    bgcolor: theme.main, fontWeight: 700, borderRadius: 2, px: 4,
+                    '&:hover': { bgcolor: theme.dark },
+                  }}
+                >
+                  닫기
+                </Button>
+              </DialogActions>
+            </>
+          );
+        })()}
       </Dialog>
 
       {/* 용병 관리 */}
