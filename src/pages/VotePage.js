@@ -30,7 +30,11 @@ import {
 } from '../utils/format';
 
 const SlideUp = React.forwardRef((props, ref) => <Slide direction="up" ref={ref} {...props} />);
-const bottomSheetProps = { TransitionComponent: SlideUp, PaperProps: { sx: { borderRadius: '20px 20px 0 0', position: 'fixed', bottom: 0, m: 0, maxHeight: '80vh' } } };
+// 🆕 중앙 정렬 + 모든 모서리 둥글게 (이전에는 화면 하단에 고정되어 웹/PC에서 너무 내려 붙었음)
+const bottomSheetProps = {
+  TransitionComponent: SlideUp,
+  PaperProps: { sx: { borderRadius: 3, m: 2, maxHeight: '85vh', width: { xs: 'calc(100% - 32px)', sm: 'auto' } } },
+};
 
 function VotePage() {
   const navigate = useNavigate();
@@ -563,29 +567,195 @@ function VotePage() {
         </DialogActions>
       </Dialog>
 
-      {/* 시간 선택 */}
+      {/* 시간 선택 — 타임라인 + 프리셋 기반 직관적 범위 선택 */}
       <Dialog open={openAttendTime} onClose={() => setOpenAttendTime(false)} fullWidth maxWidth="xs" {...bottomSheetProps}>
-        <DialogTitle sx={{ fontWeight: 'bold', textAlign: 'center' }}>참석 시간 선택</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', mb: 2 }}>참석 가능한 시간을 선택해주세요.</Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, px: 1 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>시작 시간</InputLabel>
-              <Select label="시작 시간" value={startIdx} onChange={(e) => setStartIdx(Number(e.target.value))}>
-                {timeSlots.slice(0, -1).map((t, idx) => <MenuItem key={t} value={idx}>{t}</MenuItem>)}
-              </Select>
-            </FormControl>
-            <FormControl fullWidth size="small">
-              <InputLabel>종료 시간</InputLabel>
-              <Select label="종료 시간" value={endIdx} onChange={(e) => setEndIdx(Number(e.target.value))}>
-                {timeSlots.slice(startIdx + 1).map((t, offset) => <MenuItem key={t} value={startIdx + 1 + offset}>{t}</MenuItem>)}
-              </Select>
-            </FormControl>
-          </Box>
+        <DialogTitle sx={{ fontWeight: 800, textAlign: 'center', pb: 0.5, fontSize: '1.05rem' }}>참석 시간 선택</DialogTitle>
+        <DialogContent sx={{ pt: 1.5 }}>
+          {(() => {
+            // 총 참석 시간 (분) 계산 — 시간 문자열 '07:30' → 450분
+            const toMinutes = (hhmm) => {
+              if (!hhmm) return 0;
+              const [h, m] = hhmm.split(':').map(Number);
+              return (h || 0) * 60 + (m || 0);
+            };
+            const formatDuration = (mins) => {
+              if (mins <= 0) return '0분';
+              const h = Math.floor(mins / 60);
+              const m = mins % 60;
+              if (h === 0) return `${m}분`;
+              if (m === 0) return `${h}시간`;
+              return `${h}시간 ${m}분`;
+            };
+            const startTime = timeSlots[startIdx] || '';
+            const endTime = timeSlots[endIdx] || '';
+            const durationMin = Math.max(0, toMinutes(endTime) - toMinutes(startTime));
+            const lastIdx = Math.max(0, timeSlots.length - 1);
+            // 타임라인 Chip의 "가까운 쪽 끝" 당기기 로직
+            const handleSlotTap = (idx) => {
+              if (idx === startIdx || idx === endIdx) return;
+              const distToStart = Math.abs(idx - startIdx);
+              const distToEnd = Math.abs(idx - endIdx);
+              if (distToStart <= distToEnd) {
+                // 시작점 이동 — endIdx - 1 을 넘지 않도록
+                setStartIdx(Math.max(0, Math.min(idx, endIdx - 1)));
+              } else {
+                // 끝점 이동 — startIdx + 1 이상 유지
+                setEndIdx(Math.min(lastIdx, Math.max(idx, startIdx + 1)));
+              }
+            };
+            const applyPreset = (kind) => {
+              if (lastIdx < 1) return;
+              if (kind === 'full') { setStartIdx(0); setEndIdx(lastIdx); }
+              else if (kind === 'firstHalf') { setStartIdx(0); setEndIdx(Math.max(1, Math.ceil(lastIdx / 2))); }
+              else if (kind === 'secondHalf') { setStartIdx(Math.floor(lastIdx / 2)); setEndIdx(lastIdx); }
+            };
+            const isFull = startIdx === 0 && endIdx === lastIdx;
+            const isFirstHalf = startIdx === 0 && endIdx === Math.max(1, Math.ceil(lastIdx / 2));
+            const isSecondHalf = startIdx === Math.floor(lastIdx / 2) && endIdx === lastIdx;
+
+            return (
+              <>
+                {/* ── 선택 요약 카드 ── */}
+                <Box sx={{
+                  background: 'linear-gradient(135deg, #43A047 0%, #2E7D32 100%)',
+                  color: 'white', borderRadius: 3, p: 2, mb: 2,
+                  textAlign: 'center', boxShadow: '0 4px 12px rgba(46,125,50,0.25)',
+                }}>
+                  <Typography sx={{ fontSize: '0.72rem', opacity: 0.9, letterSpacing: 1, mb: 0.4 }}>
+                    참석 시간
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.2 }}>
+                    <Typography sx={{ fontSize: '1.7rem', fontWeight: 900, fontFeatureSettings: '"tnum"' }}>
+                      {startTime || '--:--'}
+                    </Typography>
+                    <Typography sx={{ fontSize: '1.1rem', opacity: 0.85 }}>→</Typography>
+                    <Typography sx={{ fontSize: '1.7rem', fontWeight: 900, fontFeatureSettings: '"tnum"' }}>
+                      {endTime || '--:--'}
+                    </Typography>
+                  </Box>
+                  <Chip
+                    icon={<AccessTimeIcon sx={{ fontSize: '14px !important', color: 'white !important' }} />}
+                    label={`총 ${formatDuration(durationMin)}`}
+                    size="small"
+                    sx={{
+                      mt: 0.8, bgcolor: 'rgba(255,255,255,0.22)', color: 'white',
+                      fontWeight: 700, fontSize: '0.72rem', border: '1px solid rgba(255,255,255,0.3)',
+                    }}
+                  />
+                </Box>
+
+                {/* ── 빠른 선택 프리셋 ── */}
+                <Box sx={{ mb: 1.5 }}>
+                  <Typography sx={{ fontSize: '0.72rem', fontWeight: 700, color: '#666', mb: 0.6 }}>
+                    ⚡ 빠른 선택
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 0.6, flexWrap: 'wrap' }}>
+                    <Chip
+                      label="전체"
+                      onClick={() => applyPreset('full')}
+                      size="small"
+                      sx={{
+                        fontWeight: 700, fontSize: '0.78rem', py: 1.6, px: 0.6,
+                        bgcolor: isFull ? '#2E7D32' : '#E8F5E9',
+                        color: isFull ? 'white' : '#2E7D32',
+                        border: isFull ? '1px solid #1B5E20' : '1px solid #C8E6C9',
+                        '&:hover': { bgcolor: isFull ? '#1B5E20' : '#C8E6C9' },
+                      }}
+                    />
+                    <Chip
+                      label="앞 절반"
+                      onClick={() => applyPreset('firstHalf')}
+                      size="small"
+                      sx={{
+                        fontWeight: 700, fontSize: '0.78rem', py: 1.6, px: 0.6,
+                        bgcolor: isFirstHalf ? '#1565C0' : '#E3F2FD',
+                        color: isFirstHalf ? 'white' : '#1565C0',
+                        border: isFirstHalf ? '1px solid #0D47A1' : '1px solid #BBDEFB',
+                        '&:hover': { bgcolor: isFirstHalf ? '#0D47A1' : '#BBDEFB' },
+                      }}
+                    />
+                    <Chip
+                      label="뒤 절반"
+                      onClick={() => applyPreset('secondHalf')}
+                      size="small"
+                      sx={{
+                        fontWeight: 700, fontSize: '0.78rem', py: 1.6, px: 0.6,
+                        bgcolor: isSecondHalf ? '#E65100' : '#FFF3E0',
+                        color: isSecondHalf ? 'white' : '#E65100',
+                        border: isSecondHalf ? '1px solid #BF360C' : '1px solid #FFE0B2',
+                        '&:hover': { bgcolor: isSecondHalf ? '#BF360C' : '#FFE0B2' },
+                      }}
+                    />
+                  </Box>
+                </Box>
+
+                {/* ── 직접 선택 타임라인 ── */}
+                <Typography sx={{ fontSize: '0.72rem', fontWeight: 700, color: '#666', mb: 0.8 }}>
+                  🎯 직접 선택 <span style={{ fontWeight: 400, color: '#999' }}>· 시간을 터치하면 가까운 쪽이 당겨집니다</span>
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, justifyContent: 'center' }}>
+                  {timeSlots.map((t, idx) => {
+                    const isStart = idx === startIdx;
+                    const isEnd = idx === endIdx;
+                    const isEndpoint = isStart || isEnd;
+                    const isInside = idx > startIdx && idx < endIdx;
+                    return (
+                      <Chip
+                        key={t + idx}
+                        label={t}
+                        size="small"
+                        onClick={() => handleSlotTap(idx)}
+                        sx={{
+                          fontWeight: isEndpoint ? 900 : isInside ? 700 : 500,
+                          fontSize: isEndpoint ? '0.8rem' : '0.74rem',
+                          minWidth: 52,
+                          height: isEndpoint ? 30 : 26,
+                          transition: 'all 0.18s',
+                          bgcolor: isStart ? '#2E7D32'
+                            : isEnd ? '#E65100'
+                            : isInside ? '#C8E6C9'
+                            : '#F5F5F5',
+                          color: isEndpoint ? 'white' : isInside ? '#1B5E20' : '#666',
+                          border: isStart ? '2px solid #1B5E20'
+                            : isEnd ? '2px solid #BF360C'
+                            : isInside ? '1px solid #A5D6A7'
+                            : '1px solid #E0E0E0',
+                          boxShadow: isEndpoint ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                          cursor: 'pointer',
+                          '&:hover': {
+                            bgcolor: isStart ? '#1B5E20'
+                              : isEnd ? '#BF360C'
+                              : isInside ? '#A5D6A7'
+                              : '#E0E0E0',
+                          },
+                        }}
+                      />
+                    );
+                  })}
+                </Box>
+
+                {/* ── 범례 ── */}
+                <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', mt: 1.2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+                    <Box sx={{ width: 12, height: 12, bgcolor: '#2E7D32', borderRadius: 0.5 }} />
+                    <Typography sx={{ fontSize: '0.68rem', color: '#666' }}>시작</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+                    <Box sx={{ width: 12, height: 12, bgcolor: '#C8E6C9', border: '1px solid #A5D6A7', borderRadius: 0.5 }} />
+                    <Typography sx={{ fontSize: '0.68rem', color: '#666' }}>참석</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+                    <Box sx={{ width: 12, height: 12, bgcolor: '#E65100', borderRadius: 0.5 }} />
+                    <Typography sx={{ fontSize: '0.68rem', color: '#666' }}>종료</Typography>
+                  </Box>
+                </Box>
+              </>
+            );
+          })()}
         </DialogContent>
-        <DialogActions sx={{ justifyContent: 'center', pb: 2 }}>
-          <Button onClick={() => setOpenAttendTime(false)} variant="outlined">취소</Button>
-          <Button onClick={confirmAttendTime} variant="contained" color="success">확인</Button>
+        <DialogActions sx={{ justifyContent: 'center', pb: 2, gap: 1 }}>
+          <Button onClick={() => setOpenAttendTime(false)} variant="outlined" sx={{ fontWeight: 700, borderRadius: 2, px: 2.5 }}>취소</Button>
+          <Button onClick={confirmAttendTime} variant="contained" color="success" sx={{ fontWeight: 800, borderRadius: 2, px: 3 }}>저장</Button>
         </DialogActions>
       </Dialog>
 
