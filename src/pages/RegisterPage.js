@@ -18,6 +18,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_CONFIG } from '../config/app.config';
 import { CLUB_EMBLEM_MAP } from '../components/ClubEmblems';
+import { sanitizeForPath } from '../utils/validate';
 
 const TOTAL_STEPS = 6;
 
@@ -62,6 +63,7 @@ function RegisterPage() {
   const [createClubOpen, setCreateClubOpen] = useState(false);
   const [newClub, setNewClub] = useState({ name: '', type: 'futsal', region: '' });
   const [creatingClub, setCreatingClub] = useState(false);
+  const [registering, setRegistering] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '', height: '', weight: '', birthYear: '',
@@ -107,7 +109,7 @@ function RegisterPage() {
     if (!user) { alert('로그인 정보가 없습니다.'); return; }
     setCreatingClub(true);
     try {
-      const requestKey = name.replace(/[.#$/[\]]/g, '_');
+      const requestKey = sanitizeForPath(name);
       await set(ref(db, `ClubRequests/${requestKey}`), {
         name, type: newClub.type, region: newClub.region || '',
         requestedAt: new Date().toISOString().slice(0, 10),
@@ -121,9 +123,21 @@ function RegisterPage() {
   };
 
   const handleRegister = async () => {
+    if (registering) return; // 중복 제출 방지
     if (!formData.consentGiven) { alert('개인정보 수집 및 이용에 동의해주세요.'); return; }
     if (!formData.name || !formData.birthYear || !formData.club) { alert('필수 정보를 입력해주세요.'); return; }
     if (!user || !emailKey) { alert('로그인 정보가 없습니다.'); navigate('/'); return; }
+
+    // 🆕 가입 신청 레이트 리밋 (로컬 스토리지 기반 — 60초 내 재시도 차단)
+    const lastRequestKey = `lastJoinRequest:${emailKey}`;
+    const lastRequestAt = parseInt(localStorage.getItem(lastRequestKey) || '0', 10);
+    const elapsed = Date.now() - lastRequestAt;
+    if (elapsed >= 0 && elapsed < 60_000) {
+      alert(`가입 신청은 1분 간격으로 가능합니다. ${Math.ceil((60_000 - elapsed) / 1000)}초 후 다시 시도해주세요.`);
+      return;
+    }
+
+    setRegistering(true);
     try {
       // 이미 가입된 계정 체크
       const existingSnap = await get(ref(db, `Users/${emailKey}`));
@@ -164,9 +178,11 @@ function RegisterPage() {
         pending: true, // 🆕 승인 대기 상태
       });
 
+      localStorage.setItem(lastRequestKey, String(Date.now()));
       alert('가입 신청이 완료되었습니다.\n관리자 승인 후 이용하실 수 있습니다.');
       navigate('/pending');
     } catch (error) { alert('등록 실패: ' + error.message); }
+    finally { setRegistering(false); }
   };
 
   const years = [];
@@ -567,12 +583,13 @@ function RegisterPage() {
               다음
             </Button>
           ) : (
-            <Button variant="contained" fullWidth onClick={handleRegister} disabled={!canProceed()}
+            <Button variant="contained" fullWidth onClick={handleRegister}
+              disabled={!canProceed() || registering}
               sx={{
                 borderRadius: 2.5, py: 1.3, fontWeight: 700, fontSize: '1rem',
                 background: canProceed() ? 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)' : undefined,
               }}>
-              등록하기
+              {registering ? <CircularProgress size={20} color="inherit" /> : '등록하기'}
             </Button>
           )}
         </Box>
