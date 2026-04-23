@@ -44,6 +44,8 @@ function VotePage() {
   const [matchList, setMatchList] = useState([]);
   const [votesData, setVotesData] = useState({});
   const [teamExistence, setTeamExistence] = useState({});
+  // 🆕 날짜별 팀/드래프트/포메이션 공개 상태 (관리탭 변경 사항 실시간 반영)
+  const [teamInfo, setTeamInfo] = useState({}); // {[date]: { hasTeam, draftStatus, formationOpen }}
 
   // 다이얼로그 상태
   const [openList, setOpenList] = useState(false);
@@ -232,6 +234,43 @@ function VotePage() {
         .catch(() => setWeatherByDate((prev) => ({ ...prev, [m.date]: { dateKey: m.date } })));
     });
   }, [matchList, fetchWeatherForDate]); // eslint-disable-line
+
+  // 🆕 날짜별 팀/드래프트/포메이션 실시간 구독 — 관리탭 변경사항이 투표 탭에 즉시 반영
+  useEffect(() => {
+    if (!clubName || !matchList?.length) return;
+    const offs = [];
+    matchList.forEach(({ date }) => {
+      if (!date) return;
+      const base = `PlayerSelectionByDate/${clubName}/${date}`;
+      // A팀 로스터 — 팀 구성 완료 여부 판단 (비어있지 않은 배열)
+      const offTeam = onValue(ref(db, `${base}/AttandPlayer/A`), (snap) => {
+        const v = snap.val();
+        const hasTeam = Array.isArray(v) && v.filter(Boolean).length > 0;
+        setTeamInfo((prev) => ({
+          ...prev,
+          [date]: { ...(prev[date] || {}), hasTeam },
+        }));
+      });
+      // 주장 드래프트 상태
+      const offDraft = onValue(ref(db, `${base}/Draft/status`), (snap) => {
+        const v = snap.exists() ? snap.val() : null;
+        setTeamInfo((prev) => ({
+          ...prev,
+          [date]: { ...(prev[date] || {}), draftStatus: v },
+        }));
+      });
+      // 포메이션 공개 여부
+      const offFO = onValue(ref(db, `${base}/FormationOpen`), (snap) => {
+        const v = snap.val() === true;
+        setTeamInfo((prev) => ({
+          ...prev,
+          [date]: { ...(prev[date] || {}), formationOpen: v },
+        }));
+      });
+      offs.push(offTeam, offDraft, offFO);
+    });
+    return () => offs.forEach((f) => f());
+  }, [clubName, matchList]);
 
   const getMyStatus = (date) => {
     const dd = votesData[date];
@@ -431,14 +470,50 @@ function VotePage() {
       .catch((err) => alert('용병 삭제 실패: ' + err.message));
   };
 
+  // 🆕 날짜별 팀 구성 버튼 상태 계산 (관리탭 상태에 따라 동적 문구/색/이동 경로)
+  const getTeamButtonState = (date) => {
+    const info = teamInfo[date] || {};
+    const isTimeReady = getIsTimeReady(date);
+    const { hasTeam, draftStatus, formationOpen } = info;
+
+    // 1. 주장 드래프트 진행 중
+    if (draftStatus === 'active') {
+      return { text: '⚔️ 주장 드래프트 진행 중', disabled: false, target: 'draft', bg: '#7B1FA2', hoverBg: '#4A148C' };
+    }
+    // 2. 주장 드래프트 결과 검토 중
+    if (draftStatus === 'review') {
+      return { text: '🔍 드래프트 결과 확인 중', disabled: false, target: 'draft', bg: '#6A1B9A', hoverBg: '#4A148C' };
+    }
+    // 3. 주장 드래프트 확정 — 팀 보기
+    if (draftStatus === 'confirmed' && hasTeam) {
+      return { text: '✅ 팀 확정 — 팀 보기', disabled: false, target: 'team', bg: '#2E7D32', hoverBg: '#1B5E20' };
+    }
+    // 4. 팀 + 포메이션 공개
+    if (hasTeam && formationOpen) {
+      return { text: '📋 팀 + 포메이션 보기', disabled: false, target: 'team', bg: '#1565C0', hoverBg: '#0D47A1' };
+    }
+    // 5. 팀 구성만 완료
+    if (hasTeam) {
+      return { text: '▶ 팀 구성 보기', disabled: false, target: 'team', bg: '#1565C0', hoverBg: '#0D47A1' };
+    }
+    // 6. 시간 도달했지만 팀 미구성
+    if (isTimeReady) {
+      return { text: '⏳ 팀 구성 준비 중', disabled: true, target: null, bg: '#E0E0E0', hoverBg: '#E0E0E0' };
+    }
+    // 7. 시간 전
+    return { text: '🔒 팀 구성 대기 (오픈 전)', disabled: true, target: null, bg: '#E0E0E0', hoverBg: '#E0E0E0' };
+  };
+
   const goToTeamBuild = (date) => {
-    if (teamExistence[date]) { navigate(`/team/${date}`); return; }
-    if (!getIsTimeReady(date)) {
-      setAlertMessage('팀 구성은 경기 전날 오후 6시(18:00)부터 공개됩니다.');
+    const st = getTeamButtonState(date);
+    if (st.disabled) {
+      setAlertMessage(!getIsTimeReady(date)
+        ? '팀 구성은 경기 전날 오후 6시(18:00)부터 공개됩니다.'
+        : '아직 팀구성이 완료되지 않았습니다.\n(운영진이 팀을 구성 중입니다)');
       setOpenAlert(true); return;
     }
-    setAlertMessage('아직 팀구성이 완료되지 않았습니다.\n(운영진이 팀을 구성 중입니다)');
-    setOpenAlert(true);
+    if (st.target === 'draft') { navigate(`/draft/${date}`); return; }
+    if (st.target === 'team') { navigate(`/team/${date}`); return; }
   };
 
   if (loading) {
@@ -476,18 +551,10 @@ function VotePage() {
           const myStatus = getMyStatus(date);
           const formattedDate = formatDateWithDay(date);
           const isVotingAllowed = getIsVotingAllowed(date);
-          const isTimeReady = getIsTimeReady(date);
-          const hasTeamData = !!teamExistence[date];
           const totalGuests = getTotalGuestCount(date);
           const weatherInfo = weatherByDate[date];
-
-          let teamBtnText = '팀 구성 준비 중';
-          let teamBtnBg = '#001BB7';
-          let teamBtnColor = '#FFFFFF';
-          let teamBtnOpacity = 0.6;
-
-          if (hasTeamData) { teamBtnText = '팀 구성 넘어가기'; teamBtnOpacity = 0.8; }
-          else if (!isTimeReady) { teamBtnText = '팀 구성으로 넘어가기 (오픈 전)'; teamBtnBg = '#E0E0E0'; teamBtnColor = '#757575'; }
+          // 🆕 팀 구성 버튼 상태 (관리탭 상태별 동적 문구/색/disabled)
+          const teamBtn = getTeamButtonState(date);
 
           return (
             <Card key={date} sx={{ mb: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.04)' }}>
@@ -547,9 +614,22 @@ function VotePage() {
                 </Button>
 
                 <Box>
-                  <Button fullWidth variant="contained" startIcon={<GroupIcon />} onClick={() => goToTeamBuild(date)}
-                    sx={{ height: 48, borderRadius: 2, fontWeight: 'bold', opacity: teamBtnOpacity, backgroundColor: teamBtnBg, color: teamBtnColor, '&:hover': { backgroundColor: teamBtnBg } }}>
-                    {teamBtnText}
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    startIcon={<GroupIcon />}
+                    onClick={() => goToTeamBuild(date)}
+                    disabled={teamBtn.disabled}
+                    sx={{
+                      height: 48, borderRadius: 2, fontWeight: 'bold',
+                      backgroundColor: teamBtn.bg,
+                      color: teamBtn.disabled ? '#757575' : 'white',
+                      boxShadow: teamBtn.disabled ? 'none' : '0 2px 8px rgba(21,101,192,0.25)',
+                      '&:hover': { backgroundColor: teamBtn.hoverBg },
+                      '&.Mui-disabled': { backgroundColor: teamBtn.bg, color: '#757575' },
+                    }}
+                  >
+                    {teamBtn.text}
                   </Button>
                 </Box>
               </CardContent>
