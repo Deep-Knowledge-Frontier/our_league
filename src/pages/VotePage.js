@@ -144,20 +144,6 @@ function VotePage() {
     };
   }, [WEATHER_LAT, WEATHER_LON]);
 
-  const renderWeatherLine = (w) => {
-    if (!w) return '날씨 불러오는 중…';
-    const parts = [];
-    if (Number.isFinite(w.temp)) {
-      const t = Math.round(w.temp);
-      parts.push(Number.isFinite(w.feelsLike) ? `${t}°C (체감 ${Math.round(w.feelsLike)}°C)` : `${t}°C`);
-    }
-    if (Number.isFinite(w.precipitationMm) && w.precipitationMm > 0)
-      parts.push(`강수 ${Number(w.precipitationMm).toFixed(1)}mm`);
-    const wl = windLevelLabel(w.windSpeedMs);
-    if (wl) parts.push(`바람 ${wl}`);
-    return parts.length ? parts.join(' | ') : '날씨 정보를 불러올 수 없어요.';
-  };
-
   // 데이터 리스너
   useEffect(() => {
     if (isDemoGuest) {
@@ -556,11 +542,44 @@ function VotePage() {
           // 🆕 팀 구성 버튼 상태 (관리탭 상태별 동적 문구/색/disabled)
           const teamBtn = getTeamButtonState(date);
 
+          // 🆕 A안: 날짜/요일 분리 + D-day Chip + 날씨 아이콘화
+          const dayIdx = parseDateKeyLocal(date).getDay(); // 0=일, 6=토
+          const dowColor = dayIdx === 0 ? '#D32F2F' : dayIdx === 6 ? '#1565C0' : undefined;
+          const dateMatch = formattedDate.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+          const dateMain = dateMatch ? dateMatch[1] : formattedDate;
+          const dateDow = dateMatch ? dateMatch[2] : '';
+
+          // D-day Chip 계산
+          const daysDiff = getDaysDiff(date);
+          const ddayChip = daysDiff < 0 ? null
+            : daysDiff === 0 ? { label: 'D-DAY', bg: '#C62828', color: 'white' }
+            : daysDiff === 1 ? { label: 'D-1', bg: '#E65100', color: 'white' }
+            : daysDiff <= 3 ? { label: `D-${daysDiff}`, bg: '#F57F17', color: 'white' }
+            : { label: `D-${daysDiff}`, bg: '#1565C0', color: 'white' };
+
           return (
             <Card key={date} sx={{ mb: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.04)' }}>
               <CardContent sx={{ textAlign: 'center' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1 }}>
-                  <Typography variant="h5" fontWeight="bold">{formattedDate}</Typography>
+                  <Typography variant="h5" fontWeight="bold" component="div">
+                    {dateMain}
+                    {dateDow && (
+                      <Typography component="span" sx={{ fontWeight: 'bold', ml: 0.5, color: dowColor || 'inherit' }}>
+                        ({dateDow})
+                      </Typography>
+                    )}
+                  </Typography>
+                  {ddayChip && (
+                    <Chip
+                      label={ddayChip.label}
+                      size="small"
+                      sx={{
+                        bgcolor: ddayChip.bg, color: ddayChip.color,
+                        fontWeight: 800, fontSize: '0.72rem', height: 22, px: 0.3,
+                        letterSpacing: 0.3,
+                      }}
+                    />
+                  )}
                   {!isVotingAllowed && <Chip icon={<LockIcon fontSize="small" />} label="투표 마감" color="error" size="small" variant="outlined" />}
                 </Box>
 
@@ -580,7 +599,44 @@ function VotePage() {
                   )}
                 </Box>
 
-                <Typography variant="body2" sx={{ mb: 2.5, color: 'text.secondary' }}>{renderWeatherLine(weatherInfo)}</Typography>
+                {/* 🆕 A안: 날씨 아이콘화 · 구분자 · 으로 */}
+                {weatherInfo ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1, mb: 2.5, flexWrap: 'wrap', color: 'text.secondary', fontSize: '0.85rem' }}>
+                    {Number.isFinite(weatherInfo.temp) && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                        <span>🌡</span>
+                        <span style={{ fontWeight: 600 }}>{Math.round(weatherInfo.temp)}°</span>
+                        {Number.isFinite(weatherInfo.feelsLike) && (
+                          <span style={{ fontSize: '0.78rem', color: '#999', marginLeft: 2 }}>
+                            (체감 {Math.round(weatherInfo.feelsLike)}°)
+                          </span>
+                        )}
+                      </Box>
+                    )}
+                    {Number.isFinite(weatherInfo.precipitationMm) && weatherInfo.precipitationMm > 0 && (
+                      <>
+                        <span style={{ color: '#CCC' }}>·</span>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, color: '#1976D2' }}>
+                          <span>🌧</span>
+                          <span style={{ fontWeight: 600 }}>{Number(weatherInfo.precipitationMm).toFixed(1)}mm</span>
+                        </Box>
+                      </>
+                    )}
+                    {windLevelLabel(weatherInfo.windSpeedMs) && (
+                      <>
+                        <span style={{ color: '#CCC' }}>·</span>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                          <span>💨</span>
+                          <span style={{ fontWeight: 600 }}>{windLevelLabel(weatherInfo.windSpeedMs)}</span>
+                        </Box>
+                      </>
+                    )}
+                  </Box>
+                ) : (
+                  <Typography variant="body2" sx={{ mb: 2.5, color: 'text.secondary', fontSize: '0.82rem' }}>
+                    날씨 불러오는 중…
+                  </Typography>
+                )}
 
                 <Stack direction="row" justifyContent="center" spacing={1} sx={{ mb: 3 }}>
                   <Chip clickable onClick={() => openNameListDialog(date, 'attend')} label={`참석 ${getCount(date, 'attend')}명 ›`} color="success" variant={myStatus === 'attend' ? 'filled' : 'outlined'} />
