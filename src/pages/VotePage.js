@@ -3,10 +3,11 @@ import { ref, onValue, runTransaction, get } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import {
   Container, Box, Typography, Card, CardContent, Button,
-  Grid, CircularProgress, Chip, Alert,
+  Grid, CircularProgress, Chip, Stack, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText, Slide,
   List, ListItem, ListItemText, Divider, ListItemButton, ListItemIcon,
   TextField, IconButton, Avatar,
+  FormControl, InputLabel, Select, MenuItem
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
@@ -42,12 +43,12 @@ function VotePage() {
   const [loading, setLoading] = useState(true);
   const [matchList, setMatchList] = useState([]);
   const [votesData, setVotesData] = useState({});
-  // 🆕 날짜별 팀/드래프트/포메이션 공개 상태 (관리탭 변경 사항 실시간 반영)
-  const [teamInfo, setTeamInfo] = useState({}); // {[date]: { hasTeam, draftStatus, formationOpen }}
+  const [teamExistence, setTeamExistence] = useState({});
 
   // 다이얼로그 상태
   const [openList, setOpenList] = useState(false);
   const [dialogDateStr, setDialogDateStr] = useState('');
+  const [dialogSubTitle, setDialogSubTitle] = useState('');
   const [listNames, setListNames] = useState([]);
   const [dialogType, setDialogType] = useState('');
   const [dialogDateKey, setDialogDateKey] = useState('');
@@ -141,6 +142,20 @@ function VotePage() {
     };
   }, [WEATHER_LAT, WEATHER_LON]);
 
+  const renderWeatherLine = (w) => {
+    if (!w) return '날씨 불러오는 중…';
+    const parts = [];
+    if (Number.isFinite(w.temp)) {
+      const t = Math.round(w.temp);
+      parts.push(Number.isFinite(w.feelsLike) ? `${t}°C (체감 ${Math.round(w.feelsLike)}°C)` : `${t}°C`);
+    }
+    if (Number.isFinite(w.precipitationMm) && w.precipitationMm > 0)
+      parts.push(`강수 ${Number(w.precipitationMm).toFixed(1)}mm`);
+    const wl = windLevelLabel(w.windSpeedMs);
+    if (wl) parts.push(`바람 ${wl}`);
+    return parts.length ? parts.join(' | ') : '날씨 정보를 불러올 수 없어요.';
+  };
+
   // 데이터 리스너
   useEffect(() => {
     if (isDemoGuest) {
@@ -191,12 +206,16 @@ function VotePage() {
 
     const unsubVotes = onValue(votesRef, (snap) => {
       if (snap.exists()) {
-        setVotesData(snap.val());
+        const vd = snap.val();
+        setVotesData(vd);
+        const em = {};
+        Object.keys(vd).forEach((dk) => { if (vd[dk]?.AttandPlayer?.A) em[dk] = true; });
+        setTeamExistence(em);
       } else {
         setVotesData({});
+        setTeamExistence({});
       }
       setLoading(false);
-      // ℹ️ 팀 구성/드래프트/포메이션 상태는 별도 useEffect(teamInfo 구독)에서 관리
     });
 
     return () => { unsubMatches(); unsubVotes(); };
@@ -213,43 +232,6 @@ function VotePage() {
         .catch(() => setWeatherByDate((prev) => ({ ...prev, [m.date]: { dateKey: m.date } })));
     });
   }, [matchList, fetchWeatherForDate]); // eslint-disable-line
-
-  // 🆕 날짜별 팀/드래프트/포메이션 실시간 구독 — 관리탭 변경사항이 투표 탭에 즉시 반영
-  useEffect(() => {
-    if (!clubName || !matchList?.length) return;
-    const offs = [];
-    matchList.forEach(({ date }) => {
-      if (!date) return;
-      const base = `PlayerSelectionByDate/${clubName}/${date}`;
-      // 팀 A 로스터 — 팀 구성 완료 여부 판단 (비어있지 않은 배열)
-      const offTeam = onValue(ref(db, `${base}/AttandPlayer/A`), (snap) => {
-        const v = snap.val();
-        const hasTeam = Array.isArray(v) && v.filter(Boolean).length > 0;
-        setTeamInfo((prev) => ({
-          ...prev,
-          [date]: { ...(prev[date] || {}), hasTeam },
-        }));
-      });
-      // 주장 드래프트 상태
-      const offDraft = onValue(ref(db, `${base}/Draft/status`), (snap) => {
-        const v = snap.exists() ? snap.val() : null; // 'active' | 'review' | 'confirmed' | null
-        setTeamInfo((prev) => ({
-          ...prev,
-          [date]: { ...(prev[date] || {}), draftStatus: v },
-        }));
-      });
-      // 포메이션 공개 여부
-      const offFO = onValue(ref(db, `${base}/FormationOpen`), (snap) => {
-        const v = snap.val() === true;
-        setTeamInfo((prev) => ({
-          ...prev,
-          [date]: { ...(prev[date] || {}), formationOpen: v },
-        }));
-      });
-      offs.push(offTeam, offDraft, offFO);
-    });
-    return () => offs.forEach((f) => f());
-  }, [clubName, matchList]);
 
   const getMyStatus = (date) => {
     const dd = votesData[date];
@@ -290,7 +272,9 @@ function VotePage() {
 
   const openNameListDialog = (date, type) => {
     const names = getListByType(date, type);
+    const typeLabel = type === 'attend' ? '참석' : type === 'absent' ? '불참' : '미정';
     setDialogDateStr(formatDateWithDay(date));
+    setDialogSubTitle(`${typeLabel} 명단 (${names.length}명)`);
     setListNames(names);
     setDialogType(type);
     setDialogDateKey(date);
@@ -447,50 +431,14 @@ function VotePage() {
       .catch((err) => alert('용병 삭제 실패: ' + err.message));
   };
 
-  // 🆕 날짜별 팀 구성 버튼 상태 계산 (관리탭 상태에 따라 동적 문구/색/이동 경로)
-  const getTeamButtonState = (date) => {
-    const info = teamInfo[date] || {};
-    const isTimeReady = getIsTimeReady(date);
-    const { hasTeam, draftStatus, formationOpen } = info;
-
-    // 1. 주장 드래프트 진행 중
-    if (draftStatus === 'active') {
-      return { text: '⚔️ 주장 드래프트 진행 중', disabled: false, target: 'draft', bg: '#7B1FA2', hoverBg: '#4A148C' };
-    }
-    // 2. 주장 드래프트 결과 검토 중
-    if (draftStatus === 'review') {
-      return { text: '🔍 드래프트 결과 확인 중', disabled: false, target: 'draft', bg: '#6A1B9A', hoverBg: '#4A148C' };
-    }
-    // 3. 주장 드래프트 확정 — 팀 보기
-    if (draftStatus === 'confirmed' && hasTeam) {
-      return { text: '✅ 팀 확정 — 팀 보기', disabled: false, target: 'team', bg: '#2E7D32', hoverBg: '#1B5E20' };
-    }
-    // 4. 팀 + 포메이션 공개 완료
-    if (hasTeam && formationOpen) {
-      return { text: '📋 팀 + 포메이션 보기', disabled: false, target: 'team', bg: '#1565C0', hoverBg: '#0D47A1' };
-    }
-    // 5. 팀 구성만 완료
-    if (hasTeam) {
-      return { text: '▶ 팀 구성 보기', disabled: false, target: 'team', bg: '#1565C0', hoverBg: '#0D47A1' };
-    }
-    // 6. 시간 도달했지만 팀 미구성
-    if (isTimeReady) {
-      return { text: '⏳ 팀 구성 준비 중', disabled: true, target: null, bg: '#E0E0E0', hoverBg: '#E0E0E0' };
-    }
-    // 7. 시간 전
-    return { text: '🔒 팀 구성 대기 (오픈 전)', disabled: true, target: null, bg: '#E0E0E0', hoverBg: '#E0E0E0' };
-  };
-
   const goToTeamBuild = (date) => {
-    const st = getTeamButtonState(date);
-    if (st.disabled) {
-      setAlertMessage(st.target === null && !getIsTimeReady(date)
-        ? '팀 구성은 경기 전날 오후 6시(18:00)부터 공개됩니다.'
-        : '아직 팀구성이 완료되지 않았습니다.\n(운영진이 팀을 구성 중입니다)');
+    if (teamExistence[date]) { navigate(`/team/${date}`); return; }
+    if (!getIsTimeReady(date)) {
+      setAlertMessage('팀 구성은 경기 전날 오후 6시(18:00)부터 공개됩니다.');
       setOpenAlert(true); return;
     }
-    if (st.target === 'draft') { navigate(`/draft/${date}`); return; }
-    if (st.target === 'team') { navigate(`/team/${date}`); return; }
+    setAlertMessage('아직 팀구성이 완료되지 않았습니다.\n(운영진이 팀을 구성 중입니다)');
+    setOpenAlert(true);
   };
 
   if (loading) {
@@ -528,50 +476,28 @@ function VotePage() {
           const myStatus = getMyStatus(date);
           const formattedDate = formatDateWithDay(date);
           const isVotingAllowed = getIsVotingAllowed(date);
+          const isTimeReady = getIsTimeReady(date);
+          const hasTeamData = !!teamExistence[date];
           const totalGuests = getTotalGuestCount(date);
           const weatherInfo = weatherByDate[date];
-          const teamBtn = getTeamButtonState(date);
 
-          // 내 투표 상태 메타
-          const myMeta = myStatus === 'attend'
-            ? { emoji: '✅', label: '참석', color: '#2E7D32', bg: '#E8F5E9' }
-            : myStatus === 'absent'
-            ? { emoji: '❌', label: '불참', color: '#C62828', bg: '#FFEBEE' }
-            : myStatus === 'undecided'
-            ? { emoji: '❓', label: '미정', color: '#E65100', bg: '#FFF3E0' }
-            : { emoji: '🗳️', label: '미투표', color: '#757575', bg: '#F5F5F5' };
+          let teamBtnText = '팀 구성 준비 중';
+          let teamBtnBg = '#001BB7';
+          let teamBtnColor = '#FFFFFF';
+          let teamBtnOpacity = 0.6;
 
-          const dimmed = !isVotingAllowed;
+          if (hasTeamData) { teamBtnText = '팀 구성 넘어가기'; teamBtnOpacity = 0.8; }
+          else if (!isTimeReady) { teamBtnText = '팀 구성으로 넘어가기 (오픈 전)'; teamBtnBg = '#E0E0E0'; teamBtnColor = '#757575'; }
 
           return (
-            <Card
-              key={date}
-              sx={{
-                mb: 3, borderRadius: 3,
-                boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
-                border: '1px solid rgba(0,0,0,0.04)',
-                borderLeft: `5px solid ${myMeta.color}`,
-                opacity: dimmed ? 0.72 : 1,
-                transition: 'opacity 0.2s',
-              }}
-            >
-              <CardContent sx={{ textAlign: 'center', pb: 2 }}>
-                {/* ── 헤더: 날짜 + 투표 마감 Chip ── */}
+            <Card key={date} sx={{ mb: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.04)' }}>
+              <CardContent sx={{ textAlign: 'center' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1 }}>
                   <Typography variant="h5" fontWeight="bold">{formattedDate}</Typography>
-                  {!isVotingAllowed && (
-                    <Chip
-                      icon={<LockIcon fontSize="small" />}
-                      label="투표 마감"
-                      color="error"
-                      size="small"
-                      sx={{ fontWeight: 700 }}
-                    />
-                  )}
+                  {!isVotingAllowed && <Chip icon={<LockIcon fontSize="small" />} label="투표 마감" color="error" size="small" variant="outlined" />}
                 </Box>
 
-                {/* ── 시간 + 장소 Chip 행 ── */}
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1, mb: 1.2, flexWrap: 'wrap' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mb: 1.2, color: 'text.secondary', flexWrap: 'wrap' }}>
                   {time && (
                     <Box sx={{ display: 'flex', alignItems: 'center', backgroundColor: '#f5f5f5', px: 1.5, py: 0.5, borderRadius: 2 }}>
                       <AccessTimeIcon fontSize="small" sx={{ mr: 0.5, color: 'primary.main' }} />
@@ -587,183 +513,45 @@ function VotePage() {
                   )}
                 </Box>
 
-                {/* ── 날씨 (아이콘화) ── */}
-                {weatherInfo && (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1.2, mb: 1.5, flexWrap: 'wrap' }}>
-                    {Number.isFinite(weatherInfo.temp) && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, color: '#666', fontSize: '0.82rem' }}>
-                        <span>🌡️</span>
-                        <span style={{ fontWeight: 600 }}>{Math.round(weatherInfo.temp)}°C</span>
-                        {Number.isFinite(weatherInfo.feelsLike) && (
-                          <span style={{ fontSize: '0.72rem', color: '#999' }}>(체감 {Math.round(weatherInfo.feelsLike)}°)</span>
-                        )}
-                      </Box>
-                    )}
-                    {Number.isFinite(weatherInfo.precipitationMm) && weatherInfo.precipitationMm > 0 && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, color: '#1976D2', fontSize: '0.82rem' }}>
-                        <span>🌧</span>
-                        <span style={{ fontWeight: 600 }}>{Number(weatherInfo.precipitationMm).toFixed(1)}mm</span>
-                      </Box>
-                    )}
-                    {windLevelLabel(weatherInfo.windSpeedMs) && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, color: '#666', fontSize: '0.82rem' }}>
-                        <span>💨</span>
-                        <span style={{ fontWeight: 600 }}>{windLevelLabel(weatherInfo.windSpeedMs)}</span>
-                      </Box>
-                    )}
-                  </Box>
-                )}
-                {!weatherInfo && (
-                  <Typography variant="body2" sx={{ mb: 1.5, color: 'text.secondary', fontSize: '0.78rem' }}>
-                    날씨 불러오는 중…
-                  </Typography>
-                )}
+                <Typography variant="body2" sx={{ mb: 2.5, color: 'text.secondary' }}>{renderWeatherLine(weatherInfo)}</Typography>
 
-                {/* ── 내 투표 상태 배너 ── */}
-                <Box sx={{
-                  display: 'inline-flex', alignItems: 'center', gap: 0.6,
-                  bgcolor: myMeta.bg, color: myMeta.color,
-                  px: 1.5, py: 0.4, borderRadius: 10,
-                  border: `1px solid ${myMeta.color}33`,
-                  mb: 2,
-                }}>
-                  <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, opacity: 0.8 }}>내 투표:</Typography>
-                  <Typography sx={{ fontSize: '0.82rem', fontWeight: 800 }}>
-                    {myMeta.emoji} {myMeta.label}
-                  </Typography>
-                </Box>
+                <Stack direction="row" justifyContent="center" spacing={1} sx={{ mb: 3 }}>
+                  <Chip clickable onClick={() => openNameListDialog(date, 'attend')} label={`참석 ${getCount(date, 'attend')}명`} color="success" variant={myStatus === 'attend' ? 'filled' : 'outlined'} />
+                  <Chip clickable onClick={() => openNameListDialog(date, 'absent')} label={`불참 ${getCount(date, 'absent')}명`} color="error" variant={myStatus === 'absent' ? 'filled' : 'outlined'} />
+                  <Chip clickable onClick={() => openNameListDialog(date, 'undecided')} label={`미정 ${getCount(date, 'undecided')}명`} color="default" variant={myStatus === 'undecided' ? 'filled' : 'outlined'} />
+                </Stack>
 
-                {/* ── 참여 현황 — 탭해서 명단 보기 ── */}
-                <Box sx={{
-                  bgcolor: '#FAFBFC', borderRadius: 2, p: 1.2, mb: 2,
-                  border: '1px solid #EEEEEE',
-                }}>
-                  <Typography sx={{
-                    fontSize: '0.68rem', color: '#888', mb: 0.7,
-                    fontWeight: 600, letterSpacing: 0.3,
-                  }}>
-                    👆 참여 현황 · 탭해서 명단 보기
-                  </Typography>
-                  <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.6, flexWrap: 'wrap' }}>
-                    {[
-                      { type: 'attend', label: '참석', count: getCount(date, 'attend'), color: '#2E7D32', bg: '#E8F5E9', activeBg: '#2E7D32' },
-                      { type: 'absent', label: '불참', count: getCount(date, 'absent'), color: '#C62828', bg: '#FFEBEE', activeBg: '#C62828' },
-                      { type: 'undecided', label: '미정', count: getCount(date, 'undecided'), color: '#E65100', bg: '#FFF3E0', activeBg: '#E65100' },
-                    ].map((c) => {
-                      const isMine = myStatus === c.type;
-                      return (
-                        <Chip
-                          key={c.type}
-                          clickable
-                          onClick={() => openNameListDialog(date, c.type)}
-                          label={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                              <span>{c.label}</span>
-                              <span style={{ fontWeight: 900, fontSize: '0.95rem' }}>{c.count}</span>
-                              <span style={{ opacity: 0.6, fontSize: '0.7rem', marginLeft: 2 }}>›</span>
-                            </Box>
-                          }
-                          sx={{
-                            height: 32, px: 0.4, borderRadius: 2,
-                            bgcolor: isMine ? c.activeBg : c.bg,
-                            color: isMine ? 'white' : c.color,
-                            border: `1px solid ${isMine ? c.activeBg : c.color + '33'}`,
-                            fontWeight: 700, fontSize: '0.78rem',
-                            transition: 'all 0.15s',
-                            '&:hover': {
-                              transform: 'translateY(-1px)',
-                              boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-                              bgcolor: isMine ? c.activeBg : c.color + '22',
-                            },
-                          }}
-                        />
-                      );
-                    })}
-                    {/* 용병 Chip (관리 다이얼로그 진입점) */}
-                    {totalGuests > 0 && (
-                      <Chip
-                        clickable
-                        onClick={() => isVotingAllowed && handleOpenGuestDialog(date)}
-                        disabled={!isVotingAllowed}
-                        label={
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                            <span>👥 용병</span>
-                            <span style={{ fontWeight: 900, fontSize: '0.95rem' }}>{totalGuests}</span>
-                            <span style={{ opacity: 0.6, fontSize: '0.7rem', marginLeft: 2 }}>›</span>
-                          </Box>
-                        }
-                        sx={{
-                          height: 32, px: 0.4, borderRadius: 2,
-                          bgcolor: '#F5F5F5', color: '#666',
-                          border: '1px solid #E0E0E0',
-                          fontWeight: 700, fontSize: '0.78rem',
-                          transition: 'all 0.15s',
-                          '&:hover': isVotingAllowed ? {
-                            transform: 'translateY(-1px)',
-                            boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-                          } : {},
-                        }}
-                      />
-                    )}
-                  </Box>
-                </Box>
-
-                {/* ── 투표 버튼 (액션) ── */}
                 <Grid container spacing={1} justifyContent="center" sx={{ mb: 2 }}>
-                  <Grid item xs={4}>
+                  <Grid item xs={4} sm={3}>
                     <Button fullWidth variant={myStatus === 'attend' ? 'contained' : 'outlined'} color="success" startIcon={<CheckCircleIcon />}
-                      disabled={!isVotingAllowed}
-                      onClick={() => openAttendModeDialog(date, time)}
-                      sx={{ height: 45, fontSize: '0.9rem', fontWeight: 700, borderRadius: 2 }}>참석</Button>
+                      onClick={() => isVotingAllowed ? openAttendModeDialog(date, time) : (setAlertMessage('투표가 마감되었습니다.'), setOpenAlert(true))}
+                      sx={{ height: 45, fontSize: '0.9rem', opacity: isVotingAllowed ? 1 : 0.5 }}>참석</Button>
                   </Grid>
-                  <Grid item xs={4}>
+                  <Grid item xs={4} sm={3}>
                     <Button fullWidth variant={myStatus === 'absent' ? 'contained' : 'outlined'} color="error" startIcon={<CancelIcon />}
-                      disabled={!isVotingAllowed}
                       onClick={() => handleVote(date, 'absent')}
-                      sx={{ height: 45, fontSize: '0.9rem', fontWeight: 700, borderRadius: 2 }}>불참</Button>
+                      sx={{ height: 45, fontSize: '0.9rem', opacity: isVotingAllowed ? 1 : 0.5 }}>불참</Button>
                   </Grid>
-                  <Grid item xs={4}>
+                  <Grid item xs={4} sm={3}>
                     <Button fullWidth variant={myStatus === 'undecided' ? 'contained' : 'outlined'} color="inherit" startIcon={<HelpIcon />}
-                      disabled={!isVotingAllowed}
                       onClick={() => handleVote(date, 'undecided')}
-                      sx={{ height: 45, fontSize: '0.9rem', fontWeight: 700, borderRadius: 2, borderColor: 'grey.400' }}>미정</Button>
+                      sx={{ height: 45, fontSize: '0.9rem', borderColor: 'grey.400', opacity: isVotingAllowed ? 1 : 0.5 }}>미정</Button>
                   </Grid>
                 </Grid>
 
-                {/* ── 용병 관리 버튼 (용병 0명일 때도 등록 가능) ── */}
-                {totalGuests === 0 && (
-                  <Button
-                    variant="outlined"
-                    color="primary"
-                    disabled={!isVotingAllowed}
-                    startIcon={<PersonAddIcon />}
-                    onClick={() => handleOpenGuestDialog(date)}
-                    sx={{ mb: 2, borderRadius: 2, width: '80%', fontSize: '0.82rem' }}
-                  >
-                    용병(지인) 등록
-                  </Button>
-                )}
+                <Divider sx={{ my: 2 }} />
 
-                <Divider sx={{ my: 1.5 }} />
-
-                {/* ── 팀 구성 버튼 (상태별 동적) ── */}
-                <Button
-                  fullWidth
-                  variant="contained"
-                  startIcon={<GroupIcon />}
-                  onClick={() => goToTeamBuild(date)}
-                  disabled={teamBtn.disabled}
-                  sx={{
-                    height: 50, borderRadius: 2, fontWeight: 800, fontSize: '0.95rem',
-                    backgroundColor: teamBtn.bg,
-                    color: teamBtn.disabled ? '#757575' : 'white',
-                    boxShadow: teamBtn.disabled ? 'none' : '0 2px 8px rgba(21,101,192,0.25)',
-                    '&:hover': { backgroundColor: teamBtn.hoverBg },
-                    '&.Mui-disabled': { backgroundColor: teamBtn.bg, color: '#757575' },
-                  }}
-                >
-                  {teamBtn.text}
+                <Button variant="outlined" color="primary" disabled={!isVotingAllowed} startIcon={<PersonAddIcon />}
+                  onClick={() => handleOpenGuestDialog(date)} sx={{ mb: 2, borderRadius: 2, width: '80%' }}>
+                  용병(지인) 등록/관리 {totalGuests > 0 && `(현재 ${totalGuests}명)`}
                 </Button>
+
+                <Box>
+                  <Button fullWidth variant="contained" startIcon={<GroupIcon />} onClick={() => goToTeamBuild(date)}
+                    sx={{ height: 48, borderRadius: 2, fontWeight: 'bold', opacity: teamBtnOpacity, backgroundColor: teamBtnBg, color: teamBtnColor, '&:hover': { backgroundColor: teamBtnBg } }}>
+                    {teamBtnText}
+                  </Button>
+                </Box>
               </CardContent>
             </Card>
           );
