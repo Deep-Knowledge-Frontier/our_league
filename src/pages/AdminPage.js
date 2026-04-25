@@ -299,43 +299,83 @@ export default function AdminPage() {
   /* ── 🆕 가입 승인 / 거부 ── */
   const approveJoinRequest = async (req) => {
     try {
-      const emailKey = req.emailKey;
+      const newEmailKey = req.emailKey;
       const today = new Date().toISOString().slice(0, 10);
+      // 🆕 이름 정규화 — 공백 차이로 매칭 실패하는 문제 해결
+      const reqNameNorm = String(req.name || '').trim();
       const updates = {};
 
-      // 1) registeredPlayers에서 동일 이름 체크
+      // 1) registeredPlayers에서 동일 이름 체크 (정규화 비교)
       const playersSnap = await get(ref(db, `registeredPlayers/${clubName}`));
       const playersData = playersSnap.exists() ? playersSnap.val() : {};
-      const existingEntry = Object.entries(playersData).find(([, p]) => p?.name === req.name);
+      const existingEntry = Object.entries(playersData)
+        .find(([, p]) => String(p?.name || '').trim() === reqNameNorm);
 
-      let finalName = req.name;
+      // 🆕 2) Users에서 동일 이름·동일 클럽의 옛 계정 검색 (재가입 케이스)
+      //   - 같은 이름이 다른 emailKey 로 활성 상태로 남아있으면, 멤버 리스트가 잘못된 계정으로 매핑될 수 있음
+      const usersSnap = await get(ref(db, 'Users'));
+      const orphanedUsers = [];
+      if (usersSnap.exists()) {
+        Object.entries(usersSnap.val() || {}).forEach(([key, u]) => {
+          if (key === newEmailKey) return; // 본인 신규 계정 제외
+          if (!u || u.club !== clubName) return;
+          if (u.pending === true) return; // 다른 pending 신청은 별도 처리
+          if (String(u.name || '').trim() !== reqNameNorm) return;
+          orphanedUsers.push({
+            emailKey: key,
+            email: u.email || String(key).replace(/,/g, '.'),
+            approvedAt: u.approvedAt || '',
+          });
+        });
+      }
+
+      let finalName = reqNameNorm;
       let registeredPlayerKey;
 
       if (existingEntry) {
-        // 🆕 이미 같은 이름 선수가 존재 → 관리자에게 확인
         const [existingKey, existingData] = existingEntry;
-        const confirmMerge = window.confirm(
-          `이미 "${req.name}" 이름의 선수가 등록되어 있습니다.\n\n` +
-          `[확인] 동일 선수로 연결 (관리자가 미리 추가해둔 선수)\n` +
-          `     → 기존 엔트리의 포지션/등번호를 가입 정보로 업데이트\n\n` +
-          `[취소] 동명이인으로 별도 추가 ("${req.name}(2)"로 생성)`
-        );
+
+        // 🆕 옛 계정 정보까지 포함한 향상된 안내
+        let msg = `이미 "${reqNameNorm}" 이름의 선수가 등록되어 있습니다.\n\n`;
+        if (orphanedUsers.length > 0) {
+          msg += `⚠️ 동일 이름·동일 클럽의 기존 계정 ${orphanedUsers.length}개 발견:\n`;
+          orphanedUsers.forEach((u) => {
+            msg += `  · ${u.email}${u.approvedAt ? ` (가입: ${u.approvedAt.slice(0, 10)})` : ''}\n`;
+          });
+          msg += `(재가입 시나리오로 보입니다)\n\n`;
+        }
+        msg += `[확인] 동일인으로 통합\n`;
+        msg += `     → 등록 선수 정보를 신청 데이터로 업데이트\n`;
+        if (orphanedUsers.length > 0) {
+          msg += `     → 옛 계정의 클럽 연결을 해제 (멤버 리스트 정상화)\n`;
+        }
+        msg += `\n[취소] 동명이인으로 별도 추가 ("${reqNameNorm}(2)"로 생성)`;
+
+        const confirmMerge = window.confirm(msg);
+
         if (confirmMerge) {
-          // 기존 엔트리를 UPDATE (새 엔트리 생성 X)
           registeredPlayerKey = existingKey;
           updates[`registeredPlayers/${clubName}/${existingKey}`] = {
-            name: existingData.name, // 기존 이름 유지
+            name: String(existingData.name || reqNameNorm).trim(), // 기존 이름 유지(정규화)
             date: existingData.date || today,
             position: req.position || existingData.position || '',
             subPosition: req.subPosition || existingData.subPosition || '',
             jerseyNumber: req.jerseyNumber ?? existingData.jerseyNumber ?? null,
           };
+          // 🆕 옛 계정 클럽 연결 해제 (지난 계정의 club 제거 → 멤버 리스트에서 자동 제거)
+          orphanedUsers.forEach((u) => {
+            updates[`Users/${u.emailKey}/club`] = null;
+            updates[`Users/${u.emailKey}/disconnectedAt`] = new Date().toISOString();
+            updates[`Users/${u.emailKey}/disconnectedReason`] = `같은 이름으로 재가입 (${newEmailKey})`;
+          });
         } else {
-          // 동명이인 처리: (2), (3) ... 접미사
-          const allNames = Object.values(playersData).map(p => p?.name).filter(Boolean);
+          // 동명이인 처리
+          const allNames = Object.values(playersData)
+            .map((p) => String(p?.name || '').trim())
+            .filter(Boolean);
           let num = 2;
-          while (allNames.includes(`${req.name}(${num})`)) num++;
-          finalName = `${req.name}(${num})`;
+          while (allNames.includes(`${reqNameNorm}(${num})`)) num++;
+          finalName = `${reqNameNorm}(${num})`;
           registeredPlayerKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
           updates[`registeredPlayers/${clubName}/${registeredPlayerKey}`] = {
             name: finalName, date: today,
@@ -345,7 +385,22 @@ export default function AdminPage() {
           };
         }
       } else {
-        // 2) 동일 이름 없음 → 신규 추가
+        // 등록 선수에 없지만 옛 Users 계정만 있는 경우도 안내
+        if (orphanedUsers.length > 0) {
+          const cleanupOldAccount = window.confirm(
+            `등록 선수에는 "${reqNameNorm}" 이름이 없지만, 동일 이름·동일 클럽의 옛 계정 ${orphanedUsers.length}개가 발견됐습니다:\n` +
+            orphanedUsers.map((u) => `  · ${u.email}`).join('\n') +
+            `\n\n[확인] 신규 등록 + 옛 계정 클럽 연결 해제\n[취소] 신규 등록만 (옛 계정 그대로 유지)`
+          );
+          if (cleanupOldAccount) {
+            orphanedUsers.forEach((u) => {
+              updates[`Users/${u.emailKey}/club`] = null;
+              updates[`Users/${u.emailKey}/disconnectedAt`] = new Date().toISOString();
+              updates[`Users/${u.emailKey}/disconnectedReason`] = `같은 이름으로 재가입 (${newEmailKey})`;
+            });
+          }
+        }
+        // 신규 추가
         registeredPlayerKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
         updates[`registeredPlayers/${clubName}/${registeredPlayerKey}`] = {
           name: finalName, date: today,
@@ -356,15 +411,22 @@ export default function AdminPage() {
       }
 
       // 3) Users에서 pending 해제 + 이름 업데이트 (동명이인 처리됐을 수 있음)
-      updates[`Users/${emailKey}/pending`] = null;
-      updates[`Users/${emailKey}/name`] = finalName;
-      updates[`Users/${emailKey}/approvedAt`] = new Date().toISOString();
+      updates[`Users/${newEmailKey}/pending`] = null;
+      updates[`Users/${newEmailKey}/name`] = finalName;
+      updates[`Users/${newEmailKey}/approvedAt`] = new Date().toISOString();
 
       // 4) JoinRequests 삭제
-      updates[`JoinRequests/${clubName}/${emailKey}`] = null;
+      updates[`JoinRequests/${clubName}/${newEmailKey}`] = null;
 
       await update(ref(db), updates);
-      alert(`${finalName}님의 가입을 승인했습니다.`);
+
+      // 🆕 결과 안내 (옛 계정 정리 여부 포함)
+      let successMsg = `${finalName}님의 가입을 승인했습니다.`;
+      const cleanedCount = orphanedUsers.filter((u) => updates[`Users/${u.emailKey}/club`] === null).length;
+      if (cleanedCount > 0) {
+        successMsg += `\n옛 계정 ${cleanedCount}개의 클럽 연결을 해제했습니다.`;
+      }
+      alert(successMsg);
       setJoinRequestDialog(null);
     } catch (e) {
       alert('승인 실패: ' + e.message);
