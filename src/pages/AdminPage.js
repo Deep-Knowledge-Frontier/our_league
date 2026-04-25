@@ -119,6 +119,10 @@ export default function AdminPage() {
   // 🆕 가입 신청 관리 (B3)
   const [joinRequests, setJoinRequests] = useState([]);
   const [joinRequestDialog, setJoinRequestDialog] = useState(null);
+  // 🆕 동일 이름 발견 시 처리 옵션 다이얼로그
+  // { req, existingEntry, orphanedUsers }
+  const [mergeChoiceDialog, setMergeChoiceDialog] = useState(null);
+  const [approving, setApproving] = useState(false);
 
   // 🆕 팀 삭제/복원 (마스터 전용)
   const [deleteClubDialog, setDeleteClubDialog] = useState(null); // { club, step: 1|2, confirmText: '' }
@@ -297,29 +301,25 @@ export default function AdminPage() {
   }, [canAccess, clubName]);
 
   /* ── 🆕 가입 승인 / 거부 ── */
+  // 🆕 가입 승인 사전 체크 — 동일 이름 / 옛 계정 발견 시 다이얼로그 표시, 아니면 즉시 승인
   const approveJoinRequest = async (req) => {
     try {
-      const newEmailKey = req.emailKey;
-      const today = new Date().toISOString().slice(0, 10);
-      // 🆕 이름 정규화 — 공백 차이로 매칭 실패하는 문제 해결
       const reqNameNorm = String(req.name || '').trim();
-      const updates = {};
 
       // 1) registeredPlayers에서 동일 이름 체크 (정규화 비교)
       const playersSnap = await get(ref(db, `registeredPlayers/${clubName}`));
       const playersData = playersSnap.exists() ? playersSnap.val() : {};
       const existingEntry = Object.entries(playersData)
-        .find(([, p]) => String(p?.name || '').trim() === reqNameNorm);
+        .find(([, p]) => String(p?.name || '').trim() === reqNameNorm) || null;
 
-      // 🆕 2) Users에서 동일 이름·동일 클럽의 옛 계정 검색 (재가입 케이스)
-      //   - 같은 이름이 다른 emailKey 로 활성 상태로 남아있으면, 멤버 리스트가 잘못된 계정으로 매핑될 수 있음
+      // 2) Users에서 동일 이름·동일 클럽의 옛 계정 검색 (재가입 케이스)
       const usersSnap = await get(ref(db, 'Users'));
       const orphanedUsers = [];
       if (usersSnap.exists()) {
         Object.entries(usersSnap.val() || {}).forEach(([key, u]) => {
-          if (key === newEmailKey) return; // 본인 신규 계정 제외
+          if (key === req.emailKey) return;
           if (!u || u.club !== clubName) return;
-          if (u.pending === true) return; // 다른 pending 신청은 별도 처리
+          if (u.pending === true) return;
           if (String(u.name || '').trim() !== reqNameNorm) return;
           orphanedUsers.push({
             emailKey: key,
@@ -329,80 +329,64 @@ export default function AdminPage() {
         });
       }
 
+      // 3) 충돌 없으면 바로 신규 등록
+      if (!existingEntry && orphanedUsers.length === 0) {
+        await executeApproveJoinRequest(req, { mode: 'new', existingEntry: null, orphanedUsers: [], playersData });
+        return;
+      }
+
+      // 4) 충돌 있으면 선택 다이얼로그
+      setMergeChoiceDialog({ req, existingEntry, orphanedUsers, playersData });
+    } catch (e) {
+      alert('승인 처리 실패: ' + e.message);
+    }
+  };
+
+  // 🆕 실제 승인 실행 (mode: 'merge' | 'duplicate' | 'new')
+  const executeApproveJoinRequest = async (req, ctx) => {
+    if (approving) return;
+    setApproving(true);
+    try {
+      const newEmailKey = req.emailKey;
+      const today = new Date().toISOString().slice(0, 10);
+      const reqNameNorm = String(req.name || '').trim();
+      const { mode, existingEntry, orphanedUsers, playersData = {} } = ctx;
+      const updates = {};
       let finalName = reqNameNorm;
-      let registeredPlayerKey;
 
-      if (existingEntry) {
+      if (mode === 'merge' && existingEntry) {
         const [existingKey, existingData] = existingEntry;
-
-        // 🆕 옛 계정 정보까지 포함한 향상된 안내
-        let msg = `이미 "${reqNameNorm}" 이름의 선수가 등록되어 있습니다.\n\n`;
-        if (orphanedUsers.length > 0) {
-          msg += `⚠️ 동일 이름·동일 클럽의 기존 계정 ${orphanedUsers.length}개 발견:\n`;
-          orphanedUsers.forEach((u) => {
-            msg += `  · ${u.email}${u.approvedAt ? ` (가입: ${u.approvedAt.slice(0, 10)})` : ''}\n`;
-          });
-          msg += `(재가입 시나리오로 보입니다)\n\n`;
-        }
-        msg += `[확인] 동일인으로 통합\n`;
-        msg += `     → 등록 선수 정보를 신청 데이터로 업데이트\n`;
-        if (orphanedUsers.length > 0) {
-          msg += `     → 옛 계정의 클럽 연결을 해제 (멤버 리스트 정상화)\n`;
-        }
-        msg += `\n[취소] 동명이인으로 별도 추가 ("${reqNameNorm}(2)"로 생성)`;
-
-        const confirmMerge = window.confirm(msg);
-
-        if (confirmMerge) {
-          registeredPlayerKey = existingKey;
-          updates[`registeredPlayers/${clubName}/${existingKey}`] = {
-            name: String(existingData.name || reqNameNorm).trim(), // 기존 이름 유지(정규화)
-            date: existingData.date || today,
-            position: req.position || existingData.position || '',
-            subPosition: req.subPosition || existingData.subPosition || '',
-            jerseyNumber: req.jerseyNumber ?? existingData.jerseyNumber ?? null,
-          };
-          // 🆕 옛 계정 클럽 연결 해제 (지난 계정의 club 제거 → 멤버 리스트에서 자동 제거)
-          orphanedUsers.forEach((u) => {
-            updates[`Users/${u.emailKey}/club`] = null;
-            updates[`Users/${u.emailKey}/disconnectedAt`] = new Date().toISOString();
-            updates[`Users/${u.emailKey}/disconnectedReason`] = `같은 이름으로 재가입 (${newEmailKey})`;
-          });
-        } else {
-          // 동명이인 처리
-          const allNames = Object.values(playersData)
-            .map((p) => String(p?.name || '').trim())
-            .filter(Boolean);
-          let num = 2;
-          while (allNames.includes(`${reqNameNorm}(${num})`)) num++;
-          finalName = `${reqNameNorm}(${num})`;
-          registeredPlayerKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
-          updates[`registeredPlayers/${clubName}/${registeredPlayerKey}`] = {
-            name: finalName, date: today,
-            position: req.position || '',
-            subPosition: req.subPosition || '',
-            jerseyNumber: req.jerseyNumber ?? null,
-          };
-        }
+        updates[`registeredPlayers/${clubName}/${existingKey}`] = {
+          name: String(existingData.name || reqNameNorm).trim(),
+          date: existingData.date || today,
+          position: req.position || existingData.position || '',
+          subPosition: req.subPosition || existingData.subPosition || '',
+          jerseyNumber: req.jerseyNumber ?? existingData.jerseyNumber ?? null,
+        };
+        // 옛 계정 클럽 연결 해제
+        orphanedUsers.forEach((u) => {
+          updates[`Users/${u.emailKey}/club`] = null;
+          updates[`Users/${u.emailKey}/disconnectedAt`] = new Date().toISOString();
+          updates[`Users/${u.emailKey}/disconnectedReason`] = `같은 이름으로 재가입 (${newEmailKey})`;
+        });
+      } else if (mode === 'duplicate') {
+        const allNames = Object.values(playersData)
+          .map((p) => String(p?.name || '').trim())
+          .filter(Boolean);
+        let num = 2;
+        while (allNames.includes(`${reqNameNorm}(${num})`)) num++;
+        finalName = `${reqNameNorm}(${num})`;
+        const newKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
+        updates[`registeredPlayers/${clubName}/${newKey}`] = {
+          name: finalName, date: today,
+          position: req.position || '',
+          subPosition: req.subPosition || '',
+          jerseyNumber: req.jerseyNumber ?? null,
+        };
       } else {
-        // 등록 선수에 없지만 옛 Users 계정만 있는 경우도 안내
-        if (orphanedUsers.length > 0) {
-          const cleanupOldAccount = window.confirm(
-            `등록 선수에는 "${reqNameNorm}" 이름이 없지만, 동일 이름·동일 클럽의 옛 계정 ${orphanedUsers.length}개가 발견됐습니다:\n` +
-            orphanedUsers.map((u) => `  · ${u.email}`).join('\n') +
-            `\n\n[확인] 신규 등록 + 옛 계정 클럽 연결 해제\n[취소] 신규 등록만 (옛 계정 그대로 유지)`
-          );
-          if (cleanupOldAccount) {
-            orphanedUsers.forEach((u) => {
-              updates[`Users/${u.emailKey}/club`] = null;
-              updates[`Users/${u.emailKey}/disconnectedAt`] = new Date().toISOString();
-              updates[`Users/${u.emailKey}/disconnectedReason`] = `같은 이름으로 재가입 (${newEmailKey})`;
-            });
-          }
-        }
-        // 신규 추가
-        registeredPlayerKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
-        updates[`registeredPlayers/${clubName}/${registeredPlayerKey}`] = {
+        // mode === 'new'
+        const newKey = push(ref(db, `registeredPlayers/${clubName}`)).key;
+        updates[`registeredPlayers/${clubName}/${newKey}`] = {
           name: finalName, date: today,
           position: req.position || '',
           subPosition: req.subPosition || '',
@@ -410,26 +394,25 @@ export default function AdminPage() {
         };
       }
 
-      // 3) Users에서 pending 해제 + 이름 업데이트 (동명이인 처리됐을 수 있음)
+      // 새 사용자 활성화 + JoinRequests 삭제
       updates[`Users/${newEmailKey}/pending`] = null;
       updates[`Users/${newEmailKey}/name`] = finalName;
       updates[`Users/${newEmailKey}/approvedAt`] = new Date().toISOString();
-
-      // 4) JoinRequests 삭제
       updates[`JoinRequests/${clubName}/${newEmailKey}`] = null;
 
       await update(ref(db), updates);
 
-      // 🆕 결과 안내 (옛 계정 정리 여부 포함)
       let successMsg = `${finalName}님의 가입을 승인했습니다.`;
-      const cleanedCount = orphanedUsers.filter((u) => updates[`Users/${u.emailKey}/club`] === null).length;
-      if (cleanedCount > 0) {
-        successMsg += `\n옛 계정 ${cleanedCount}개의 클럽 연결을 해제했습니다.`;
+      if (mode === 'merge' && orphanedUsers.length > 0) {
+        successMsg += `\n옛 계정 ${orphanedUsers.length}개의 클럽 연결을 해제했습니다.`;
       }
       alert(successMsg);
+      setMergeChoiceDialog(null);
       setJoinRequestDialog(null);
     } catch (e) {
       alert('승인 실패: ' + e.message);
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -3049,6 +3032,198 @@ export default function AdminPage() {
             승인
           </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* 🆕 동일 이름 발견 시 처리 옵션 다이얼로그 */}
+      <Dialog
+        open={!!mergeChoiceDialog}
+        onClose={() => !approving && setMergeChoiceDialog(null)}
+        fullWidth maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        {mergeChoiceDialog && (() => {
+          const { req, existingEntry, orphanedUsers } = mergeChoiceDialog;
+          const reqNameNorm = String(req.name || '').trim();
+          const existingPlayer = existingEntry ? existingEntry[1] : null;
+          return (
+            <>
+              <DialogTitle sx={{ fontWeight: 900, color: '#1565C0', pb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={{ fontSize: '1.4rem' }}>🔍</Typography>
+                  <Box>
+                    <Typography sx={{ fontWeight: 900, fontSize: '1.05rem', color: '#1565C0' }}>
+                      가입 처리 선택
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.75rem', color: '#666', fontWeight: 500 }}>
+                      "{reqNameNorm}" 이름이 이미 존재합니다
+                    </Typography>
+                  </Box>
+                </Box>
+              </DialogTitle>
+              <DialogContent>
+                {/* 신청자 정보 */}
+                <Box sx={{ p: 1.2, bgcolor: '#E3F2FD', borderRadius: 2, mb: 1.5, border: '1px solid #BBDEFB' }}>
+                  <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: '#1565C0', mb: 0.3 }}>
+                    📝 가입 신청자
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.88rem', fontWeight: 800, color: '#0D47A1' }}>
+                    {req.name} · {req.position || '포지션 미정'}
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.74rem', color: '#1976D2' }}>
+                    {req.email}
+                  </Typography>
+                </Box>
+
+                {/* 등록된 선수 정보 */}
+                {existingPlayer && (
+                  <Box sx={{ p: 1.2, bgcolor: '#E8F5E9', borderRadius: 2, mb: 1.5, border: '1px solid #C8E6C9' }}>
+                    <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: '#2E7D32', mb: 0.3 }}>
+                      🟢 등록된 동일 이름 선수
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.88rem', fontWeight: 800, color: '#1B5E20' }}>
+                      {existingPlayer.name}
+                      {existingPlayer.position ? ` · ${existingPlayer.position}` : ''}
+                      {existingPlayer.jerseyNumber != null ? ` · #${existingPlayer.jerseyNumber}` : ''}
+                    </Typography>
+                    {existingPlayer.date && (
+                      <Typography sx={{ fontSize: '0.72rem', color: '#388E3C' }}>
+                        등록일: {existingPlayer.date}
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+
+                {/* 옛 계정 발견 */}
+                {orphanedUsers.length > 0 && (
+                  <Box sx={{ p: 1.2, bgcolor: '#FFF3E0', borderRadius: 2, mb: 1.5, border: '1px solid #FFE0B2' }}>
+                    <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: '#E65100', mb: 0.4 }}>
+                      ⚠️ 동일 이름의 옛 계정 {orphanedUsers.length}개 (재가입 가능성)
+                    </Typography>
+                    {orphanedUsers.map((u) => (
+                      <Typography key={u.emailKey} sx={{ fontSize: '0.74rem', color: '#BF360C', fontWeight: 600 }}>
+                        · {u.email}{u.approvedAt ? ` (가입: ${u.approvedAt.slice(0, 10)})` : ''}
+                      </Typography>
+                    ))}
+                  </Box>
+                )}
+
+                {/* 3가지 액션 카드 */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 0.5 }}>
+                  {/* 1. 동일인으로 통합 */}
+                  <Box
+                    onClick={() => !approving && executeApproveJoinRequest(req, { ...mergeChoiceDialog, mode: 'merge' })}
+                    sx={{
+                      cursor: approving ? 'wait' : 'pointer',
+                      borderRadius: 2.5, p: 1.5,
+                      background: 'linear-gradient(135deg, #43A047 0%, #2E7D32 100%)',
+                      color: 'white', display: 'flex', alignItems: 'center', gap: 1.2,
+                      boxShadow: '0 3px 10px rgba(46,125,50,0.25)',
+                      opacity: approving ? 0.6 : 1,
+                      transition: 'all 0.18s',
+                      '&:hover': !approving ? { transform: 'translateY(-2px)', boxShadow: '0 5px 14px rgba(46,125,50,0.35)' } : {},
+                    }}
+                  >
+                    <Box sx={{
+                      width: 38, height: 38, borderRadius: '50%',
+                      bgcolor: 'rgba(255,255,255,0.22)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1.3rem', flexShrink: 0,
+                    }}>
+                      ✅
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontSize: '0.95rem', fontWeight: 800, mb: 0.1 }}>
+                        동일인으로 통합
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.72rem', opacity: 0.92, lineHeight: 1.35 }}>
+                        등록 선수 정보 업데이트
+                        {orphanedUsers.length > 0 && ' + 옛 계정 클럽 연결 해제'}
+                      </Typography>
+                    </Box>
+                    <Typography sx={{ fontSize: '1.2rem', opacity: 0.75 }}>›</Typography>
+                  </Box>
+
+                  {/* 2. 동명이인으로 별도 추가 */}
+                  <Box
+                    onClick={() => !approving && executeApproveJoinRequest(req, { ...mergeChoiceDialog, mode: 'duplicate' })}
+                    sx={{
+                      cursor: approving ? 'wait' : 'pointer',
+                      borderRadius: 2.5, p: 1.5,
+                      bgcolor: 'white',
+                      border: '2px solid #BBDEFB',
+                      display: 'flex', alignItems: 'center', gap: 1.2,
+                      opacity: approving ? 0.6 : 1,
+                      transition: 'all 0.18s',
+                      '&:hover': !approving ? { borderColor: '#1565C0', bgcolor: '#E3F2FD', transform: 'translateY(-2px)', boxShadow: '0 4px 12px rgba(21,101,192,0.18)' } : {},
+                    }}
+                  >
+                    <Box sx={{
+                      width: 38, height: 38, borderRadius: '50%',
+                      bgcolor: '#E3F2FD',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1.25rem', flexShrink: 0,
+                      border: '1px solid #BBDEFB',
+                    }}>
+                      🆕
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontSize: '0.95rem', fontWeight: 800, color: '#1565C0', mb: 0.1 }}>
+                        동명이인으로 별도 추가
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.72rem', color: '#666', lineHeight: 1.35 }}>
+                        새 선수로 등록 ("{reqNameNorm}(2)" 등)
+                      </Typography>
+                    </Box>
+                    <Typography sx={{ fontSize: '1.2rem', color: '#1565C0', opacity: 0.7 }}>›</Typography>
+                  </Box>
+
+                  {/* 3. 보류 */}
+                  <Box
+                    onClick={() => !approving && setMergeChoiceDialog(null)}
+                    sx={{
+                      cursor: approving ? 'wait' : 'pointer',
+                      borderRadius: 2.5, p: 1.5,
+                      bgcolor: 'white',
+                      border: '2px solid #E0E0E0',
+                      display: 'flex', alignItems: 'center', gap: 1.2,
+                      opacity: approving ? 0.6 : 1,
+                      transition: 'all 0.18s',
+                      '&:hover': !approving ? { borderColor: '#9E9E9E', bgcolor: '#FAFAFA' } : {},
+                    }}
+                  >
+                    <Box sx={{
+                      width: 38, height: 38, borderRadius: '50%',
+                      bgcolor: '#F5F5F5',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1.25rem', flexShrink: 0,
+                      border: '1px solid #E0E0E0',
+                    }}>
+                      ⏸
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontSize: '0.95rem', fontWeight: 800, color: '#555', mb: 0.1 }}>
+                        보류
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.72rem', color: '#888', lineHeight: 1.35 }}>
+                        지금 결정하지 않음 (신청 그대로 유지)
+                      </Typography>
+                    </Box>
+                    <Typography sx={{ fontSize: '1.2rem', color: '#9E9E9E', opacity: 0.7 }}>›</Typography>
+                  </Box>
+                </Box>
+              </DialogContent>
+              <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button
+                  onClick={() => !approving && setMergeChoiceDialog(null)}
+                  sx={{ color: '#888', fontWeight: 600, fontSize: '0.85rem' }}
+                  disabled={approving}
+                >
+                  닫기
+                </Button>
+              </DialogActions>
+            </>
+          );
+        })()}
       </Dialog>
 
       {/* 선수 정보 수정 다이얼로그 (A3) */}

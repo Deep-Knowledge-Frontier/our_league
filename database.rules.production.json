@@ -8,7 +8,7 @@
 
       "$emailKey": {
         ".read": "auth != null && $emailKey == auth.token.email.replace('.', ',')",
-        ".write": "auth != null && $emailKey == auth.token.email.replace('.', ',')"
+        ".write": "auth != null && ($emailKey == auth.token.email.replace('.', ',') || root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
       }
     },
 
