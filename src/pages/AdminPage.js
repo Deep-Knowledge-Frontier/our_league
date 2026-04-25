@@ -6,7 +6,7 @@ import {
   Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
   TextField, IconButton, Dialog, DialogTitle, DialogContent,
   DialogActions, Chip, Select, MenuItem, FormControl, InputLabel,
-  Divider, Alert,
+  Divider, Alert, Checkbox, FormControlLabel,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
@@ -123,6 +123,10 @@ export default function AdminPage() {
   // { req, existingEntry, orphanedUsers }
   const [mergeChoiceDialog, setMergeChoiceDialog] = useState(null);
   const [approving, setApproving] = useState(false);
+  // 🆕 경기일 삭제 확인 다이얼로그 (실수 방지용 체크박스)
+  const [deleteMatchDialog, setDeleteMatchDialog] = useState(null); // matchDate item
+  const [deleteMatchAck, setDeleteMatchAck] = useState(false);
+  const [deletingMatch, setDeletingMatch] = useState(false);
 
   // 🆕 팀 삭제/복원 (마스터 전용)
   const [deleteClubDialog, setDeleteClubDialog] = useState(null); // { club, step: 1|2, confirmText: '' }
@@ -464,10 +468,26 @@ export default function AdminPage() {
     await loadMatchDates();
   };
 
-  const deleteMatchDate = async (dateKey) => {
-    if (!window.confirm(`${dateKey} 경기일을 삭제하시겠습니까?`)) return;
-    await remove(ref(db, `MatchDates/${clubName}/${dateKey}`));
-    await loadMatchDates();
+  // 🆕 경기일 삭제 요청 (확인 다이얼로그 띄움)
+  const requestDeleteMatchDate = (item) => {
+    setDeleteMatchAck(false);
+    setDeleteMatchDialog(item);
+  };
+
+  // 🆕 실제 삭제 (체크박스 동의 후에만 활성)
+  const confirmDeleteMatchDate = async () => {
+    if (!deleteMatchDialog || !deleteMatchAck || deletingMatch) return;
+    setDeletingMatch(true);
+    try {
+      await remove(ref(db, `MatchDates/${clubName}/${deleteMatchDialog.dateKey}`));
+      await loadMatchDates();
+      setDeleteMatchDialog(null);
+      setDeleteMatchAck(false);
+    } catch (e) {
+      alert('삭제 실패: ' + e.message);
+    } finally {
+      setDeletingMatch(false);
+    }
   };
 
   const openMatchEdit = (item) => {
@@ -2143,7 +2163,7 @@ export default function AdminPage() {
                 <IconButton size="small" onClick={() => openMatchEdit(item)}>
                   <EditIcon fontSize="small" />
                 </IconButton>
-                <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => deleteMatchDate(item.dateKey)}>
+                <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => requestDeleteMatchDate(item)}>
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Box>
@@ -3224,6 +3244,124 @@ export default function AdminPage() {
             </>
           );
         })()}
+      </Dialog>
+
+      {/* 🆕 경기일 삭제 확인 다이얼로그 — 체크박스 동의 후에만 삭제 활성 */}
+      <Dialog
+        open={!!deleteMatchDialog}
+        onClose={() => !deletingMatch && setDeleteMatchDialog(null)}
+        fullWidth maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        {deleteMatchDialog && (
+          <>
+            <DialogTitle sx={{
+              background: 'linear-gradient(135deg, #EF5350, #C62828)',
+              color: 'white', pb: 1.5,
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography sx={{ fontSize: '1.5rem' }}>⚠️</Typography>
+                <Box>
+                  <Typography sx={{ fontWeight: 900, fontSize: '1.05rem' }}>
+                    경기일 삭제 확인
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.74rem', opacity: 0.92 }}>
+                    이 작업은 되돌릴 수 없습니다
+                  </Typography>
+                </Box>
+              </Box>
+            </DialogTitle>
+            <DialogContent sx={{ pt: 2 }}>
+              {/* 삭제 대상 정보 */}
+              <Box sx={{
+                p: 1.5, borderRadius: 2, mb: 2,
+                bgcolor: '#FFEBEE', border: '1px solid #FFCDD2',
+              }}>
+                <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: '#C62828', mb: 0.4 }}>
+                  🗑 삭제할 경기일
+                </Typography>
+                <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#B71C1C', mb: 0.3 }}>
+                  {deleteMatchDialog.dateKey}
+                </Typography>
+                {(deleteMatchDialog.time || deleteMatchDialog.location) && (
+                  <Typography sx={{ fontSize: '0.82rem', color: '#7B1F23', fontWeight: 600 }}>
+                    {[deleteMatchDialog.time, deleteMatchDialog.location].filter(Boolean).join(' · ')}
+                  </Typography>
+                )}
+              </Box>
+
+              {/* 위험성 안내 */}
+              <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#E65100', mb: 0.8 }}>
+                ⚠ 함께 확인할 것
+              </Typography>
+              <Box sx={{
+                p: 1.3, borderRadius: 2, mb: 2,
+                bgcolor: '#FFF8E1', border: '1px solid #FFE082',
+              }}>
+                {[
+                  '경기일이 즉시 삭제되며 투표 탭에서 사라집니다.',
+                  '관련 투표 데이터(참석/불참)와 경기 기록은 별도로 남아있을 수 있어 추가 정리가 필요할 수 있습니다.',
+                  '실수 시 동일 날짜로 다시 등록할 수 있지만, 삭제 시점의 상태는 복구되지 않습니다.',
+                ].map((msg, i) => (
+                  <Box key={i} sx={{ display: 'flex', gap: 0.8, alignItems: 'flex-start', mb: i < 2 ? 0.6 : 0 }}>
+                    <Typography sx={{ fontSize: '0.78rem', color: '#E65100', flexShrink: 0, fontWeight: 800 }}>•</Typography>
+                    <Typography sx={{ fontSize: '0.78rem', color: '#6D4C41', lineHeight: 1.45 }}>{msg}</Typography>
+                  </Box>
+                ))}
+              </Box>
+
+              {/* 확인 체크박스 */}
+              <Box sx={{
+                p: 1.2, borderRadius: 2,
+                bgcolor: deleteMatchAck ? '#FFEBEE' : '#FAFAFA',
+                border: `1.5px solid ${deleteMatchAck ? '#C62828' : '#E0E0E0'}`,
+                transition: 'all 0.18s',
+              }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={deleteMatchAck}
+                      onChange={(e) => setDeleteMatchAck(e.target.checked)}
+                      sx={{
+                        color: '#C62828',
+                        '&.Mui-checked': { color: '#C62828' },
+                      }}
+                    />
+                  }
+                  label={
+                    <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: deleteMatchAck ? '#B71C1C' : '#555' }}>
+                      위 내용을 확인했으며, 삭제에 동의합니다.
+                    </Typography>
+                  }
+                  sx={{ m: 0 }}
+                />
+              </Box>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, gap: 1 }}>
+              <Button
+                onClick={() => !deletingMatch && setDeleteMatchDialog(null)}
+                disabled={deletingMatch}
+                sx={{ color: '#666', fontWeight: 700, borderRadius: 2, px: 2.5 }}
+              >
+                취소
+              </Button>
+              <Button
+                variant="contained"
+                onClick={confirmDeleteMatchDate}
+                disabled={!deleteMatchAck || deletingMatch}
+                startIcon={deletingMatch ? <CircularProgress size={16} color="inherit" /> : null}
+                sx={{
+                  borderRadius: 2, px: 3, fontWeight: 800,
+                  bgcolor: '#C62828',
+                  '&:hover': { bgcolor: '#B71C1C' },
+                  '&.Mui-disabled': { bgcolor: '#FFCDD2', color: '#fff' },
+                }}
+              >
+                {deletingMatch ? '삭제 중…' : '영구 삭제'}
+              </Button>
+            </DialogActions>
+          </>
+        )}
       </Dialog>
 
       {/* 선수 정보 수정 다이얼로그 (A3) */}
