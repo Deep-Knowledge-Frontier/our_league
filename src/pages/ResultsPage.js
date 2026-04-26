@@ -12,9 +12,11 @@ import { useTheme } from '@mui/material/styles';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import CloseIcon from '@mui/icons-material/Close';
+import ShareIcon from '@mui/icons-material/Share';
 import { useAuth } from '../contexts/AuthContext';
 import { calcMean, calcStd } from '../utils/stats';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
+import { shareDailyResultsImage } from '../utils/shareDailyResults';
 import { ResultsPageSkeleton } from '../components/common/SkeletonLoading';
 
 import {
@@ -416,6 +418,54 @@ function ResultsPage() {
   // =========================
   // 3) 이벤트
   // =========================
+  // 🆕 일자별 결과 카드 공유 — 카드 단위 PNG 생성 후 Web Share / 다운로드
+  const [sharingDate, setSharingDate] = useState(null);
+  const handleShareDaily = useCallback(async (group, e) => {
+    if (e) e.stopPropagation();
+    if (!group || sharingDate) return;
+    setSharingDate(group.dateStr);
+    try {
+      const blob = await shareDailyResultsImage({
+        dateStr: group.dateStr,
+        dailyWinner: group.dailyWinner,
+        dateMvp: group.dateMvp,
+        matches: (group.matches || []).map((m, idx) => ({
+          gameNumber: m.gameNumber || `${idx + 1}경기`,
+          team1: m.team1, team2: m.team2,
+          score1: m.score1, score2: m.score2,
+          mvp: m.mvp,
+        })),
+      });
+      const dateKey = String(group.dateStr || '').split(' ')[0] || 'match';
+      const fileName = `${dateKey}_경기결과.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `${group.dateStr} 경기 결과`,
+            text: `${group.dateStr}${group.dailyWinner ? ` · 우승: ${group.dailyWinner}` : ''}`,
+          });
+        } catch (err) {
+          if (err.name !== 'AbortError') throw err;
+        }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      alert('이미지 생성/공유 실패: ' + (err.message || err));
+    } finally {
+      setSharingDate(null);
+    }
+  }, [sharingDate]);
+
   const handleMvpClick = useCallback(async (mvpName, e) => {
     if (e) e.stopPropagation();
     if (!mvpName || mvpName === '없음') return;
@@ -621,6 +671,22 @@ function ResultsPage() {
                             onClick={(e) => handleMvpClick(group.dateMvp, e)}
                             sx={{ fontSize: chipFont, height: 24, fontWeight: 'bold', letterSpacing: '-0.05em', borderWidth: '1.5px', cursor: 'pointer' }}
                           />
+                          {/* 🆕 일자별 공유 버튼 */}
+                          <IconButton
+                            size="small"
+                            onClick={(e) => handleShareDaily(group, e)}
+                            disabled={sharingDate === group.dateStr}
+                            sx={{
+                              p: 0.4,
+                              color: '#1565C0',
+                              '&:hover': { bgcolor: '#E3F2FD' },
+                            }}
+                            title="이 날 경기 결과 공유"
+                          >
+                            {sharingDate === group.dateStr
+                              ? <CircularProgress size={16} />
+                              : <ShareIcon sx={{ fontSize: '1.05rem' }} />}
+                          </IconButton>
                         </Box>
                       </Box>
 
