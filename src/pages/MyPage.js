@@ -4,7 +4,8 @@ import { auth, db } from '../config/firebase';
 import { ref, get } from 'firebase/database';
 import {
   Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
-  Divider, Chip, FormControl, InputLabel, Select, MenuItem, LinearProgress, IconButton
+  Divider, Chip, FormControl, InputLabel, Select, MenuItem, LinearProgress, IconButton,
+  Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import NotificationsIcon from '@mui/icons-material/Notifications';
@@ -88,6 +89,8 @@ export default function MyPage() {
   const [teammates, setTeammates] = useState(null);
   const [weeklyStandings, setWeeklyStandings] = useState(null);
   const [rankThreshold, setRankThreshold] = useState(15);
+  // 🆕 차트 포인트 클릭 시 표시할 주차별 상세 — { weekKey }
+  const [weekDetailDialog, setWeekDetailDialog] = useState(null);
   const [networkGraph, setNetworkGraph] = useState(null);
   const [allPlayerStats, setAllPlayerStats] = useState(null);
   const [graphPeriod, setGraphPeriod] = useState('6m');
@@ -1509,13 +1512,23 @@ export default function MyPage() {
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
+                    onClick: (_e, elements) => {
+                      if (!elements || elements.length === 0) return;
+                      const idx = elements[0].index;
+                      const r = rankHistory[idx];
+                      if (r) setWeekDetailDialog({ weekKey: r.week });
+                    },
+                    onHover: (e, elements) => {
+                      const target = e?.native?.target || e?.target;
+                      if (target && target.style) target.style.cursor = elements?.length ? 'pointer' : 'default';
+                    },
                     plugins: {
                       legend: { display: false },
                       tooltip: {
                         callbacks: {
                           label: (ctx) => {
                             const r = rankHistory[ctx.dataIndex];
-                            return `${r.rank}위 / ${r.total}명`;
+                            return [`${r.rank}위 / ${r.total}명`, '터치하여 상세 보기'];
                           }
                         }
                       }
@@ -1604,13 +1617,23 @@ export default function MyPage() {
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
+                    onClick: (_e, elements) => {
+                      if (!elements || elements.length === 0) return;
+                      const idx = elements[0].index;
+                      const r = pointRateHistory[idx];
+                      if (r) setWeekDetailDialog({ weekKey: r.week });
+                    },
+                    onHover: (e, elements) => {
+                      const target = e?.native?.target || e?.target;
+                      if (target && target.style) target.style.cursor = elements?.length ? 'pointer' : 'default';
+                    },
                     plugins: {
                       legend: { display: false },
                       tooltip: {
                         callbacks: {
                           label: (ctx) => {
                             const r = pointRateHistory[ctx.dataIndex];
-                            return `승 ${r.wins} · 무 ${r.draws} · 패 ${r.losses}  →  ${r.pointRate.toFixed(1)}%`;
+                            return [`승 ${r.wins} · 무 ${r.draws} · 패 ${r.losses}  →  ${r.pointRate.toFixed(1)}%`, '터치하여 상세 보기'];
                           }
                         }
                       }
@@ -1632,6 +1655,156 @@ export default function MyPage() {
             </Paper>
           );
         })()}
+
+        {/* 🆕 주차별 상세 다이얼로그 — 차트 포인트 클릭 시 표시 */}
+        <Dialog
+          open={!!weekDetailDialog}
+          onClose={() => setWeekDetailDialog(null)}
+          fullWidth maxWidth="xs"
+          PaperProps={{ sx: { borderRadius: 3 } }}
+        >
+          {weekDetailDialog && (() => {
+            const wk = weekDetailDialog.weekKey;
+            const me = weeklyStandings?.[wk]?.[userName] || null;
+            const wo = me?.weeklyOnly || null;
+            const rh = rankHistory?.find(r => r.week === wk);
+            const ph = pointRateHistory?.find(r => r.week === wk);
+            const fmt = (v, digits = 1, suffix = '') =>
+              v == null || Number.isNaN(Number(v)) ? '-' : `${Number(v).toFixed(digits)}${suffix}`;
+            return (
+              <>
+                <DialogTitle sx={{
+                  background: 'linear-gradient(135deg, #1976D2, #0D47A1)',
+                  color: 'white', pb: 1.5,
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                    <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>
+                      📅 {wk.replace(/(\d{4})-W(\d+)/, '$1년 $2주차')}
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontSize: '0.74rem', opacity: 0.92, mt: 0.3 }}>
+                    {userName}님의 그 주 활동
+                  </Typography>
+                </DialogTitle>
+                <DialogContent sx={{ pt: 2 }}>
+                  {/* ── 그 주만의 결과 ── */}
+                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#2E7D32', mb: 0.8 }}>
+                    🏆 그 주의 경기 결과
+                  </Typography>
+                  <Box sx={{
+                    p: 1.5, borderRadius: 2, mb: 2,
+                    bgcolor: '#E8F5E9', border: '1px solid #C8E6C9',
+                  }}>
+                    {ph ? (
+                      <>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                          <Box>
+                            <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>출전</Typography>
+                            <Typography sx={{ fontSize: '0.95rem', fontWeight: 800, color: '#1B5E20' }}>
+                              {ph.games}경기
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승점율</Typography>
+                            <Typography sx={{ fontSize: '0.95rem', fontWeight: 800, color: '#1B5E20' }}>
+                              {fmt(ph.pointRate, 1, '%')}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승/무/패</Typography>
+                            <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
+                              {ph.wins} · {ph.draws} · {ph.losses}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>골득실</Typography>
+                            <Typography sx={{
+                              fontSize: '0.95rem', fontWeight: 800,
+                              color: (wo?.avgGoalDiffPerGame || 0) >= 0 ? '#2E7D32' : '#C62828',
+                            }}>
+                              {wo?.avgGoalDiffPerGame != null
+                                ? `${wo.avgGoalDiffPerGame >= 0 ? '+' : ''}${wo.avgGoalDiffPerGame.toFixed(2)}`
+                                : '-'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </>
+                    ) : (
+                      <Typography sx={{ fontSize: '0.85rem', color: '#888' }}>
+                        그 주의 출전 기록이 없습니다.
+                      </Typography>
+                    )}
+                  </Box>
+
+                  {/* ── 누적 (그 주 기준) ── */}
+                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#1565C0', mb: 0.8 }}>
+                    📈 누적 통계 (그 주까지의 6개월)
+                  </Typography>
+                  <Box sx={{
+                    p: 1.5, borderRadius: 2, mb: 1,
+                    bgcolor: '#E3F2FD', border: '1px solid #BBDEFB',
+                  }}>
+                    {me ? (
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                        <Box>
+                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>능력치</Typography>
+                          <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0D47A1' }}>
+                            {fmt(me.abilityScore, 1)}점
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>능력치 순위</Typography>
+                          <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#D32F2F' }}>
+                            {rh ? `${rh.rank}위 / ${rh.total}명` : '-'}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승점율 (누적)</Typography>
+                          <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
+                            {fmt(me.pointRate, 1, '%')}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>출전율 (누적)</Typography>
+                          <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
+                            {fmt(me.attendanceRate, 1, '%')} ({me.participatedMatches || 0}경기)
+                          </Typography>
+                        </Box>
+                        <Box sx={{ gridColumn: '1 / span 2' }}>
+                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>평균 골득실 (누적)</Typography>
+                          <Typography sx={{
+                            fontSize: '0.92rem', fontWeight: 700,
+                            color: (me.avgGoalDiffPerGame || 0) >= 0 ? '#2E7D32' : '#C62828',
+                          }}>
+                            {me.avgGoalDiffPerGame != null
+                              ? `${me.avgGoalDiffPerGame >= 0 ? '+' : ''}${Number(me.avgGoalDiffPerGame).toFixed(2)}`
+                              : '-'}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    ) : (
+                      <Typography sx={{ fontSize: '0.85rem', color: '#888' }}>
+                        그 주의 누적 데이터가 없습니다.
+                      </Typography>
+                    )}
+                  </Box>
+                  <Typography sx={{ fontSize: '0.7rem', color: '#999', mt: 1, textAlign: 'center' }}>
+                    💡 누적 통계는 그 주 일요일까지 6개월 데이터 기준
+                  </Typography>
+                </DialogContent>
+                <DialogActions sx={{ pb: 2, justifyContent: 'center' }}>
+                  <Button
+                    onClick={() => setWeekDetailDialog(null)}
+                    variant="contained"
+                    sx={{ borderRadius: 2, px: 4, fontWeight: 700, bgcolor: '#1565C0' }}
+                  >
+                    닫기
+                  </Button>
+                </DialogActions>
+              </>
+            );
+          })()}
+        </Dialog>
 
         {/* -- 통계 -- */}
         <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
