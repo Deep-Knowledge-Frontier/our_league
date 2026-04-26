@@ -726,12 +726,29 @@ export default function MyPage() {
     return history;
   }, [weeklyStandings, userName, rankThreshold, currentRank]);
 
-  // 🆕 주차별 승점율 추이 — (승*3 + 무*1) / (출전*3) * 100
+  // 🆕 주차별 승점율 추이 — 그 주(월~일)만의 (승*3 + 무*1) / (출전*3) * 100
+  // weeklyOnly 필드(rebuildStats 에서 저장) 우선 사용. 없으면 누적 pointRate fallback (호환).
   const pointRateHistory = useMemo(() => {
     if (!weeklyStandings || !userName) return null;
     const history = Object.keys(weeklyStandings).sort().map(weekKey => {
       const me = weeklyStandings[weekKey]?.[userName];
-      if (!me || !(me.participatedMatches > 0)) return null;
+      if (!me) return null;
+      const wo = me.weeklyOnly;
+      // weeklyOnly 데이터가 있으면 그 주만의 통계 사용
+      if (wo) {
+        if (!(wo.games > 0)) return null;
+        return {
+          week: weekKey,
+          pointRate: Number(wo.pointRate || 0),
+          wins: wo.wins || 0,
+          draws: wo.draws || 0,
+          losses: wo.losses || 0,
+          games: wo.games || 0,
+          weekOnly: true,
+        };
+      }
+      // fallback: 백업이 새 형식으로 갱신되기 전이면 누적값 사용 (대체로 부정확하지만 빈 차트 방지)
+      if (!(me.participatedMatches > 0)) return null;
       return {
         week: weekKey,
         pointRate: Number(me.pointRate || 0),
@@ -739,34 +756,11 @@ export default function MyPage() {
         draws: me.draws || 0,
         losses: me.losses || 0,
         games: me.participatedMatches || 0,
+        weekOnly: false,
       };
     }).filter(Boolean);
-    // 현재 주 데이터로 마지막 포인트 교체/추가 (위 rankHistory와 동일 ISO week 계산)
-    const cur = allStatsForRank?.[userName];
-    if (cur && cur.participatedMatches > 0) {
-      const now = new Date();
-      const tmp = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-      tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
-      const yr = tmp.getUTCFullYear();
-      const ys = new Date(Date.UTC(yr, 0, 1));
-      const wn = Math.ceil(((tmp - ys) / 86400000 + 1) / 7);
-      const curWeek = `${yr}-W${String(wn).padStart(2, '0')}`;
-      const curEntry = {
-        week: curWeek,
-        pointRate: Number(cur.pointRate || 0),
-        wins: cur.wins || 0,
-        draws: cur.draws || 0,
-        losses: cur.losses || 0,
-        games: cur.participatedMatches || 0,
-      };
-      if (history.length > 0 && history[history.length - 1].week === curWeek) {
-        history[history.length - 1] = curEntry;
-      } else {
-        history.push(curEntry);
-      }
-    }
     return history;
-  }, [weeklyStandings, userName, allStatsForRank]);
+  }, [weeklyStandings, userName]);
 
   const fgRef = useRef(null);
   const [graphWidth, setGraphWidth] = useState(0);
@@ -1563,7 +1557,7 @@ export default function MyPage() {
                 </Typography>
               </Box>
               <Typography sx={{ fontSize: '0.72rem', color: '#999', mb: 1.5 }}>
-                (승×3 + 무×1) / (출전×3) × 100% · 최근 6개월
+                각 주의 경기 결과만 반영 · (승×3 + 무×1) / (출전×3) × 100%
               </Typography>
               {/* 현재 승점율 + 변화량 */}
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2 }}>

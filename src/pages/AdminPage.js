@@ -1518,7 +1518,7 @@ export default function AdminPage() {
           const isLatest = wi === uniqueWeeks.length - 1;
           let wStats;
           if (isLatest) {
-            // 마지막 주는 6개월 통계와 동일하게 (maxDate 없이)
+            // 마지막 주는 6개월 통계와 동일하게 (maxDate 없이) — 능력치 순위 정규화 호환
             wStats = recentStats;
           } else {
             const wCutoff = new Date(wMax + 'T00:00:00');
@@ -1527,15 +1527,33 @@ export default function AdminPage() {
             wStats = calcStats(scoreData, selData, cutoffStr, wMax);
           }
           if (Object.keys(wStats).length === 0) continue;
+
+          // 🆕 그 주만의 stats (월요일 ~ 일요일) — 주차별 승점율 차트용
+          const weekStartDate = new Date(wMax + 'T00:00:00');
+          weekStartDate.setDate(weekStartDate.getDate() - 6);
+          const weekStartStr = weekStartDate.toISOString().slice(0, 10);
+          const wOnlyStats = calcStats(scoreData, selData, null, wMax, weekStartStr);
+
           const weekData = {};
           Object.entries(wStats).forEach(([name, p]) => {
             if ((p.participatedMatches || 0) === 0) return;
+            const wo = wOnlyStats[name];
+            const hasWeekly = wo && (wo.participatedMatches || 0) > 0;
             weekData[name] = {
               abilityScore: +(p.abilityScore || 0).toFixed(2),
               attendanceRate: +(p.attendanceRate || 0).toFixed(1),
               pointRate: +(p.pointRate || 0).toFixed(1),
               avgGoalDiffPerGame: +(p.avgGoalDiffPerGame || 0).toFixed(2),
               participatedMatches: p.participatedMatches || 0,
+              // 🆕 weeklyOnly: 그 주(월~일)만의 W/D/L/games/pointRate
+              weeklyOnly: hasWeekly ? {
+                wins: wo.wins || 0,
+                draws: wo.draws || 0,
+                losses: wo.losses || 0,
+                games: wo.participatedMatches || 0,
+                pointRate: +(wo.pointRate || 0).toFixed(1),
+                avgGoalDiffPerGame: +(wo.avgGoalDiffPerGame || 0).toFixed(2),
+              } : null,
             };
           });
           weeklyStandings[weekKey] = weekData;
