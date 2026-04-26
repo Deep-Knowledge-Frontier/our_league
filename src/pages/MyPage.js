@@ -692,17 +692,16 @@ export default function MyPage() {
   }, [allStatsForRank, userName, rankThreshold]);
 
   // 주차별 순위 추이 (차트용) + 마지막에 현재 순위 반영
-  // 🔧 그 주에 팀(클럽 전체) 경기가 있었던 주만 표시 (본인 출전여부 무관)
-  //    팀에 아무 경기 없는 주는 누적 데이터 변동도 거의 없으므로 제외하는 게 자연스러움
+  // 🔧 신규 백업 후엔 weeklyStandings 에 weekKey 가 있다는 것 자체가 "팀 경기 있음"
+  //    옛 백업 데이터는 weeklyOnly 가 부분적으로만 있을 수 있어, 안전을 위해 추가 체크 유지
   const rankHistory = useMemo(() => {
     if (!weeklyStandings || !userName) return null;
     const history = Object.keys(weeklyStandings).sort().map(weekKey => {
       const weekData = weeklyStandings[weekKey];
-      // 팀 경기 유무 판정: weekData 내 어떤 선수든 weeklyOnly.games > 0 이면 팀 경기 있었음
-      // (weeklyOnly 없는 옛 데이터는 호환을 위해 통과 — 팀 경기 정보 없음)
+      // 팀 경기 유무 추가 검증 (옛 백업 호환): weekData 내 어떤 선수든 weeklyOnly.games > 0 이면 팀 경기 있었음
       const players = Object.values(weekData || {});
-      const hasWeeklyData = players.some(p => p?.weeklyOnly !== undefined);
-      if (hasWeeklyData) {
+      const hasAnyWeeklyOnly = players.some(p => p?.weeklyOnly && typeof p.weeklyOnly === 'object');
+      if (hasAnyWeeklyOnly) {
         const teamPlayed = players.some(p => (p?.weeklyOnly?.games || 0) > 0);
         if (!teamPlayed) return null;
       }
@@ -749,9 +748,11 @@ export default function MyPage() {
       const players = Object.values(weekData || {});
       const me = weekData?.[userName];
 
-      // 팀 경기 유무 판정 (weeklyOnly.games > 0 인 선수가 한 명이라도 있으면 팀 경기 있었음)
-      const hasWeeklyData = players.some(p => p?.weeklyOnly !== undefined);
-      if (hasWeeklyData) {
+      // 팀 경기 유무 추가 검증 (옛 백업 호환):
+      //   - 신규 백업: weekKey 존재 = 팀 경기 있음 (rebuildStats 에서 사전 필터링)
+      //   - 옛 백업: 일부 주차가 팀 경기 없어도 저장됐을 수 있음 → 한 명이라도 weeklyOnly.games > 0 인지 검증
+      const hasAnyWeeklyOnly = players.some(p => p?.weeklyOnly && typeof p.weeklyOnly === 'object');
+      if (hasAnyWeeklyOnly) {
         const teamPlayed = players.some(p => (p?.weeklyOnly?.games || 0) > 0);
         if (!teamPlayed) return null;
       }
@@ -773,8 +774,8 @@ export default function MyPage() {
         };
       }
 
-      // 새 형식인데 본인 미출전 → 팀 경기는 있으니 주차 자체는 표시 (0%)
-      if (hasWeeklyData) {
+      // 신규 백업의 팀 경기 있는 주 + 본인 미출전 → 주차는 표시 (0%, 회색 점)
+      if (hasAnyWeeklyOnly) {
         return {
           week: weekKey,
           pointRate: 0,
@@ -784,7 +785,7 @@ export default function MyPage() {
         };
       }
 
-      // fallback: 옛 형식 호환 (팀 경기 유무 판정 불가)
+      // fallback: 옛 형식 호환 (weeklyOnly 자체가 없음 — 누적값 사용)
       if (!(me?.participatedMatches > 0)) return null;
       return {
         week: weekKey,

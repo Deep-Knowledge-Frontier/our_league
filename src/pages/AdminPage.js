@@ -1542,6 +1542,13 @@ export default function AdminPage() {
           const weekStartStr = localYMD(weekStartDate);
           const wOnlyStats = calcStats(scoreData, selData, null, wMax, weekStartStr);
 
+          // 🔧 그 주에 팀(클럽 전체) 경기가 하나도 없었으면 그 주차는 저장하지 않음
+          //   - 이전엔 누적 통계만으로 weekKey 가 저장되어 차트에 점이 찍히는 문제 있었음
+          //   - Firebase는 null 값을 저장 시 키를 제거 → "본인 미출전"과 "팀 경기 없음" 구분 불가
+          //   - 아예 weekKey 자체를 저장 안 하면 weeklyStandings에 키가 없어 차트에서 자연 스킵
+          const teamHadMatches = Object.values(wOnlyStats).some(p => (p.participatedMatches || 0) > 0);
+          if (!teamHadMatches) continue;
+
           const weekData = {};
           Object.entries(wStats).forEach(([name, p]) => {
             if ((p.participatedMatches || 0) === 0) return;
