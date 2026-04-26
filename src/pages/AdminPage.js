@@ -982,11 +982,18 @@ export default function AdminPage() {
         const VOTE_START_DATE = '2025-12-25';
         const todayStr = new Date().toISOString().slice(0, 10);
 
-        const normalizeTeamKey = (key) => {
-          if (!key) return '';
-          return key.replace(/^team\s*/i, '').trim().toLowerCase();
+        // 🔧 팀 정규화 — Key/Name 둘 다 동일 규칙 적용
+        // (이전: normalizeTeamKey는 'team ' 접두어 제거, normalizeTeamName은 그대로 → 매칭 실패 버그)
+        const normalizeTeam = (s) => {
+          if (!s) return '';
+          return String(s)
+            .replace(/^team\s*/i, '')
+            .replace(/^팀\s*/i, '')
+            .trim()
+            .toLowerCase();
         };
-        const normalizeTeamName = (name) => name ? name.trim().toLowerCase() : '';
+        const normalizeTeamKey = normalizeTeam;
+        const normalizeTeamName = normalizeTeam;
         const toArr = (v) => {
           if (!v) return [];
           const arr = Array.isArray(v) ? v : (typeof v === 'object' ? Object.values(v) : [v]);
@@ -1049,6 +1056,7 @@ export default function AdminPage() {
               });
 
               // 로스터 기반 출전/승패 (normalizeTeamKey 매칭)
+              // 🔧 매칭 실패 시 알파벳 fallback 제거 — 잘못된 팀 매칭으로 통계 오염되는 것보다 누락이 안전
               let team1Players = [], team2Players = [];
               if (selData && selData[date]) {
                 const gameRoster = selData[date][gameKey];
@@ -1057,24 +1065,20 @@ export default function AdminPage() {
 
                 if (gameRoster) {
                   const rKeys = Object.keys(gameRoster);
-                  let t1Key = rKeys.find(k => normalizeTeamKey(k) === normT1);
-                  let t2Key = rKeys.find(k => normalizeTeamKey(k) === normT2);
+                  const t1Key = rKeys.find(k => normalizeTeamKey(k) === normT1);
+                  const t2Key = rKeys.find(k => normalizeTeamKey(k) === normT2);
                   if (!t1Key || !t2Key) {
-                    const sorted = rKeys.sort();
-                    if (!t1Key && sorted[0]) t1Key = sorted[0];
-                    if (!t2Key && sorted.length > 1) t2Key = sorted[1];
+                    console.warn(`[stats] roster team match fail: ${date}/${gameKey}`, { t1Name, t2Name, rKeys });
                   }
-                  team1Players = toArr(gameRoster[t1Key]);
-                  team2Players = toArr(gameRoster[t2Key]);
+                  if (t1Key) team1Players = toArr(gameRoster[t1Key]);
+                  if (t2Key) team2Players = toArr(gameRoster[t2Key]);
                 } else {
                   const att = selData[date].AttandPlayer || selData[date];
                   const aKeys = Object.keys(att).filter(k => k !== 'all');
-                  let t1Key = aKeys.find(k => normalizeTeamKey(k) === normT1);
-                  let t2Key = aKeys.find(k => normalizeTeamKey(k) === normT2);
+                  const t1Key = aKeys.find(k => normalizeTeamKey(k) === normT1);
+                  const t2Key = aKeys.find(k => normalizeTeamKey(k) === normT2);
                   if (!t1Key || !t2Key) {
-                    const sorted = aKeys.sort();
-                    if (!t1Key && sorted[0]) t1Key = sorted[0];
-                    if (!t2Key && sorted.length > 1) t2Key = sorted[1];
+                    console.warn(`[stats] AttandPlayer team match fail: ${date}/${gameKey}`, { t1Name, t2Name, aKeys });
                   }
                   if (t1Key) team1Players = toArr(att[t1Key]);
                   if (t2Key) team2Players = toArr(att[t2Key]);
@@ -1188,15 +1192,22 @@ export default function AdminPage() {
           }
 
           // Phase 5: abilityScore (computeRateDiffAbility)
+          // 🔧 정규화 기준을 eligible(출전율 30%↑) 선수로 통일
+          //    이전: allEntries 사용 → 1경기만 출전한 신규 선수가 min/max를 흔들어 능력치 왜곡
+          //    이제: Phase 4의 finalStamina/Attack/Defense 와 동일한 기준선
+          //    eligible이 비면(전원 30% 미만) allEntries로 fallback
+          const baseEntries = eligible.length > 0 ? eligible : allEntries;
           let mnR = Infinity, mxR = -Infinity, mnDf = Infinity, mxDf = -Infinity, mnAt = Infinity, mxAt = -Infinity;
-          for (const [, p] of allEntries) {
+          for (const [, p] of baseEntries) {
             mnR = Math.min(mnR, p.pointRate); mxR = Math.max(mxR, p.pointRate);
             mnDf = Math.min(mnDf, p.avgGoalDiffPerGame); mxDf = Math.max(mxDf, p.avgGoalDiffPerGame);
             mnAt = Math.min(mnAt, p.attendanceRate); mxAt = Math.max(mxAt, p.attendanceRate);
           }
           const norm = (val, mn, mx, base, range) => {
             if (mx === mn) return base + range / 2;
-            return base + ((val - mn) / (mx - mn)) * range;
+            // 🔧 eligible 기준 밖의 값(저출전 선수의 극단치)이 들어오면 base~base+range로 클램프
+            const ratio = Math.max(0, Math.min(1, (val - mn) / (mx - mn)));
+            return base + ratio * range;
           };
           for (const [, p] of allEntries) {
             p.abilityScore = norm(p.pointRate, mnR, mxR, 60, 40) * 0.6
@@ -1305,6 +1316,7 @@ export default function AdminPage() {
               const goals2 = parseGoals2(g.goalList2);
 
               // 로스터 (normalizeTeamKey 매칭)
+              // 🔧 매칭 실패 시 알파벳 fallback 제거 — 잘못된 팀 매칭으로 통계 오염되는 것보다 누락이 안전
               let team1Players = [], team2Players = [];
               if (selData2 && selData2[date]) {
                 const gameRoster = selData2[date][gameKey];
@@ -1313,24 +1325,20 @@ export default function AdminPage() {
 
                 if (gameRoster) {
                   const rKeys = Object.keys(gameRoster);
-                  let t1Key = rKeys.find(k => normalizeTeamKey(k) === normT1);
-                  let t2Key = rKeys.find(k => normalizeTeamKey(k) === normT2);
+                  const t1Key = rKeys.find(k => normalizeTeamKey(k) === normT1);
+                  const t2Key = rKeys.find(k => normalizeTeamKey(k) === normT2);
                   if (!t1Key || !t2Key) {
-                    const sorted = rKeys.sort();
-                    if (!t1Key && sorted[0]) t1Key = sorted[0];
-                    if (!t2Key && sorted.length > 1) t2Key = sorted[1];
+                    console.warn(`[detail] roster team match fail: ${date}/${gameKey}`, { t1Name, t2Name, rKeys });
                   }
-                  team1Players = toArr(gameRoster[t1Key]);
-                  team2Players = toArr(gameRoster[t2Key]);
+                  if (t1Key) team1Players = toArr(gameRoster[t1Key]);
+                  if (t2Key) team2Players = toArr(gameRoster[t2Key]);
                 } else {
                   const att = selData2[date].AttandPlayer || selData2[date];
                   const aKeys = Object.keys(att).filter(k => k !== 'all');
-                  let t1Key = aKeys.find(k => normalizeTeamKey(k) === normT1);
-                  let t2Key = aKeys.find(k => normalizeTeamKey(k) === normT2);
+                  const t1Key = aKeys.find(k => normalizeTeamKey(k) === normT1);
+                  const t2Key = aKeys.find(k => normalizeTeamKey(k) === normT2);
                   if (!t1Key || !t2Key) {
-                    const sorted = aKeys.sort();
-                    if (!t1Key && sorted[0]) t1Key = sorted[0];
-                    if (!t2Key && sorted.length > 1) t2Key = sorted[1];
+                    console.warn(`[detail] AttandPlayer team match fail: ${date}/${gameKey}`, { t1Name, t2Name, aKeys });
                   }
                   if (t1Key) team1Players = toArr(att[t1Key]);
                   if (t2Key) team2Players = toArr(att[t2Key]);
