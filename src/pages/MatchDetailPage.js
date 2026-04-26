@@ -127,8 +127,8 @@ export default function MatchDetailPage() {
   const [dailyTeamWinsByPlayer, setDailyTeamWinsByPlayer] = useState({});
   // 🆕 공유 진행 상태
   const [sharing, setSharing] = useState(false);
-  // 🆕 팀별 보기 필터 — 'all' | 'home' | 'away'
-  const [viewTeam, setViewTeam] = useState('all');
+  // 🆕 팀별 보기 필터 — 'home' | 'away' (기본 home, 항상 한 팀만 표시)
+  const [viewTeam, setViewTeam] = useState('home');
 
   // 포메이션 연동
   const [teamFormations, setTeamFormations] = useState({});
@@ -520,6 +520,9 @@ export default function MatchDetailPage() {
     const fmDef2 = tf2?.formationId ? formations[tf2.formationId] : null;
 
     // 포메이션 기반 위치 계산
+    // 🆕 한 팀만 보기 → 전체 필드 사용. GK 하단(자기 골대), 공격수 상단(상대편 골대)
+    const isSolo = viewTeam === 'home' || viewTeam === 'away';
+
     const buildFromFormation = (fmDef, tf, isHome, fallbackPlayers) => {
       if (!fmDef || !tf?.players) {
         return calculateTeamPositions(fallbackPlayers, isHome, FIELD_W, FIELD_H, enrichedStats);
@@ -532,7 +535,10 @@ export default function MatchDetailPage() {
         assignedNames.add(playerName);
         const px = (pos.x / 100) * FIELD_W;
         let py;
-        if (isHome) {
+        if (isSolo) {
+          // 한 팀만: 전체 필드 사용 — pos.y=100(GK)→하단, pos.y=0(FW)→상단
+          py = FIELD_H * 0.04 + (pos.y / 100) * FIELD_H * 0.92;
+        } else if (isHome) {
           // 상단: GK가 위쪽, FW가 중앙선 근처
           py = FIELD_H * 0.02 + (1 - pos.y / 100) * FIELD_H * 0.46;
         } else {
@@ -547,7 +553,7 @@ export default function MatchDetailPage() {
     const pos1 = buildFromFormation(fmDef1, tf1, true, teamAPlayers);
     const pos2 = buildFromFormation(fmDef2, tf2, false, teamBPlayers);
     return [...pos1, ...pos2];
-  }, [teamAPlayers, teamBPlayers, enrichedStats, teamFormations, matchTeamCodes, clubType]);
+  }, [teamAPlayers, teamBPlayers, enrichedStats, teamFormations, matchTeamCodes, clubType, viewTeam]);
 
   const formatTeamLabel = (name) => {
     if (!name) return '';
@@ -828,7 +834,7 @@ export default function MatchDetailPage() {
           );
         })()}
 
-        {/* 🆕 팀 선택 탭 — 필드 위쪽에 붙는 형태 (벤치마크 디자인) */}
+        {/* 🆕 팀 선택 탭 — 필드와 붙어 있는 형태 (벤치마크 디자인) */}
         <Box sx={{
           position: 'relative',
           width: '100%',
@@ -839,7 +845,7 @@ export default function MatchDetailPage() {
             display: 'flex',
             justifyContent: 'space-between',
             px: 2.5,
-            mb: '-1px', // 필드와 시각적으로 연결되도록
+            mb: 0, // 필드와 직접 붙음 (갭 없음)
             position: 'relative',
             zIndex: 3,
           }}>
@@ -851,33 +857,34 @@ export default function MatchDetailPage() {
               return (
                 <Box
                   key={t.key}
-                  onClick={() => setViewTeam(v => v === t.key ? 'all' : t.key)}
+                  onClick={() => setViewTeam(t.key)}
                   sx={{
                     cursor: 'pointer',
-                    minWidth: 82,
-                    bgcolor: isActive ? t.bg : 'white',
-                    border: `2px solid ${isActive ? t.color : '#E0E0E0'}`,
-                    borderBottom: isActive ? `2px solid ${t.bg}` : '2px solid #E0E0E0',
+                    minWidth: 90,
+                    // 활성 탭: 흰 배경 (필드 위로 튀어나옴) / 비활성: 회색
+                    bgcolor: isActive ? '#FFFFFF' : '#E8EAED',
+                    border: 'none',
                     borderRadius: '10px 10px 0 0',
-                    px: 1.5, py: 0.6,
+                    px: 1.5, py: 0.7,
                     display: 'flex', alignItems: 'center', gap: 0.6, justifyContent: 'center',
                     boxShadow: isActive
-                      ? `0 -3px 10px ${t.color}33`
-                      : '0 -1px 4px rgba(0,0,0,0.08)',
-                    transform: isActive ? 'translateY(0)' : 'translateY(2px)',
+                      ? '0 -2px 8px rgba(0,0,0,0.12)'
+                      : 'none',
+                    transform: isActive ? 'translateY(0)' : 'translateY(3px) scale(0.95)',
+                    opacity: isActive ? 1 : 0.7,
                     transition: 'all 0.18s',
-                    '&:hover': { bgcolor: isActive ? t.bg : '#FAFAFA' },
+                    '&:hover': { bgcolor: isActive ? '#FFFFFF' : '#DEE0E3' },
                   }}
                 >
                   <img
                     src={t.logoSrc}
                     alt={t.label}
-                    style={{ width: 18, height: 18, objectFit: 'contain', opacity: isActive ? 1 : 0.65 }}
+                    style={{ width: 18, height: 18, objectFit: 'contain', opacity: isActive ? 1 : 0.7 }}
                   />
                   <Typography sx={{
-                    fontSize: '0.78rem',
-                    fontWeight: isActive ? 900 : 600,
-                    color: isActive ? t.color : '#888',
+                    fontSize: '0.82rem',
+                    fontWeight: isActive ? 900 : 700,
+                    color: isActive ? t.color : '#666',
                     letterSpacing: '-0.02em',
                   }}>
                     {t.label}
@@ -906,12 +913,11 @@ export default function MatchDetailPage() {
             width: '100%',
             height: FIELD_H,
             mx: 'auto',
-            borderRadius: 2,
-            // 🔧 overflow: hidden → visible — 머리 위 별이 잘리지 않게
+            // 🔧 위쪽 모서리는 살짝만 둥글게 → 탭과 자연스럽게 연결
+            borderRadius: '4px 4px 12px 12px',
             overflow: 'visible',
             boxShadow: '0 24px 50px -10px rgba(0,0,0,0.6), 0 10px 20px rgba(0,0,0,0.3)',
             background: 'linear-gradient(180deg, #2e7d32 0%, #388e3c 25%, #2e7d32 25%, #388e3c 50%, #2e7d32 50%, #388e3c 75%, #2e7d32 75%, #388e3c 100%)',
-            // 🔧 18° 기울임 — 위쪽 멀리, 아래쪽 가깝게
             transform: 'rotateX(18deg)',
             transformStyle: 'preserve-3d',
             transformOrigin: '50% 100%',
@@ -931,9 +937,9 @@ export default function MatchDetailPage() {
           {/* Bottom goal area */}
           <Box sx={{ position: 'absolute', bottom: 0, left: '35%', width: '30%', height: '6%', border: '2px solid rgba(255,255,255,0.6)', borderBottom: 'none' }} />
 
-          {/* Players (필터 적용) */}
+          {/* Players (선택된 한 팀만 필터) */}
           {allPositions
-            .filter(pos => viewTeam === 'all' || (viewTeam === 'home' ? pos.isHome : !pos.isHome))
+            .filter(pos => viewTeam === 'home' ? pos.isHome : !pos.isHome)
             .map((pos, idx) => {
             const isWinningCaptain = !!winningCaptain && pos.name === winningCaptain;
             return (
