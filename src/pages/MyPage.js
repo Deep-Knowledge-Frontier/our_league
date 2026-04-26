@@ -1551,7 +1551,7 @@ export default function MyPage() {
                       if (!elements || elements.length === 0) return;
                       const idx = elements[0].index;
                       const r = rankHistory[idx];
-                      if (r) setWeekDetailDialog({ weekKey: r.week });
+                      if (r) setWeekDetailDialog({ weekKey: r.week, source: 'rank' });
                     },
                     onHover: (e, elements) => {
                       const target = e?.native?.target || e?.target;
@@ -1686,7 +1686,7 @@ export default function MyPage() {
                       if (!elements || elements.length === 0) return;
                       const idx = elements[0].index;
                       const r = pointRateHistory[idx];
-                      if (r) setWeekDetailDialog({ weekKey: r.week });
+                      if (r) setWeekDetailDialog({ weekKey: r.week, source: 'pointRate' });
                     },
                     onHover: (e, elements) => {
                       const target = e?.native?.target || e?.target;
@@ -1731,138 +1731,149 @@ export default function MyPage() {
         >
           {weekDetailDialog && (() => {
             const wk = weekDetailDialog.weekKey;
+            const source = weekDetailDialog.source || 'rank';
             const me = weeklyStandings?.[wk]?.[userName] || null;
             const wo = me?.weeklyOnly || null;
             const rh = rankHistory?.find(r => r.week === wk);
             const ph = pointRateHistory?.find(r => r.week === wk);
             const fmt = (v, digits = 1, suffix = '') =>
               v == null || Number.isNaN(Number(v)) ? '-' : `${Number(v).toFixed(digits)}${suffix}`;
+
+            // source 별 헤더 색/제목/하단 버튼 색
+            const isRank = source === 'rank';
+            const headerGrad = isRank
+              ? 'linear-gradient(135deg, #1976D2, #0D47A1)'  // 파랑 (능력치)
+              : 'linear-gradient(135deg, #43A047, #2E7D32)'; // 초록 (승점율)
+            const closeBtnBg = isRank ? '#1565C0' : '#2E7D32';
+            const titleEmoji = isRank ? '📈' : '🏆';
+            const titleText = isRank ? '능력치 순위 상세' : '주차 경기 결과';
             return (
               <>
-                <DialogTitle sx={{
-                  background: 'linear-gradient(135deg, #1976D2, #0D47A1)',
-                  color: 'white', pb: 1.5,
-                }}>
+                <DialogTitle sx={{ background: headerGrad, color: 'white', pb: 1.5 }}>
                   <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
                     <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>
-                      📅 {wk.replace(/(\d{4})-W(\d+)/, '$1년 $2주차')}
+                      {titleEmoji} {titleText}
                     </Typography>
                   </Box>
-                  <Typography sx={{ fontSize: '0.74rem', opacity: 0.92, mt: 0.3 }}>
-                    {userName}님의 그 주 활동
+                  <Typography sx={{ fontSize: '0.78rem', opacity: 0.95, mt: 0.3, fontWeight: 700 }}>
+                    {wk.replace(/(\d{4})-W(\d+)/, '$1년 $2주차')}
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.7rem', opacity: 0.85 }}>
+                    {userName}
                   </Typography>
                 </DialogTitle>
                 <DialogContent sx={{ pt: 2 }}>
-                  {/* ── 그 주만의 결과 ── */}
-                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#2E7D32', mb: 0.8 }}>
-                    🏆 그 주의 경기 결과
-                  </Typography>
-                  <Box sx={{
-                    p: 1.5, borderRadius: 2, mb: 2,
-                    bgcolor: '#E8F5E9', border: '1px solid #C8E6C9',
-                  }}>
-                    {ph ? (
-                      <>
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                          <Box>
-                            <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>출전</Typography>
-                            <Typography sx={{ fontSize: '0.95rem', fontWeight: 800, color: '#1B5E20' }}>
-                              {ph.games}경기
-                            </Typography>
+                  {isRank ? (
+                    /* ── 능력치 순위 차트의 상세: 누적 통계 ── */
+                    <>
+                      <Box sx={{
+                        p: 1.5, borderRadius: 2, mb: 1,
+                        bgcolor: '#E3F2FD', border: '1px solid #BBDEFB',
+                      }}>
+                        {me ? (
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                            <Box>
+                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>능력치</Typography>
+                              <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0D47A1' }}>
+                                {fmt(me.abilityScore, 1)}점
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>능력치 순위</Typography>
+                              <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#D32F2F' }}>
+                                {rh ? `${rh.rank}위 / ${rh.total}명` : '-'}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승점율 (누적)</Typography>
+                              <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
+                                {fmt(me.pointRate, 1, '%')}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>출전율 (누적)</Typography>
+                              <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
+                                {fmt(me.attendanceRate, 1, '%')} ({me.participatedMatches || 0}경기)
+                              </Typography>
+                            </Box>
+                            <Box sx={{ gridColumn: '1 / span 2' }}>
+                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>평균 골득실 (누적)</Typography>
+                              <Typography sx={{
+                                fontSize: '0.92rem', fontWeight: 700,
+                                color: (me.avgGoalDiffPerGame || 0) >= 0 ? '#2E7D32' : '#C62828',
+                              }}>
+                                {me.avgGoalDiffPerGame != null
+                                  ? `${me.avgGoalDiffPerGame >= 0 ? '+' : ''}${Number(me.avgGoalDiffPerGame).toFixed(2)}`
+                                  : '-'}
+                              </Typography>
+                            </Box>
                           </Box>
-                          <Box>
-                            <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승점율</Typography>
-                            <Typography sx={{ fontSize: '0.95rem', fontWeight: 800, color: '#1B5E20' }}>
-                              {fmt(ph.pointRate, 1, '%')}
-                            </Typography>
-                          </Box>
-                          <Box>
-                            <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승/무/패</Typography>
-                            <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
-                              {ph.wins} · {ph.draws} · {ph.losses}
-                            </Typography>
-                          </Box>
-                          <Box>
-                            <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>골득실</Typography>
-                            <Typography sx={{
-                              fontSize: '0.95rem', fontWeight: 800,
-                              color: (wo?.avgGoalDiffPerGame || 0) >= 0 ? '#2E7D32' : '#C62828',
-                            }}>
-                              {wo?.avgGoalDiffPerGame != null
-                                ? `${wo.avgGoalDiffPerGame >= 0 ? '+' : ''}${wo.avgGoalDiffPerGame.toFixed(2)}`
-                                : '-'}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      </>
-                    ) : (
-                      <Typography sx={{ fontSize: '0.85rem', color: '#888' }}>
-                        그 주의 출전 기록이 없습니다.
-                      </Typography>
-                    )}
-                  </Box>
-
-                  {/* ── 누적 (그 주 기준) ── */}
-                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: '#1565C0', mb: 0.8 }}>
-                    📈 누적 통계 (그 주까지의 6개월)
-                  </Typography>
-                  <Box sx={{
-                    p: 1.5, borderRadius: 2, mb: 1,
-                    bgcolor: '#E3F2FD', border: '1px solid #BBDEFB',
-                  }}>
-                    {me ? (
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                        <Box>
-                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>능력치</Typography>
-                          <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0D47A1' }}>
-                            {fmt(me.abilityScore, 1)}점
+                        ) : (
+                          <Typography sx={{ fontSize: '0.85rem', color: '#888' }}>
+                            그 주의 누적 데이터가 없습니다.
                           </Typography>
-                        </Box>
-                        <Box>
-                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>능력치 순위</Typography>
-                          <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#D32F2F' }}>
-                            {rh ? `${rh.rank}위 / ${rh.total}명` : '-'}
-                          </Typography>
-                        </Box>
-                        <Box>
-                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승점율 (누적)</Typography>
-                          <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
-                            {fmt(me.pointRate, 1, '%')}
-                          </Typography>
-                        </Box>
-                        <Box>
-                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>출전율 (누적)</Typography>
-                          <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
-                            {fmt(me.attendanceRate, 1, '%')} ({me.participatedMatches || 0}경기)
-                          </Typography>
-                        </Box>
-                        <Box sx={{ gridColumn: '1 / span 2' }}>
-                          <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>평균 골득실 (누적)</Typography>
-                          <Typography sx={{
-                            fontSize: '0.92rem', fontWeight: 700,
-                            color: (me.avgGoalDiffPerGame || 0) >= 0 ? '#2E7D32' : '#C62828',
-                          }}>
-                            {me.avgGoalDiffPerGame != null
-                              ? `${me.avgGoalDiffPerGame >= 0 ? '+' : ''}${Number(me.avgGoalDiffPerGame).toFixed(2)}`
-                              : '-'}
-                          </Typography>
-                        </Box>
+                        )}
                       </Box>
-                    ) : (
-                      <Typography sx={{ fontSize: '0.85rem', color: '#888' }}>
-                        그 주의 누적 데이터가 없습니다.
+                      <Typography sx={{ fontSize: '0.7rem', color: '#999', mt: 1, textAlign: 'center' }}>
+                        💡 누적 통계는 그 주 일요일까지의 6개월 데이터 기준
                       </Typography>
-                    )}
-                  </Box>
-                  <Typography sx={{ fontSize: '0.7rem', color: '#999', mt: 1, textAlign: 'center' }}>
-                    💡 누적 통계는 그 주 일요일까지 6개월 데이터 기준
-                  </Typography>
+                    </>
+                  ) : (
+                    /* ── 승점율 차트의 상세: 그 주 단독 결과 ── */
+                    <>
+                      <Box sx={{
+                        p: 1.5, borderRadius: 2, mb: 1,
+                        bgcolor: '#E8F5E9', border: '1px solid #C8E6C9',
+                      }}>
+                        {ph && ph.attended ? (
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                            <Box>
+                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>출전</Typography>
+                              <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
+                                {ph.games}경기
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승점율</Typography>
+                              <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
+                                {fmt(ph.pointRate, 1, '%')}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승/무/패</Typography>
+                              <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
+                                {ph.wins} · {ph.draws} · {ph.losses}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>골득실</Typography>
+                              <Typography sx={{
+                                fontSize: '0.92rem', fontWeight: 800,
+                                color: (wo?.avgGoalDiffPerGame || 0) >= 0 ? '#2E7D32' : '#C62828',
+                              }}>
+                                {wo?.avgGoalDiffPerGame != null
+                                  ? `${wo.avgGoalDiffPerGame >= 0 ? '+' : ''}${wo.avgGoalDiffPerGame.toFixed(2)}`
+                                  : '-'}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        ) : (
+                          <Typography sx={{ fontSize: '0.9rem', color: '#666', textAlign: 'center', py: 1 }}>
+                            🚫 본인 미출전 (팀 경기는 있었음)
+                          </Typography>
+                        )}
+                      </Box>
+                      <Typography sx={{ fontSize: '0.7rem', color: '#999', mt: 1, textAlign: 'center' }}>
+                        💡 그 주(월~일)의 본인 출전 경기 결과만 반영
+                      </Typography>
+                    </>
+                  )}
                 </DialogContent>
                 <DialogActions sx={{ pb: 2, justifyContent: 'center' }}>
                   <Button
                     onClick={() => setWeekDetailDialog(null)}
                     variant="contained"
-                    sx={{ borderRadius: 2, px: 4, fontWeight: 700, bgcolor: '#1565C0' }}
+                    sx={{ borderRadius: 2, px: 4, fontWeight: 700, bgcolor: closeBtnBg }}
                   >
                     닫기
                   </Button>
