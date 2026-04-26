@@ -68,6 +68,7 @@ export async function shareMatchImage({
   fieldH = 720,
   leagueWinsByPlayer = {},
   winningCaptain = null,
+  winningCaptainTotalWins = 0,
   dailyTeamWinsByPlayer = {},
 }) {
   const padX = 14;
@@ -206,23 +207,53 @@ export async function shareMatchImage({
       ctx.fillRect(cx - uniformW / 2, uTop, uniformW, uniformH);
     }
 
-    // 4-2) 리그 우승 별 (블루, path로 그림 — 폰트 글리프 누락 방지)
+    // 4-2) 캡틴 누적 별 (3진법 + 크기 차등) — 유니폼 위쪽 머리 부분
+    const captainTiers = [];
+    if (winningCaptain && pos.name === winningCaptain && winningCaptainTotalWins > 0) {
+      let n = winningCaptainTotalWins;
+      const t3 = Math.min(Math.floor(n / 27), 9); n -= t3 * 27;
+      const t2 = Math.floor(n / 9); n -= t2 * 9;
+      const t1 = Math.floor(n / 3); n -= t1 * 3;
+      const t0 = n;
+      const tiers = [
+        { count: t3, color: '#E91E63', stroke: 'rgba(0,0,0,0.55)', size: 9 },   // Pink — 큼
+        { count: t2, color: '#AB47BC', stroke: 'rgba(0,0,0,0.55)', size: 7.5 },
+        { count: t1, color: '#29B6F6', stroke: 'rgba(0,0,0,0.55)', size: 6.5 },
+        { count: t0, color: '#FFC107', stroke: 'rgba(0,0,0,0.55)', size: 5.5 }, // Gold — 작음
+      ];
+      tiers.forEach((tier) => {
+        for (let i = 0; i < tier.count; i++) {
+          captainTiers.push(tier);
+        }
+      });
+    }
+
+    // 4-2a) 캡틴 별 (유니폼 위 첫째 줄)
+    if (captainTiers.length > 0) {
+      const stars = captainTiers.slice(0, 9);
+      const totalW2 = stars.reduce((sum, s) => sum + s.size * 2 + 0.5, 0);
+      let currentX = cx - totalW2 / 2;
+      const captainRowY = uTop - 9;
+      stars.forEach((tier) => {
+        const sx = currentX + tier.size;
+        drawStar(ctx, sx, captainRowY, tier.size, tier.size * 0.45, tier.color, tier.stroke, 0.5);
+        currentX += tier.size * 2 + 0.5;
+      });
+    }
+
+    // 4-2b) 리그 우승 별 (블루, 캡틴 줄 위쪽)
     const lwins = leagueWinsByPlayer[pos.name] || [];
     if (lwins.length > 0) {
       const sCount = Math.min(lwins.length, 9);
       const starR = 6;
       const gap = starR * 2 + 1;
       const baseW = sCount * gap;
-      const sy = uTop - starR - 1; // 유니폼 위 바로
+      // 캡틴 줄이 있으면 그 위, 없으면 유니폼 위
+      const sy = captainTiers.length > 0 ? uTop - 22 : uTop - 9;
       for (let i = 0; i < sCount; i++) {
         const sx = cx - baseW / 2 + i * gap + gap / 2;
         drawStar(ctx, sx, sy, starR, starR * 0.45, '#29B6F6', 'rgba(0,0,0,0.6)', 0.6);
       }
-    }
-
-    // 4-3) 우승 주장 별 (골드, 우상단 모서리)
-    if (winningCaptain && pos.name === winningCaptain) {
-      drawStar(ctx, cx + uniformW / 2 + 1, uTop - 1, 5.5, 2.5, '#FFC107', 'rgba(0,0,0,0.6)', 0.5);
     }
 
     // 4-4) 포지션 라벨 (유니폼 하단 안쪽)

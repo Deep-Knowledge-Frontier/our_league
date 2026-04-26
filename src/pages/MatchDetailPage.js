@@ -554,6 +554,21 @@ export default function MatchDetailPage() {
     return `Team ${n}`;
   };
 
+  // 🆕 SVG 별 — 폰트 글리프 의존 없이 정확한 5각 별 모양
+  const StarIcon = ({ size = 12, color = '#FFC107', glow = '255,193,7' }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{
+      display: 'block',
+      filter: `drop-shadow(0 0 ${Math.max(2, size / 6)}px rgba(${glow}, 0.95)) drop-shadow(0 2px 2px rgba(0,0,0,0.4))`,
+    }}>
+      <path
+        d="M12 2 L14.81 9.27 L22.5 9.78 L16.59 14.69 L18.59 22.04 L12 17.77 L5.41 22.04 L7.41 14.69 L1.5 9.78 L9.19 9.27 Z"
+        fill={color}
+        stroke="rgba(0,0,0,0.55)"
+        strokeWidth="0.7"
+      />
+    </svg>
+  );
+
   const handlePrevGame = async () => {
     if (gameNum <= 1) return;
     setGameNum(gameNum - 1);
@@ -847,69 +862,71 @@ export default function MatchDetailPage() {
                       position: 'relative',
                     }}
                   />
-                  {/* 🆕 리그 우승 별 — 유니폼 바로 위에 명확히 표시 (블루) */}
+                  {/* 🆕 별 영역 — 유니폼 위쪽(머리 부분)에 SVG 별로 표시
+                      · 위쪽 줄: 리그 우승 별 (블루, 동일 크기)
+                      · 아래쪽 줄: 캡틴 누적 별 (3진법 티어, 크기 차등)
+                  */}
                   {(() => {
-                    const wins = leagueWinsByPlayer[pos.name] || [];
-                    if (wins.length === 0) return null;
+                    const lWins = leagueWinsByPlayer[pos.name] || [];
+                    const showCaptain = isWinningCaptain && winningCaptainTotalWins > 0;
+                    if (lWins.length === 0 && !showCaptain) return null;
+
+                    // 캡틴 별 — 3진법 분해 + 크기 차등
+                    let capStars = [];
+                    if (showCaptain) {
+                      let n = winningCaptainTotalWins;
+                      const t3 = Math.min(Math.floor(n / 27), 9); n -= t3 * 27;
+                      const t2 = Math.floor(n / 9); n -= t2 * 9;
+                      const t1 = Math.floor(n / 3); n -= t1 * 3;
+                      const t0 = n;
+                      const tiers = [
+                        { count: t3, color: '#E91E63', glow: '233,30,99', size: 18 },   // Pink (27) — 가장 큼
+                        { count: t2, color: '#AB47BC', glow: '171,71,188', size: 15 },  // Purple (9)
+                        { count: t1, color: '#29B6F6', glow: '41,182,246', size: 13 },  // Blue (3)
+                        { count: t0, color: '#FFC107', glow: '255,193,7', size: 11 },   // Gold (1) — 가장 작음
+                      ];
+                      tiers.forEach((tier, ti) => {
+                        for (let i = 0; i < tier.count; i++) {
+                          capStars.push({ key: `c${ti}-${i}`, ...tier });
+                        }
+                      });
+                    }
+
                     return (
                       <Box
                         sx={{
                           position: 'absolute',
-                          bottom: '100%',          // 유니폼 위쪽 경계 바로 위
+                          bottom: '100%',
                           left: '50%',
                           transform: 'translateX(-50%) translateZ(20px)',
-                          mb: '-2px',              // 살짝 겹쳐 떠 있는 느낌
+                          mb: '1px',
                           display: 'flex',
+                          flexDirection: 'column-reverse', // 캡틴 아래(유니폼 가까이), 리그 위
+                          alignItems: 'center',
                           gap: '1px',
                           pointerEvents: 'none',
                           whiteSpace: 'nowrap',
-                          lineHeight: 1,
                         }}
                       >
-                        {wins.slice(0, 9).map((leagueKey, i) => (
-                          <Typography
-                            key={`${leagueKey}-${i}`}
-                            component="span"
-                            sx={{
-                              fontSize: '1.1rem',
-                              lineHeight: 1,
-                              color: '#29B6F6',
-                              filter: 'drop-shadow(0 0 4px rgba(41,182,246,1)) drop-shadow(0 3px 4px rgba(0,0,0,0.45))',
-                              WebkitTextStroke: '0.5px rgba(0,0,0,0.6)',
-                            }}
-                          >
-                            ★
-                          </Typography>
-                        ))}
+                        {/* 캡틴 별 (3진법, 큰→작은 순서) */}
+                        {capStars.length > 0 && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: '0px' }}>
+                            {capStars.slice(0, 9).map((s) => (
+                              <StarIcon key={s.key} size={s.size} color={s.color} glow={s.glow} />
+                            ))}
+                          </Box>
+                        )}
+                        {/* 리그 별 (블루 동일 크기, 위쪽 줄) */}
+                        {lWins.length > 0 && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: '0px' }}>
+                            {lWins.slice(0, 9).map((lk, i) => (
+                              <StarIcon key={`l-${i}-${lk}`} size={13} color="#29B6F6" glow="41,182,246" />
+                            ))}
+                          </Box>
+                        )}
                       </Box>
                     );
                   })()}
-                  {/* 🆕 우승팀 주장 별 — 우측 상단 모서리에 골드 별 (리그 별과 위치 분리) */}
-                  {isWinningCaptain && (
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        top: -8,
-                        right: -6,
-                        transform: 'translateZ(15px)',
-                        pointerEvents: 'none',
-                        lineHeight: 1,
-                      }}
-                    >
-                      <Typography
-                        component="span"
-                        sx={{
-                          fontSize: '1rem',
-                          lineHeight: 1,
-                          color: '#FFC107',
-                          filter: 'drop-shadow(0 0 4px rgba(255,193,7,1)) drop-shadow(0 2px 3px rgba(0,0,0,0.5))',
-                          WebkitTextStroke: '0.5px rgba(0,0,0,0.6)',
-                        }}
-                      >
-                        ★
-                      </Typography>
-                    </Box>
-                  )}
                   {pos.posLabel && (
                     <Box sx={{
                       position: 'absolute', bottom: -1, left: '50%', transform: 'translateX(-50%)',
