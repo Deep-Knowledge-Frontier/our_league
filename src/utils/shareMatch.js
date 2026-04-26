@@ -26,6 +26,30 @@ const loadImage = (src) =>
     img.src = src;
   });
 
+// 5각 별 path 그리기 (canvas) — 폰트 글리프 누락 방지
+const drawStar = (ctx, cx, cy, outerR, innerR, fill, stroke, strokeWidth = 0.5) => {
+  ctx.beginPath();
+  const points = 5;
+  for (let i = 0; i < points * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const angle = -Math.PI / 2 + (i * Math.PI) / points;
+    const x = cx + r * Math.cos(angle);
+    const y = cy + r * Math.sin(angle);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  if (stroke) {
+    ctx.lineWidth = strokeWidth;
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
+  }
+};
+
 /**
  * 경기 상세를 PNG 이미지로 생성
  * - 별: 리그 우승 = 블루(#29B6F6) ★ 1개/리그, 우승 주장 = 골드(#FFC107) ★ 1개
@@ -162,7 +186,9 @@ export async function shareMatchImage({
   }
 
   // 4) 필드 위 선수 — 유니폼 + 별 + 라벨 + 이름 + 메달
-  const playerSize = 32; // 유니폼 표시 크기
+  // 🆕 유니폼 크기 압축 (가로:세로 = 32:24)
+  const uniformW = 32;
+  const uniformH = 24;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
@@ -170,55 +196,51 @@ export async function shareMatchImage({
     const cx = fieldX + pos.x;
     const cy2 = fieldY + pos.y;
 
-    // 4-1) 리그 우승 별 (블루, 1리그 = 1개)
+    // 4-1) 유니폼 (실제 이미지) — 압축된 크기
+    const uimg = pos.isHome ? uniform1Img : uniform2Img;
+    const uTop = cy2 - uniformH / 2;
+    if (uimg) {
+      ctx.drawImage(uimg, cx - uniformW / 2, uTop, uniformW, uniformH);
+    } else {
+      ctx.fillStyle = pos.isHome ? '#C62828' : '#FBC02D';
+      ctx.fillRect(cx - uniformW / 2, uTop, uniformW, uniformH);
+    }
+
+    // 4-2) 리그 우승 별 (블루, path로 그림 — 폰트 글리프 누락 방지)
     const lwins = leagueWinsByPlayer[pos.name] || [];
     if (lwins.length > 0) {
       const sCount = Math.min(lwins.length, 9);
-      const baseW = sCount * 11;
-      ctx.font = 'bold 12px sans-serif';
-      ctx.fillStyle = '#29B6F6';
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-      ctx.lineWidth = 0.4;
+      const starR = 6;
+      const gap = starR * 2 + 1;
+      const baseW = sCount * gap;
+      const sy = uTop - starR - 1; // 유니폼 위 바로
       for (let i = 0; i < sCount; i++) {
-        const sx = cx - baseW / 2 + i * 11 + 5.5;
-        const sy = cy2 - 28;
-        ctx.fillText('★', sx, sy);
+        const sx = cx - baseW / 2 + i * gap + gap / 2;
+        drawStar(ctx, sx, sy, starR, starR * 0.45, '#29B6F6', 'rgba(0,0,0,0.6)', 0.6);
       }
     }
 
-    // 4-2) 우승 주장 별 (골드, 1개만)
+    // 4-3) 우승 주장 별 (골드, 우상단 모서리)
     if (winningCaptain && pos.name === winningCaptain) {
-      ctx.font = 'bold 11px sans-serif';
-      ctx.fillStyle = '#FFC107';
-      ctx.fillText('★', cx, cy2 - 16);
-    }
-
-    // 4-3) 유니폼 (실제 이미지)
-    const uimg = pos.isHome ? uniform1Img : uniform2Img;
-    if (uimg) {
-      ctx.drawImage(uimg, cx - playerSize / 2, cy2 - playerSize / 2, playerSize, playerSize);
-    } else {
-      ctx.fillStyle = pos.isHome ? '#C62828' : '#FBC02D';
-      ctx.fillRect(cx - playerSize / 2, cy2 - playerSize / 2, playerSize, playerSize);
+      drawStar(ctx, cx + uniformW / 2 + 1, uTop - 1, 5.5, 2.5, '#FFC107', 'rgba(0,0,0,0.6)', 0.5);
     }
 
     // 4-4) 포지션 라벨 (유니폼 하단 안쪽)
     if (pos.posLabel) {
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillRect(cx - 12, cy2 + 6, 24, 11);
+      ctx.fillRect(cx - 12, uTop + uniformH - 11, 24, 10);
       ctx.fillStyle = '#FFD700';
       ctx.font = 'bold 7.5px sans-serif';
-      ctx.fillText(pos.posLabel, cx, cy2 + 11);
+      ctx.fillText(pos.posLabel, cx, uTop + uniformH - 6);
     }
 
     // 4-5) 이름 (유니폼 아래)
     ctx.font = 'bold 9.5px sans-serif';
-    // 검은 외곽선
     ctx.lineWidth = 2.4;
     ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-    ctx.strokeText(pos.name || '', cx, cy2 + 26);
+    ctx.strokeText(pos.name || '', cx, uTop + uniformH + 8);
     ctx.fillStyle = 'white';
-    ctx.fillText(pos.name || '', cx, cy2 + 26);
+    ctx.fillText(pos.name || '', cx, uTop + uniformH + 8);
 
     // 4-6) 일별 우승팀 누적 메달 (이름 아래 작은 점)
     const dt = dailyTeamWinsByPlayer[pos.name] || 0;
@@ -226,7 +248,7 @@ export async function shareMatchImage({
     if (medalColor) {
       ctx.fillStyle = medalColor;
       ctx.beginPath();
-      ctx.arc(cx, cy2 + 35, 2.6, 0, Math.PI * 2);
+      ctx.arc(cx, uTop + uniformH + 16, 2.6, 0, Math.PI * 2);
       ctx.fill();
       ctx.lineWidth = 0.4;
       ctx.strokeStyle = 'rgba(0,0,0,0.4)';

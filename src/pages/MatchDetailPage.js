@@ -809,14 +809,14 @@ export default function MatchDetailPage() {
                   },
                 }}
               >
-                {/* Uniform */}
+                {/* Uniform — 위아래 압축 (별/이름 겹침 완화) */}
                 <Box sx={{ position: 'relative', display: 'inline-block' }}>
                   <img
                     src={pos.isHome ? '/uniform1.png' : '/uniform2.png'}
                     alt={pos.name}
-                    style={{ width: 36, height: 36, objectFit: 'contain' }}
+                    style={{ width: 36, height: 26, objectFit: 'fill' }}
                   />
-                  {/* 🆕 리그 우승 별 — 리그 우승 1회당 블루 별 1개 (3진법 Tier 1 색상) */}
+                  {/* 🆕 리그 우승 별 — 유니폼 바로 위에 명확히 표시 (블루) */}
                   {(() => {
                     const wins = leagueWinsByPlayer[pos.name] || [];
                     if (wins.length === 0) return null;
@@ -824,13 +824,15 @@ export default function MatchDetailPage() {
                       <Box
                         sx={{
                           position: 'absolute',
-                          top: -22,
+                          bottom: '100%',          // 유니폼 위쪽 경계 바로 위
                           left: '50%',
                           transform: 'translateX(-50%) translateZ(20px)',
+                          mb: '-2px',              // 살짝 겹쳐 떠 있는 느낌
                           display: 'flex',
-                          gap: '0px',
+                          gap: '1px',
                           pointerEvents: 'none',
                           whiteSpace: 'nowrap',
+                          lineHeight: 1,
                         }}
                       >
                         {wins.slice(0, 9).map((leagueKey, i) => (
@@ -838,11 +840,11 @@ export default function MatchDetailPage() {
                             key={`${leagueKey}-${i}`}
                             component="span"
                             sx={{
-                              fontSize: '0.95rem',
+                              fontSize: '1.1rem',
                               lineHeight: 1,
                               color: '#29B6F6',
                               filter: 'drop-shadow(0 0 4px rgba(41,182,246,1)) drop-shadow(0 3px 4px rgba(0,0,0,0.45))',
-                              WebkitTextStroke: '0.4px rgba(0,0,0,0.55)',
+                              WebkitTextStroke: '0.5px rgba(0,0,0,0.6)',
                             }}
                           >
                             ★
@@ -851,25 +853,26 @@ export default function MatchDetailPage() {
                       </Box>
                     );
                   })()}
-                  {/* 🆕 우승팀 주장 별 — 그 경기일 우승 주장에게 골드 별 1개 (3진법 Tier 0 색상) */}
+                  {/* 🆕 우승팀 주장 별 — 우측 상단 모서리에 골드 별 (리그 별과 위치 분리) */}
                   {isWinningCaptain && (
                     <Box
                       sx={{
                         position: 'absolute',
-                        top: -9,
-                        left: '50%',
-                        transform: 'translateX(-50%) translateZ(12px)',
+                        top: -8,
+                        right: -6,
+                        transform: 'translateZ(15px)',
                         pointerEvents: 'none',
+                        lineHeight: 1,
                       }}
                     >
                       <Typography
                         component="span"
                         sx={{
-                          fontSize: '0.85rem',
+                          fontSize: '1rem',
                           lineHeight: 1,
                           color: '#FFC107',
-                          filter: 'drop-shadow(0 0 3px rgba(255,193,7,0.95)) drop-shadow(0 2px 3px rgba(0,0,0,0.4))',
-                          WebkitTextStroke: '0.3px rgba(0,0,0,0.5)',
+                          filter: 'drop-shadow(0 0 4px rgba(255,193,7,1)) drop-shadow(0 2px 3px rgba(0,0,0,0.5))',
+                          WebkitTextStroke: '0.5px rgba(0,0,0,0.6)',
                         }}
                       >
                         ★
