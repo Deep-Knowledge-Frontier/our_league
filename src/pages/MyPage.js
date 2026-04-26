@@ -726,6 +726,48 @@ export default function MyPage() {
     return history;
   }, [weeklyStandings, userName, rankThreshold, currentRank]);
 
+  // 🆕 주차별 승점율 추이 — (승*3 + 무*1) / (출전*3) * 100
+  const pointRateHistory = useMemo(() => {
+    if (!weeklyStandings || !userName) return null;
+    const history = Object.keys(weeklyStandings).sort().map(weekKey => {
+      const me = weeklyStandings[weekKey]?.[userName];
+      if (!me || !(me.participatedMatches > 0)) return null;
+      return {
+        week: weekKey,
+        pointRate: Number(me.pointRate || 0),
+        wins: me.wins || 0,
+        draws: me.draws || 0,
+        losses: me.losses || 0,
+        games: me.participatedMatches || 0,
+      };
+    }).filter(Boolean);
+    // 현재 주 데이터로 마지막 포인트 교체/추가 (위 rankHistory와 동일 ISO week 계산)
+    const cur = allStatsForRank?.[userName];
+    if (cur && cur.participatedMatches > 0) {
+      const now = new Date();
+      const tmp = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+      const yr = tmp.getUTCFullYear();
+      const ys = new Date(Date.UTC(yr, 0, 1));
+      const wn = Math.ceil(((tmp - ys) / 86400000 + 1) / 7);
+      const curWeek = `${yr}-W${String(wn).padStart(2, '0')}`;
+      const curEntry = {
+        week: curWeek,
+        pointRate: Number(cur.pointRate || 0),
+        wins: cur.wins || 0,
+        draws: cur.draws || 0,
+        losses: cur.losses || 0,
+        games: cur.participatedMatches || 0,
+      };
+      if (history.length > 0 && history[history.length - 1].week === curWeek) {
+        history[history.length - 1] = curEntry;
+      } else {
+        history.push(curEntry);
+      }
+    }
+    return history;
+  }, [weeklyStandings, userName, allStatsForRank]);
+
   const fgRef = useRef(null);
   const [graphWidth, setGraphWidth] = useState(0);
   // 🆕 Callback ref: DOM에 attach되는 순간 setState 트리거 → useEffect 확실히 실행
@@ -1493,6 +1535,96 @@ export default function MyPage() {
                           callback: (v) => Number.isInteger(v) ? `${v}위` : '',
                           font: { size: 10 },
                         },
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                      },
+                      x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 10 } },
+                      },
+                    },
+                  }}
+                />
+              </Box>
+            </Paper>
+          );
+        })()}
+
+        {/* 🆕 주차별 승점율 추이 카드 */}
+        {pointRateHistory && pointRateHistory.length >= 2 && (() => {
+          const last = pointRateHistory[pointRateHistory.length - 1];
+          const prev = pointRateHistory[pointRateHistory.length - 2];
+          const diff = last.pointRate - prev.pointRate;
+          return (
+            <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <EmojiEventsIcon sx={{ color: '#2E7D32', mr: 1, fontSize: 20 }} />
+                <Typography sx={{ fontWeight: 'bold', color: '#2E7D32', fontSize: '1rem' }}>
+                  주차별 승점율
+                </Typography>
+              </Box>
+              <Typography sx={{ fontSize: '0.72rem', color: '#999', mb: 1.5 }}>
+                (승×3 + 무×1) / (출전×3) × 100% · 최근 6개월
+              </Typography>
+              {/* 현재 승점율 + 변화량 */}
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2 }}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography sx={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#2E7D32', lineHeight: 1 }}>
+                    {last.pointRate.toFixed(1)}<span style={{ fontSize: '1.4rem' }}>%</span>
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.75rem', color: '#999', mt: 0.3 }}>
+                    승 {last.wins} · 무 {last.draws} · 패 {last.losses} ({last.games}경기)
+                  </Typography>
+                </Box>
+                {Math.abs(diff) >= 0.5 && (
+                  <Chip
+                    label={diff > 0 ? `▲ ${diff.toFixed(1)}%p` : `▼ ${Math.abs(diff).toFixed(1)}%p`}
+                    size="small"
+                    sx={{
+                      bgcolor: diff > 0 ? '#E8F5E9' : '#FFEBEE',
+                      color: diff > 0 ? '#388E3C' : '#D32F2F',
+                      fontWeight: 'bold', fontSize: '0.8rem',
+                    }}
+                  />
+                )}
+              </Box>
+              {/* 라인 차트 */}
+              <Box sx={{ height: 150 }}>
+                <Line
+                  data={{
+                    labels: pointRateHistory.map(r => r.week.replace(/\d{4}-/, '')),
+                    datasets: [{
+                      data: pointRateHistory.map(r => r.pointRate),
+                      borderColor: '#2E7D32',
+                      backgroundColor: 'rgba(46,125,50,0.10)',
+                      borderWidth: 2,
+                      pointRadius: pointRateHistory.map((r, i) =>
+                        i === pointRateHistory.length - 1 ? 6 : 4
+                      ),
+                      pointBackgroundColor: pointRateHistory.map((r, i) =>
+                        i === pointRateHistory.length - 1 ? '#1B5E20' : '#43A047'
+                      ),
+                      tension: 0.3,
+                      fill: true,
+                    }]
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: { display: false },
+                      tooltip: {
+                        callbacks: {
+                          label: (ctx) => {
+                            const r = pointRateHistory[ctx.dataIndex];
+                            return `승 ${r.wins} · 무 ${r.draws} · 패 ${r.losses}  →  ${r.pointRate.toFixed(1)}%`;
+                          }
+                        }
+                      }
+                    },
+                    scales: {
+                      y: {
+                        min: 0, max: 100,
+                        ticks: { stepSize: 25, callback: (v) => `${v}%`, font: { size: 10 } },
                         grid: { color: 'rgba(0,0,0,0.05)' },
                       },
                       x: {
