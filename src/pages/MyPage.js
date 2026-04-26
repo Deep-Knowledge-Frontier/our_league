@@ -692,15 +692,19 @@ export default function MyPage() {
   }, [allStatsForRank, userName, rankThreshold]);
 
   // 주차별 순위 추이 (차트용) + 마지막에 현재 순위 반영
-  // 🔧 그 주에 본인이 실제 출전한 주만 표시 (weeklyOnly.games > 0)
-  //    누적 데이터로 점 찍히는 것보다, 출전 주만 표시하는 게 의미상 정확
+  // 🔧 그 주에 본인이 실제 승/무/패 기록이 있는 주만 표시
+  //    (출전했으나 결과가 없는 케이스 — 스케줄만 있고 경기 미진행 등 — 도 제외)
   const rankHistory = useMemo(() => {
     if (!weeklyStandings || !userName) return null;
     const history = Object.keys(weeklyStandings).sort().map(weekKey => {
       const weekData = weeklyStandings[weekKey];
       const me = weekData?.[userName];
-      // 그 주 본인 미출전이면 차트에서 제외 (weeklyOnly 없는 옛 데이터는 호환을 위해 통과)
-      if (me && me.weeklyOnly !== undefined && !(me.weeklyOnly?.games > 0)) return null;
+      // 그 주 승+무+패 합이 0이면 제외 (weeklyOnly 없는 옛 데이터는 호환을 위해 통과)
+      if (me && me.weeklyOnly !== undefined) {
+        const wo = me.weeklyOnly || {};
+        const total = (wo.wins || 0) + (wo.draws || 0) + (wo.losses || 0);
+        if (total === 0) return null;
+      }
       // 정렬 우선순위: 능력치(내림) → 승점율(내림) → 골득실(내림)
       const eligible = Object.entries(weekData)
         .filter(([, p]) => (p.attendanceRate || 0) >= rankThreshold)
@@ -744,7 +748,9 @@ export default function MyPage() {
       const wo = me.weeklyOnly;
       // weeklyOnly 데이터가 있으면 그 주만의 통계 사용
       if (wo) {
-        if (!(wo.games > 0)) return null;
+        // 🔧 승+무+패 합이 0인 주는 제외 (출전 기록이 있어도 결과가 없는 경우 포함)
+        const total = (wo.wins || 0) + (wo.draws || 0) + (wo.losses || 0);
+        if (total === 0) return null;
         return {
           week: weekKey,
           pointRate: Number(wo.pointRate || 0),
