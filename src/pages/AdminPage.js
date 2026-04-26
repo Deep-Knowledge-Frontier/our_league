@@ -1499,11 +1499,13 @@ export default function AdminPage() {
         const last12Weeks = [];
         for (let i = 11; i >= 0; i--) {
           const d = new Date(todayD);
-          // 해당 주의 일요일(주 마지막일) 기준
+          // 해당 주의 일요일(주 마지막일) 기준 — 다가오는 일요일도 그대로 사용
+          //   (이전: d > todayD 시 today로 클램프 → 현재 주 범위가 직전 주를 침범하여
+          //    같은 경기가 두 주에 중복 카운트되는 버그가 있었음.
+          //    미래 날짜에는 어차피 경기 데이터가 없어 자연 필터링됨)
           const dayOfWeek = todayD.getDay(); // 0=일, 6=토
           const daysToSunday = (7 - dayOfWeek) % 7;
           d.setDate(todayD.getDate() + daysToSunday - i * 7);
-          if (d > todayD) d.setTime(todayD.getTime()); // 미래면 오늘로
           const maxDateStr = localYMD(d);
           last12Weeks.push({ weekKey: getISOWeekKey(maxDateStr), maxDate: maxDateStr });
         }
@@ -1527,7 +1529,8 @@ export default function AdminPage() {
           } else {
             const wCutoff = new Date(wMax + 'T00:00:00');
             wCutoff.setMonth(wCutoff.getMonth() - 6);
-            const cutoffStr = wCutoff.toISOString().slice(0, 10);
+            // 🔧 toISOString 대신 localYMD — KST(+9)에서 하루 밀리는 타임존 버그 방지
+            const cutoffStr = localYMD(wCutoff);
             wStats = calcStats(scoreData, selData, cutoffStr, wMax);
           }
           if (Object.keys(wStats).length === 0) continue;
