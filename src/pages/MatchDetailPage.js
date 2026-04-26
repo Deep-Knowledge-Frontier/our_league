@@ -548,25 +548,40 @@ export default function MatchDetailPage() {
           </Box>
         )}
 
-        {/* Goal/Assist List — 팀별 왼쪽 정렬, 시간 표시 제거 */}
-        {(goalList1.length > 0 || goalList2.length > 0) && (
-          <Box sx={{ display: 'flex', mb: 2, gap: 1 }}>
-            <Box sx={{ flex: 1, pl: 1.5 }}>
-              {goalList1.map((g, i) => (
-                <Typography key={i} sx={{ fontSize: '0.8rem', textAlign: 'left', color: '#333' }}>
-                  ⚽ {g.scorer} {g.assist !== '없음' ? `(${g.assist})` : ''}
-                </Typography>
-              ))}
+        {/* Goal/Assist List — 팀 컬러 + scorer/assister 분리 강조 */}
+        {(goalList1.length > 0 || goalList2.length > 0) && (() => {
+          const TEAM_A_COLOR = '#C62828';   // 홈팀 (빨강 유니폼)
+          const TEAM_B_COLOR = '#F57F17';   // 원정팀 (노랑 유니폼)
+          const renderGoal = (g, i, color) => (
+            <Typography key={i} sx={{
+              fontSize: '0.85rem', textAlign: 'left', lineHeight: 1.65, mb: 0.2,
+            }}>
+              <span style={{ fontSize: '0.95rem' }}>⚽</span>
+              <span style={{
+                fontWeight: 800, color, marginLeft: 6,
+              }}>
+                {g.scorer}
+              </span>
+              {g.assist && g.assist !== '없음' && (
+                <span style={{
+                  fontSize: '0.74rem', color: '#888', marginLeft: 6, fontWeight: 500,
+                }}>
+                  ↗ {g.assist}
+                </span>
+              )}
+            </Typography>
+          );
+          return (
+            <Box sx={{ display: 'flex', mb: 2, gap: 1 }}>
+              <Box sx={{ flex: 1, pl: 1.5 }}>
+                {goalList1.map((g, i) => renderGoal(g, i, TEAM_A_COLOR))}
+              </Box>
+              <Box sx={{ flex: 1, pl: 1.5 }}>
+                {goalList2.map((g, i) => renderGoal(g, i, TEAM_B_COLOR))}
+              </Box>
             </Box>
-            <Box sx={{ flex: 1, pl: 1.5 }}>
-              {goalList2.map((g, i) => (
-                <Typography key={i} sx={{ fontSize: '0.8rem', textAlign: 'left', color: '#333' }}>
-                  ⚽ {g.scorer} {g.assist !== '없음' ? `(${g.assist})` : ''}
-                </Typography>
-              ))}
-            </Box>
-          </Box>
-        )}
+          );
+        })()}
 
         {/* Soccer Field */}
         <Box
