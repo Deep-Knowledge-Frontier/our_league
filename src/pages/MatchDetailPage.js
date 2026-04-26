@@ -641,9 +641,9 @@ export default function MatchDetailPage() {
         </Typography>
       </Box>
 
-      <Container maxWidth="xs" sx={{ mt: 2 }}>
+      <Container maxWidth="xs" sx={{ mt: 1 }}>
         {/* Score */}
-        <Box sx={{ textAlign: 'center', mb: 2 }}>
+        <Box sx={{ textAlign: 'center', mb: 0.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
             <Box sx={{ flex: 1, textAlign: 'center' }}>
               <img src="/uniform1.png" alt="Team A" style={{ width: 60, height: 60, objectFit: 'contain' }} />
@@ -747,18 +747,20 @@ export default function MatchDetailPage() {
           );
         })()}
 
-        {/* 🆕 3D Perspective 컨테이너 — 필드 기울임 + 별 부각 */}
+        {/* 🆕 3D Perspective 컨테이너 — 강한 기울임 + 별 부각 */}
         <Box
           sx={{
-            perspective: '1000px',
-            perspectiveOrigin: '50% 65%',
+            // 🔧 perspective 작게 → 더 강한 원근 (가까운 것 크고, 먼 것 작음)
+            perspective: '700px',
+            // 시점을 위쪽으로 이동 → 아래쪽이 더 가까이 보이고 크게 보임
+            perspectiveOrigin: '50% 30%',
             width: '100%',
             maxWidth: FIELD_W,
             mx: 'auto',
             mb: 2,
           }}
         >
-        {/* Soccer Field (3D 기울임) */}
+        {/* Soccer Field (3D 기울임 강화) */}
         <Box
           sx={{
             position: 'relative',
@@ -767,9 +769,10 @@ export default function MatchDetailPage() {
             mx: 'auto',
             borderRadius: 2,
             overflow: 'hidden',
-            boxShadow: '0 16px 40px -8px rgba(0,0,0,0.55), 0 8px 16px rgba(0,0,0,0.25)',
+            boxShadow: '0 24px 50px -10px rgba(0,0,0,0.6), 0 10px 20px rgba(0,0,0,0.3)',
             background: 'linear-gradient(180deg, #2e7d32 0%, #388e3c 25%, #2e7d32 25%, #388e3c 50%, #2e7d32 50%, #388e3c 75%, #2e7d32 75%, #388e3c 100%)',
-            transform: 'rotateX(12deg)',
+            // 🔧 18° 기울임 — 위쪽 멀리, 아래쪽 가깝게
+            transform: 'rotateX(18deg)',
             transformStyle: 'preserve-3d',
             transformOrigin: '50% 100%',
           }}
@@ -800,21 +803,49 @@ export default function MatchDetailPage() {
                   top: pos.y - 22,
                   width: 60,
                   textAlign: 'center',
-                  // 🆕 카운터 회전 — 필드는 12° 기울어졌지만 선수는 정면 향함
+                  // 🆕 카운터 회전 — 필드는 18° 기울어졌지만 선수는 정면 향함
                   transformStyle: 'preserve-3d',
                   animation: `dropIn3d 0.5s ease-out ${idx * 0.05}s both`,
                   '@keyframes dropIn3d': {
-                    '0%': { opacity: 0, transform: 'translateY(-40px) rotateX(-12deg)' },
-                    '100%': { opacity: 1, transform: 'translateY(0) rotateX(-12deg)' },
+                    '0%': { opacity: 0, transform: 'translateY(-40px) rotateX(-18deg)' },
+                    '100%': { opacity: 1, transform: 'translateY(0) rotateX(-18deg)' },
                   },
                 }}
               >
-                {/* Uniform — 위아래 압축 (별/이름 겹침 완화) */}
-                <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                {/* Uniform — 위아래 압축 + 서 있는 3D 효과 */}
+                <Box sx={{
+                  position: 'relative',
+                  display: 'inline-block',
+                  // 🆕 살짝 z축 띄워서 필드 위에 떠있는 듯
+                  transform: 'translateZ(6px)',
+                  transformStyle: 'preserve-3d',
+                }}>
+                  {/* 🆕 그림자 — 필드 평면에 누워있는 타원 (선수 발 아래) */}
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      bottom: -3,
+                      left: '50%',
+                      width: 30,
+                      height: 6,
+                      transform: 'translateX(-50%) translateZ(-6px) rotateX(90deg)',
+                      bgcolor: 'rgba(0,0,0,0.4)',
+                      borderRadius: '50%',
+                      filter: 'blur(2px)',
+                      pointerEvents: 'none',
+                    }}
+                  />
                   <img
                     src={pos.isHome ? '/uniform1.png' : '/uniform2.png'}
                     alt={pos.name}
-                    style={{ width: 36, height: 26, objectFit: 'fill' }}
+                    style={{
+                      width: 36,
+                      height: 26,
+                      objectFit: 'fill',
+                      // 🆕 서 있는 입체감 — 살짝 진한 측면 그림자
+                      filter: 'drop-shadow(2px 4px 3px rgba(0,0,0,0.55)) drop-shadow(-1px 0 1px rgba(0,0,0,0.2))',
+                      position: 'relative',
+                    }}
                   />
                   {/* 🆕 리그 우승 별 — 유니폼 바로 위에 명확히 표시 (블루) */}
                   {(() => {
