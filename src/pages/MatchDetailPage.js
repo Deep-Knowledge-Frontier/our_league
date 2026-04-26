@@ -118,6 +118,9 @@ export default function MatchDetailPage() {
   const [winningCaptain, setWinningCaptain] = useState(null);
   // 현재 우승 주장이 해당 날짜까지 누적한 총 우승 횟수
   const [winningCaptainTotalWins, setWinningCaptainTotalWins] = useState(0);
+  // 🆕 리그 우승 명단 — TeamOfWinner/{clubName}/League{N}/{teamCode}: [선수명...]
+  // 선수명 → 누적 리그 우승 횟수 매핑
+  const [leagueWinCounts, setLeagueWinCounts] = useState({});
 
   // 포메이션 연동
   const [teamFormations, setTeamFormations] = useState({});
@@ -291,6 +294,36 @@ export default function MatchDetailPage() {
       }
     })();
   }, [date, clubName]);
+
+  // 🆕 리그 우승 명단 로드 — TeamOfWinner/{clubName}
+  useEffect(() => {
+    if (!clubName) { setLeagueWinCounts({}); return; }
+    (async () => {
+      try {
+        const snap = await get(ref(db, `TeamOfWinner/${clubName}`));
+        if (!snap.exists()) { setLeagueWinCounts({}); return; }
+        const data = snap.val();
+        const counts = {};
+        // 구조: { League1: { C: [...names] }, League2: { ... }, ... }
+        // 각 리그의 우승팀 로스터들에 등장한 선수 카운트
+        Object.values(data || {}).forEach(leagueData => {
+          Object.values(leagueData || {}).forEach(roster => {
+            const list = Array.isArray(roster) ? roster : (roster && typeof roster === 'object' ? Object.values(roster) : []);
+            list.forEach(n => {
+              if (typeof n === 'string' && n.trim()) {
+                const k = n.trim();
+                counts[k] = (counts[k] || 0) + 1;
+              }
+            });
+          });
+        });
+        setLeagueWinCounts(counts);
+      } catch (e) {
+        console.error('리그 우승 명단 로드 실패:', e);
+        setLeagueWinCounts({});
+      }
+    })();
+  }, [clubName]);
 
   // 우승 주장의 해당 날짜까지 누적 우승 횟수 계산 (3진법 승급 표시용)
   useEffect(() => {
@@ -629,6 +662,41 @@ export default function MatchDetailPage() {
                     alt={pos.name}
                     style={{ width: 36, height: 36, objectFit: 'contain' }}
                   />
+                  {/* 🆕 리그 우승 별 — 누적 리그 우승 횟수만큼 골드 별 (유니폼 가장 위쪽) */}
+                  {(() => {
+                    const lw = leagueWinCounts[pos.name] || 0;
+                    if (lw <= 0) return null;
+                    return (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: -22,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          display: 'flex',
+                          gap: '0px',
+                          pointerEvents: 'none',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {Array.from({ length: Math.min(lw, 9) }).map((_, i) => (
+                          <Typography
+                            key={i}
+                            component="span"
+                            sx={{
+                              fontSize: '0.85rem',
+                              lineHeight: 1,
+                              color: '#FFD700',
+                              filter: 'drop-shadow(0 0 3px rgba(255,165,0,1))',
+                              WebkitTextStroke: '0.4px rgba(178,34,34,0.7)',
+                            }}
+                          >
+                            ★
+                          </Typography>
+                        ))}
+                      </Box>
+                    );
+                  })()}
                   {/* 우승 주장 별 — 유니폼 위 가운데, 누적 승수에 따라 3진법 승급 표시
                       Tier 0 (골드, 1~2승): ★ #FFC107
                       Tier 1 (블루, 3승 = 1개): ★ #29B6F6   (3번 모이면 Tier 2로)
