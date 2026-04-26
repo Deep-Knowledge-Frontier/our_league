@@ -121,6 +121,8 @@ export default function MatchDetailPage() {
   // 🆕 리그 우승 명단 — TeamOfWinner/{clubName}/League{N}/{teamCode}: [선수명...]
   // 선수명 → 우승한 리그 키 배열 (예: ['League1','League3'])
   const [leagueWinsByPlayer, setLeagueWinsByPlayer] = useState({});
+  // 🆕 일별 우승팀 누적 (현재 날짜까지) — 선수명 → 누적 카운트
+  const [dailyTeamWinsByPlayer, setDailyTeamWinsByPlayer] = useState({});
 
   // 포메이션 연동
   const [teamFormations, setTeamFormations] = useState({});
@@ -404,6 +406,82 @@ export default function MatchDetailPage() {
       }
     })();
   }, [clubName, date, winningCaptain]);
+
+  // 🆕 일별 우승팀 누적 계산 — 현재 날짜까지의 모든 일별 우승팀 로스터 합산
+  useEffect(() => {
+    if (!clubName || !date) { setDailyTeamWinsByPlayer({}); return; }
+    (async () => {
+      try {
+        const [resultsSnap, selectionsSnap] = await Promise.all([
+          get(ref(db, `DailyResultsBackup/${clubName}`)),
+          get(ref(db, `PlayerSelectionByDate/${clubName}`)),
+        ]);
+        if (!resultsSnap.exists()) { setDailyTeamWinsByPlayer({}); return; }
+        const allResults = resultsSnap.val() || {};
+        const allSelections = selectionsSnap.exists() ? (selectionsSnap.val() || {}) : {};
+        const dates = Object.keys(allResults).filter((d) => d <= date).sort();
+        const counts = {};
+
+        for (const d of dates) {
+          const matches = allResults[d]?.matches;
+          if (!matches) continue;
+          const matchArr = Array.isArray(matches) ? matches : Object.values(matches);
+          if (matchArr.length === 0) continue;
+
+          // 일별 승점/골득실/득점 집계
+          const points = {}, gd = {}, gf = {};
+          matchArr.forEach((m) => {
+            const t1 = m.team1, t2 = m.team2;
+            const s1 = Number(m.score1) || 0, s2 = Number(m.score2) || 0;
+            if (t1) {
+              gf[t1] = (gf[t1] || 0) + s1;
+              gd[t1] = (gd[t1] || 0) + (s1 - s2);
+              points[t1] = (points[t1] || 0) + (s1 > s2 ? 3 : s1 === s2 ? 1 : 0);
+            }
+            if (t2) {
+              gf[t2] = (gf[t2] || 0) + s2;
+              gd[t2] = (gd[t2] || 0) + (s2 - s1);
+              points[t2] = (points[t2] || 0) + (s2 > s1 ? 3 : s1 === s2 ? 1 : 0);
+            }
+          });
+          const sortedTeams = Object.entries(points).sort((a, b) =>
+            (b[1] - a[1]) ||
+            ((gd[b[0]] || 0) - (gd[a[0]] || 0)) ||
+            ((gf[b[0]] || 0) - (gf[a[0]] || 0))
+          );
+          if (sortedTeams.length === 0) continue;
+          const winnerName = sortedTeams[0][0];
+
+          // 우승팀 코드 매핑 (TeamNames 우선, 없으면 'A/B/C' 정규화)
+          const sel = allSelections[d] || {};
+          const teamNames = sel.TeamNames || {};
+          let winnerCode = null;
+          for (const code of ['A', 'B', 'C']) {
+            if (teamNames[code] === winnerName) { winnerCode = code; break; }
+          }
+          if (!winnerCode) {
+            const clean = String(winnerName).replace(/^(팀\s*|Team\s*)/i, '').trim();
+            if (['A', 'B', 'C'].includes(clean)) winnerCode = clean;
+          }
+          if (!winnerCode) continue;
+
+          // 우승팀 로스터 → 각 선수 카운트++
+          const roster = sel.AttandPlayer?.[winnerCode];
+          const rosterArr = Array.isArray(roster) ? roster : (roster && typeof roster === 'object' ? Object.values(roster) : []);
+          rosterArr.forEach(name => {
+            if (typeof name === 'string' && name.trim()) {
+              const k = name.trim();
+              counts[k] = (counts[k] || 0) + 1;
+            }
+          });
+        }
+        setDailyTeamWinsByPlayer(counts);
+      } catch (e) {
+        console.error('일별 우승팀 누적 로드 실패:', e);
+        setDailyTeamWinsByPlayer({});
+      }
+    })();
+  }, [clubName, date]);
 
   // Load match on mount and game change
   useEffect(() => {
@@ -798,6 +876,31 @@ export default function MatchDetailPage() {
                 >
                   {pos.name}
                 </Typography>
+                {/* 🆕 일별 우승팀 누적 메달 — 단일 티어 색상 (브론즈/실버/골드) */}
+                {(() => {
+                  const w = dailyTeamWinsByPlayer[pos.name] || 0;
+                  if (w <= 0) return null;
+                  const tier =
+                    w >= 30 ? { color: '#FFB300', glow: '255,179,0' } :   // 골드
+                    w >= 10 ? { color: '#B0BEC5', glow: '176,190,197' } : // 실버
+                              { color: '#CD7F32', glow: '205,127,50' };   // 브론즈
+                  return (
+                    <Box sx={{
+                      display: 'flex', justifyContent: 'center', mt: '1px',
+                      pointerEvents: 'none', lineHeight: 1,
+                    }}>
+                      <Typography component="span" sx={{
+                        fontSize: '0.6rem',
+                        lineHeight: 1,
+                        color: tier.color,
+                        filter: `drop-shadow(0 0 2px rgba(${tier.glow}, 0.95))`,
+                        WebkitTextStroke: '0.2px rgba(0,0,0,0.5)',
+                      }} title={`일별 우승 ${w}회`}>
+                        ●
+                      </Typography>
+                    </Box>
+                  );
+                })()}
               </Box>
             );
           })}
