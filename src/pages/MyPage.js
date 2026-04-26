@@ -1409,7 +1409,7 @@ export default function MyPage() {
                       onChange={e => setRankThreshold(e.target.value)}
                       sx={{ fontSize: '0.75rem', height: 28 }}
                     >
-                      {[5, 10, 20, 30, 50].map(v => (
+                      {[5, 10, 15, 20, 30, 50].map(v => (
                         <MenuItem key={v} value={v} sx={{ fontSize: '0.8rem' }}>{v}%</MenuItem>
                       ))}
                     </Select>
@@ -1417,7 +1417,7 @@ export default function MyPage() {
                 </Box>
               </Box>
               <Typography sx={{ fontSize: '0.72rem', color: '#999', mb: 1.5 }}>
-                최근 6개월 기준 · 주차별 능력치 순위 · 출전률 {rankThreshold}% 이상 선수 대상
+                최근 6개월 기준 · 주차별 능력치 순위
               </Typography>
               {/* 현재 순위 */}
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2 }}>
