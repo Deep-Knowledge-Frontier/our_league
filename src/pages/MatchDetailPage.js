@@ -8,10 +8,12 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowBackIosIcon from '@mui/icons-material/ArrowBackIos';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import ShareIcon from '@mui/icons-material/Share';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateWithDay } from '../utils/format';
 import { getFormations } from '../config/formations';
 import { extractTeamRoster } from '../utils/roster';
+import { shareMatchImage } from '../utils/shareMatch';
 
 // 선수 포지션 계산 (안드로이드 로직 이식)
 function calculateTeamPositions(team, isHome, fieldW, fieldH, statsMap) {
@@ -123,6 +125,8 @@ export default function MatchDetailPage() {
   const [leagueWinsByPlayer, setLeagueWinsByPlayer] = useState({});
   // 🆕 일별 우승팀 누적 (현재 날짜까지) — 선수명 → 누적 카운트
   const [dailyTeamWinsByPlayer, setDailyTeamWinsByPlayer] = useState({});
+  // 🆕 공유 진행 상태
+  const [sharing, setSharing] = useState(false);
 
   // 포메이션 연동
   const [teamFormations, setTeamFormations] = useState({});
@@ -563,6 +567,57 @@ export default function MatchDetailPage() {
     }
   };
 
+  // 🆕 경기 화면을 PNG로 생성해서 공유 (또는 다운로드)
+  const handleShare = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const formatted = formatDateWithDay(date).replace(/-/g, '.');
+      const blob = await shareMatchImage({
+        dateStr: formatted,
+        team1Name: formatTeamLabel(team1Name),
+        team2Name: formatTeamLabel(team2Name),
+        score1, score2,
+        gameNum,
+        goalList1, goalList2,
+        positions: allPositions,
+        leagueWinsByPlayer,
+        winningCaptain,
+        winningCaptainTotalWins,
+        dailyTeamWinsByPlayer,
+      });
+      const fileName = `${date}_${gameNum}경기.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+      // Web Share API 우선
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `${formatted} ${gameNum}경기`,
+            text: `${team1Name} ${score1} : ${score2} ${team2Name}`,
+          });
+        } catch (e) {
+          // 사용자가 취소한 경우 무시
+          if (e.name !== 'AbortError') throw e;
+        }
+      } else {
+        // Fallback: 다운로드
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      alert('이미지 생성/공유 실패: ' + (e.message || e));
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const formattedDate = formatDateWithDay(date).replace(/-/g, '.');
 
   if (loading) {
@@ -927,14 +982,26 @@ export default function MatchDetailPage() {
         </Box>
         </Box>{/* /3D Perspective 컨테이너 */}
 
-        {/* Back button */}
-        <Box sx={{ mt: 3, textAlign: 'center' }}>
+        {/* Back + Share button */}
+        <Box sx={{ mt: 3, textAlign: 'center', display: 'flex', justifyContent: 'center', gap: 1.2 }}>
           <Button
             variant="contained"
             onClick={() => navigate(-1)}
             sx={{ bgcolor: '#0C0950', borderRadius: 2, px: 4, fontWeight: 'bold', '&:hover': { bgcolor: '#1a1a6e' } }}
           >
             닫기
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={sharing ? <CircularProgress size={16} color="inherit" /> : <ShareIcon />}
+            onClick={handleShare}
+            disabled={sharing}
+            sx={{
+              bgcolor: '#1565C0', borderRadius: 2, px: 3, fontWeight: 'bold',
+              '&:hover': { bgcolor: '#0D47A1' },
+            }}
+          >
+            {sharing ? '생성중…' : '경기 공유'}
           </Button>
         </Box>
       </Container>
