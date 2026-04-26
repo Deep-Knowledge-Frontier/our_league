@@ -692,18 +692,33 @@ export default function MatchDetailPage() {
           );
         })()}
 
-        {/* Soccer Field */}
+        {/* 🆕 3D Perspective 컨테이너 — 필드 기울임 + 별 부각 */}
+        <Box
+          sx={{
+            perspective: '1000px',
+            perspectiveOrigin: '50% 65%',
+            width: '100%',
+            maxWidth: FIELD_W,
+            mx: 'auto',
+            mb: 2,
+            // 기울임으로 위쪽이 살짝 들어가니 위 여백 확보
+            pt: 1,
+          }}
+        >
+        {/* Soccer Field (3D 기울임) */}
         <Box
           sx={{
             position: 'relative',
             width: '100%',
-            maxWidth: FIELD_W,
             height: FIELD_H,
             mx: 'auto',
             borderRadius: 2,
             overflow: 'hidden',
-            boxShadow: 3,
+            boxShadow: '0 16px 40px -8px rgba(0,0,0,0.55), 0 8px 16px rgba(0,0,0,0.25)',
             background: 'linear-gradient(180deg, #2e7d32 0%, #388e3c 25%, #2e7d32 25%, #388e3c 50%, #2e7d32 50%, #388e3c 75%, #2e7d32 75%, #388e3c 100%)',
+            transform: 'rotateX(12deg)',
+            transformStyle: 'preserve-3d',
+            transformOrigin: '50% 100%',
           }}
         >
           {/* Field markings */}
@@ -732,10 +747,12 @@ export default function MatchDetailPage() {
                   top: pos.y - 22,
                   width: 60,
                   textAlign: 'center',
-                  animation: `dropIn 0.5s ease-out ${idx * 0.05}s both`,
-                  '@keyframes dropIn': {
-                    '0%': { opacity: 0, transform: 'translateY(-40px)' },
-                    '100%': { opacity: 1, transform: 'translateY(0)' },
+                  // 🆕 카운터 회전 — 필드는 12° 기울어졌지만 선수는 정면 향함
+                  transformStyle: 'preserve-3d',
+                  animation: `dropIn3d 0.5s ease-out ${idx * 0.05}s both`,
+                  '@keyframes dropIn3d': {
+                    '0%': { opacity: 0, transform: 'translateY(-40px) rotateX(-12deg)' },
+                    '100%': { opacity: 1, transform: 'translateY(0) rotateX(-12deg)' },
                   },
                 }}
               >
@@ -773,7 +790,8 @@ export default function MatchDetailPage() {
                           position: 'absolute',
                           top: -22,
                           left: '50%',
-                          transform: 'translateX(-50%)',
+                          // 🆕 z축으로 띄움 — 필드 위로 떠 있는 듯 입체감
+                          transform: 'translateX(-50%) translateZ(20px)',
                           display: 'flex',
                           gap: '0px',
                           pointerEvents: 'none',
@@ -787,10 +805,11 @@ export default function MatchDetailPage() {
                               key={`${leagueKey}-${i}`}
                               component="span"
                               sx={{
-                                fontSize: '0.85rem',
+                                fontSize: '0.95rem',
                                 lineHeight: 1,
                                 color,
-                                filter: `drop-shadow(0 0 3px rgba(${glow}, 1))`,
+                                // 떠 있는 느낌: 색 글로우 + 진한 바닥 그림자
+                                filter: `drop-shadow(0 0 4px rgba(${glow}, 1)) drop-shadow(0 3px 4px rgba(0,0,0,0.45))`,
                                 WebkitTextStroke: '0.4px rgba(0,0,0,0.55)',
                               }}
                             >
@@ -825,7 +844,8 @@ export default function MatchDetailPage() {
                           position: 'absolute',
                           top: -9,
                           left: '50%',
-                          transform: 'translateX(-50%)',
+                          // 🆕 z축 약간 띄움 — 리그 별보다는 살짝 낮게
+                          transform: 'translateX(-50%) translateZ(12px)',
                           display: 'flex',
                           gap: '0px',
                           pointerEvents: 'none',
@@ -838,10 +858,10 @@ export default function MatchDetailPage() {
                               key={`${ti}-${i}`}
                               component="span"
                               sx={{
-                                fontSize: '0.7rem',
+                                fontSize: '0.78rem',
                                 lineHeight: 1,
                                 color: tier.color,
-                                filter: `drop-shadow(0 0 2px rgba(${tier.glow}, 0.9))`,
+                                filter: `drop-shadow(0 0 3px rgba(${tier.glow}, 0.95)) drop-shadow(0 2px 3px rgba(0,0,0,0.4))`,
                                 WebkitTextStroke: '0.3px rgba(0,0,0,0.5)',
                               }}
                             >
@@ -905,6 +925,7 @@ export default function MatchDetailPage() {
             );
           })}
         </Box>
+        </Box>{/* /3D Perspective 컨테이너 */}
 
         {/* Back button */}
         <Box sx={{ mt: 3, textAlign: 'center' }}>
