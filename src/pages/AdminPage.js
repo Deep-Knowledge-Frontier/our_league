@@ -244,6 +244,22 @@ export default function AdminPage() {
     setLeagues(arr);
   }, [clubName]);
 
+  // 🆕 리그별 우승팀 명단 (TeamOfWinner) 로드
+  const [allWinners, setAllWinners] = useState({}); // { League1: { C: [names] }, ... }
+  const loadAllWinners = useCallback(async () => {
+    if (!clubName) { setAllWinners({}); return; }
+    try {
+      const snap = await get(ref(db, `TeamOfWinner/${clubName}`));
+      setAllWinners(snap.exists() ? (snap.val() || {}) : {});
+    } catch {
+      setAllWinners({});
+    }
+  }, [clubName]);
+  // 우승팀 설정 다이얼로그 상태
+  const [winnerDialog, setWinnerDialog] = useState(null);
+  // shape: { league, teamCode: 'A'|'B'|'C', selected: Set<string>, manualText: string }
+  const [winnerSaving, setWinnerSaving] = useState(false);
+
   useEffect(() => {
     if (!authReady) return;
     if (!user) { navigate('/login'); return; }
@@ -282,7 +298,7 @@ export default function AdminPage() {
 
         // 관리자: 팀 데이터 로드
         if (isAdmin || isMaster) {
-          await Promise.all([loadMatchDates(), loadAllowedUsers(), loadPlayers(), loadLeagues(), loadLocationPresets()]);
+          await Promise.all([loadMatchDates(), loadAllowedUsers(), loadPlayers(), loadLeagues(), loadLocationPresets(), loadAllWinners()]);
         }
 
         // 클럽 종목/포메이션 로드
@@ -292,7 +308,7 @@ export default function AdminPage() {
       setLoading(false);
     };
     loadData();
-  }, [authReady, user, canAccess, isAdmin, isModerator, isMaster, emailKey, navigate, loadMatchDates, loadAllowedUsers, loadPlayers, loadLeagues, loadLocationPresets]);
+  }, [authReady, user, canAccess, isAdmin, isModerator, isMaster, emailKey, navigate, loadMatchDates, loadAllowedUsers, loadPlayers, loadLeagues, loadLocationPresets, loadAllWinners]);
 
   // 🆕 1분마다 재렌더 — 경기 시작+진행시간+1시간 경과 시 카드가 자동으로 다음 경기로 전환
   useEffect(() => {
@@ -800,6 +816,71 @@ export default function AdminPage() {
     if (!window.confirm(`제${league.id}회 리그를 삭제하시겠습니까?`)) return;
     await remove(ref(db, `LeagueMaker/${clubName}/${league.id}`));
     await loadLeagues();
+  };
+
+  // 🆕 리그 우승팀 설정 다이얼로그 열기
+  const openWinnerDialog = (league) => {
+    const existing = allWinners[`League${league.id}`] || {};
+    // existing: { A: [...] } 또는 { C: [...] } 등 — 일반적으로 한 팀
+    const existingCodes = Object.keys(existing).filter(k => Array.isArray(existing[k]) || (existing[k] && typeof existing[k] === 'object'));
+    const teamCode = existingCodes[0] || 'A';
+    const rawRoster = existing[teamCode];
+    const rosterArr = Array.isArray(rawRoster) ? rawRoster : (rawRoster && typeof rawRoster === 'object' ? Object.values(rawRoster) : []);
+    setWinnerDialog({
+      league,
+      teamCode,
+      selected: new Set(rosterArr.filter(n => typeof n === 'string')),
+      manualText: '',
+    });
+  };
+
+  // 🆕 우승팀 명단 저장
+  const saveWinners = async () => {
+    if (!winnerDialog || winnerSaving) return;
+    setWinnerSaving(true);
+    try {
+      const { league, teamCode, selected, manualText } = winnerDialog;
+      // 수동 입력 텍스트가 있으면 추가 (한 줄당 하나, 또는 쉼표 구분)
+      const manualNames = String(manualText || '')
+        .split(/[\n,]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      const allNames = [...selected, ...manualNames.filter(n => !selected.has(n))];
+      if (allNames.length === 0) {
+        alert('선수가 한 명 이상 선택되어야 합니다.');
+        setWinnerSaving(false);
+        return;
+      }
+      // 모든 팀 코드 정리 후 선택한 코드만 저장 (다른 팀 코드 잔존 방지)
+      const updates = {};
+      ['A', 'B', 'C'].forEach(c => {
+        updates[`TeamOfWinner/${clubName}/League${league.id}/${c}`] = c === teamCode ? allNames : null;
+      });
+      await update(ref(db), updates);
+      await loadAllWinners();
+      setWinnerDialog(null);
+      alert(`제${league.id}회 우승팀 (${teamCode}팀, ${allNames.length}명)이 저장되었습니다.`);
+    } catch (e) {
+      alert('저장 실패: ' + e.message);
+    } finally {
+      setWinnerSaving(false);
+    }
+  };
+
+  // 🆕 우승팀 명단 삭제
+  const clearWinners = async () => {
+    if (!winnerDialog) return;
+    if (!window.confirm(`제${winnerDialog.league.id}회 우승팀 명단을 삭제하시겠습니까?`)) return;
+    setWinnerSaving(true);
+    try {
+      await remove(ref(db, `TeamOfWinner/${clubName}/League${winnerDialog.league.id}`));
+      await loadAllWinners();
+      setWinnerDialog(null);
+    } catch (e) {
+      alert('삭제 실패: ' + e.message);
+    } finally {
+      setWinnerSaving(false);
+    }
   };
 
   /* ── 기록 백업 ── */
@@ -2595,29 +2676,63 @@ export default function AdminPage() {
             <Typography sx={{ color: '#999', textAlign: 'center', py: 2, fontSize: '0.85rem' }}>등록된 리그가 없습니다.</Typography>
           ) : (
             <>
-              {(expandLeagues ? leagues : leagues.slice(0, 3)).map(league => (
-                <Box key={league.id} sx={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  py: 1, px: 1.5, borderRadius: 2, mb: 0.5, bgcolor: '#F5F7FA',
-                }}>
-                  <Box>
-                    <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
-                      {league.leagueName || `${clubName} 리그`}
-                    </Typography>
-                    <Typography sx={{ fontSize: '0.8rem', color: '#666' }}>
-                      {league.startDate} ~ {league.endDate}
-                    </Typography>
+              {(expandLeagues ? leagues : leagues.slice(0, 3)).map(league => {
+                const winnersData = allWinners[`League${league.id}`] || {};
+                const winnerTeams = Object.keys(winnersData).filter(k => {
+                  const v = winnersData[k];
+                  return Array.isArray(v) ? v.length > 0 : (v && typeof v === 'object' && Object.keys(v).length > 0);
+                });
+                const winnerCount = winnerTeams.reduce((sum, k) => {
+                  const v = winnersData[k];
+                  const list = Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+                  return sum + list.filter(n => typeof n === 'string' && n.trim()).length;
+                }, 0);
+                const hasWinners = winnerTeams.length > 0 && winnerCount > 0;
+                return (
+                  <Box key={league.id} sx={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    py: 1, px: 1.5, borderRadius: 2, mb: 0.5, bgcolor: '#F5F7FA',
+                  }}>
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, flexWrap: 'wrap' }}>
+                        <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
+                          {league.leagueName || `${clubName} 리그`}
+                        </Typography>
+                        {hasWinners && (
+                          <Chip
+                            size="small"
+                            label={`🏆 ${winnerTeams.join(',')}팀 ${winnerCount}명`}
+                            sx={{
+                              height: 20, fontSize: '0.68rem', fontWeight: 700,
+                              bgcolor: '#FFF8E1', color: '#E65100',
+                              border: '1px solid #FFE082',
+                            }}
+                          />
+                        )}
+                      </Box>
+                      <Typography sx={{ fontSize: '0.8rem', color: '#666' }}>
+                        {league.startDate} ~ {league.endDate}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                      <IconButton
+                        size="small"
+                        onClick={() => openWinnerDialog(league)}
+                        sx={{ color: hasWinners ? '#FFB300' : '#bbb' }}
+                        title={hasWinners ? '우승팀 수정' : '우승팀 설정'}
+                      >
+                        <EmojiEventsIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" onClick={() => openLeagueEdit(league)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => deleteLeague(league)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
                   </Box>
-                  <Box sx={{ display: 'flex', flexShrink: 0 }}>
-                    <IconButton size="small" onClick={() => openLeagueEdit(league)}>
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" sx={{ color: '#bbb' }} onClick={() => deleteLeague(league)}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </Box>
-              ))}
+                );
+              })}
               {leagues.length > 3 && (
                 <Button size="small" fullWidth onClick={() => setExpandLeagues(p => !p)}
                   sx={{ mt: 0.5, fontSize: '0.8rem', color: '#999' }}>
@@ -4069,6 +4184,163 @@ export default function AdminPage() {
             {editingLeague ? '수정 저장' : '리그 만들기'}
           </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* 🆕 리그 우승팀 설정 다이얼로그 */}
+      <Dialog
+        open={!!winnerDialog}
+        onClose={() => !winnerSaving && setWinnerDialog(null)}
+        fullWidth maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        {winnerDialog && (() => {
+          const { league, teamCode, selected, manualText } = winnerDialog;
+          const sortedPlayers = [...players].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+          const totalSelected = selected.size + String(manualText || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean).filter(n => !selected.has(n)).length;
+          const isExisting = !!(allWinners[`League${league.id}`] && Object.keys(allWinners[`League${league.id}`]).length > 0);
+          return (
+            <>
+              <DialogTitle sx={{
+                background: 'linear-gradient(135deg, #FFB300, #FF8F00)',
+                color: 'white', pb: 1.5,
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={{ fontSize: '1.4rem' }}>🏆</Typography>
+                  <Box>
+                    <Typography sx={{ fontWeight: 900, fontSize: '1.05rem' }}>
+                      리그 우승팀 설정
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.78rem', opacity: 0.95, fontWeight: 600 }}>
+                      {league.leagueName || `${clubName} 리그`} (제{league.id}회)
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.7rem', opacity: 0.85 }}>
+                      {league.startDate} ~ {league.endDate}
+                    </Typography>
+                  </Box>
+                </Box>
+              </DialogTitle>
+              <DialogContent sx={{ pt: 2 }}>
+                {/* 팀 코드 선택 */}
+                <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#666', mb: 0.8 }}>
+                  ⚽ 우승팀 코드
+                </Typography>
+                <ToggleButtonGroup
+                  value={teamCode}
+                  exclusive
+                  onChange={(e, v) => { if (v) setWinnerDialog(d => ({ ...d, teamCode: v })); }}
+                  size="small"
+                  sx={{ mb: 2 }}
+                >
+                  <ToggleButton value="A" sx={{ px: 2.5, fontWeight: 700 }}>A팀</ToggleButton>
+                  <ToggleButton value="B" sx={{ px: 2.5, fontWeight: 700 }}>B팀</ToggleButton>
+                  <ToggleButton value="C" sx={{ px: 2.5, fontWeight: 700 }}>C팀</ToggleButton>
+                </ToggleButtonGroup>
+
+                {/* 등록 선수 체크박스 */}
+                <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#666', mb: 0.6 }}>
+                  👥 등록 선수에서 선택 ({selected.size}명)
+                </Typography>
+                <Box sx={{
+                  maxHeight: 240, overflow: 'auto',
+                  border: '1px solid #E0E0E0', borderRadius: 2, p: 1, mb: 2,
+                  bgcolor: '#FAFAFA',
+                }}>
+                  {sortedPlayers.length === 0 ? (
+                    <Typography sx={{ fontSize: '0.85rem', color: '#999', textAlign: 'center', py: 2 }}>
+                      등록 선수가 없습니다.
+                    </Typography>
+                  ) : (
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+                      {sortedPlayers.map(p => (
+                        <FormControlLabel
+                          key={p.key}
+                          control={
+                            <Checkbox
+                              size="small"
+                              checked={selected.has(p.name)}
+                              onChange={(e) => {
+                                setWinnerDialog(d => {
+                                  const next = new Set(d.selected);
+                                  if (e.target.checked) next.add(p.name);
+                                  else next.delete(p.name);
+                                  return { ...d, selected: next };
+                                });
+                              }}
+                              sx={{ p: 0.4, '&.Mui-checked': { color: '#FFB300' } }}
+                            />
+                          }
+                          label={
+                            <Typography sx={{ fontSize: '0.82rem', fontWeight: selected.has(p.name) ? 700 : 500 }}>
+                              {p.name}
+                            </Typography>
+                          }
+                          sx={{ m: 0, ml: 0.2 }}
+                        />
+                      ))}
+                    </Box>
+                  )}
+                </Box>
+
+                {/* 수동 입력 */}
+                <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#666', mb: 0.6 }}>
+                  ✍️ 또는 직접 입력 (한 줄에 하나, 또는 쉼표 구분)
+                </Typography>
+                <TextField
+                  multiline minRows={2} maxRows={4}
+                  value={manualText}
+                  onChange={(e) => setWinnerDialog(d => ({ ...d, manualText: e.target.value }))}
+                  placeholder="예: 김갈렙&#10;김종윤&#10;..."
+                  fullWidth size="small"
+                  sx={{ mb: 1 }}
+                />
+
+                <Box sx={{
+                  p: 1.2, borderRadius: 2, bgcolor: '#FFF8E1',
+                  border: '1px solid #FFE082',
+                }}>
+                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, color: '#E65100' }}>
+                    📋 저장 시 총 {totalSelected}명이 {teamCode}팀 우승 명단으로 등록됩니다.
+                  </Typography>
+                </Box>
+              </DialogContent>
+              <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: 'space-between' }}>
+                <Box>
+                  {isExisting && (
+                    <Button
+                      onClick={clearWinners}
+                      disabled={winnerSaving}
+                      sx={{ color: '#C62828', fontWeight: 700, fontSize: '0.82rem' }}
+                    >
+                      삭제
+                    </Button>
+                  )}
+                </Box>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    onClick={() => !winnerSaving && setWinnerDialog(null)}
+                    disabled={winnerSaving}
+                    sx={{ color: '#666', fontWeight: 700 }}
+                  >
+                    취소
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={saveWinners}
+                    disabled={winnerSaving || totalSelected === 0}
+                    startIcon={winnerSaving ? <CircularProgress size={16} color="inherit" /> : null}
+                    sx={{
+                      borderRadius: 2, px: 3, fontWeight: 800,
+                      bgcolor: '#FFB300',
+                      '&:hover': { bgcolor: '#FF8F00' },
+                    }}
+                  >
+                    {winnerSaving ? '저장중…' : '저장'}
+                  </Button>
+                </Box>
+              </DialogActions>
+            </>
+          );
+        })()}
       </Dialog>
 
       {/* 마스터: 팀별 관리자 설정 다이얼로그 */}

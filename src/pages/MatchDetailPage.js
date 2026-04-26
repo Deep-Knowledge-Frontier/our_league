@@ -119,8 +119,8 @@ export default function MatchDetailPage() {
   // 현재 우승 주장이 해당 날짜까지 누적한 총 우승 횟수
   const [winningCaptainTotalWins, setWinningCaptainTotalWins] = useState(0);
   // 🆕 리그 우승 명단 — TeamOfWinner/{clubName}/League{N}/{teamCode}: [선수명...]
-  // 선수명 → 누적 리그 우승 횟수 매핑
-  const [leagueWinCounts, setLeagueWinCounts] = useState({});
+  // 선수명 → 우승한 리그 키 배열 (예: ['League1','League3'])
+  const [leagueWinsByPlayer, setLeagueWinsByPlayer] = useState({});
 
   // 포메이션 연동
   const [teamFormations, setTeamFormations] = useState({});
@@ -296,31 +296,43 @@ export default function MatchDetailPage() {
   }, [date, clubName]);
 
   // 🆕 리그 우승 명단 로드 — TeamOfWinner/{clubName}
+  // 각 선수가 어떤 리그를 우승했는지(중복 제거) 배열로 보관 → 리그별 색상 표시
   useEffect(() => {
-    if (!clubName) { setLeagueWinCounts({}); return; }
+    if (!clubName) { setLeagueWinsByPlayer({}); return; }
     (async () => {
       try {
         const snap = await get(ref(db, `TeamOfWinner/${clubName}`));
-        if (!snap.exists()) { setLeagueWinCounts({}); return; }
+        if (!snap.exists()) { setLeagueWinsByPlayer({}); return; }
         const data = snap.val();
-        const counts = {};
+        const byPlayer = {};
         // 구조: { League1: { C: [...names] }, League2: { ... }, ... }
-        // 각 리그의 우승팀 로스터들에 등장한 선수 카운트
-        Object.values(data || {}).forEach(leagueData => {
+        Object.entries(data || {}).forEach(([leagueKey, leagueData]) => {
+          const seenInThisLeague = new Set();
           Object.values(leagueData || {}).forEach(roster => {
             const list = Array.isArray(roster) ? roster : (roster && typeof roster === 'object' ? Object.values(roster) : []);
             list.forEach(n => {
               if (typeof n === 'string' && n.trim()) {
                 const k = n.trim();
-                counts[k] = (counts[k] || 0) + 1;
+                if (seenInThisLeague.has(k)) return; // 같은 리그 내 중복 방지
+                seenInThisLeague.add(k);
+                if (!byPlayer[k]) byPlayer[k] = [];
+                byPlayer[k].push(leagueKey);
               }
             });
           });
         });
-        setLeagueWinCounts(counts);
+        // 리그 키를 숫자 기준 정렬 (League1, League2, ...)
+        Object.keys(byPlayer).forEach(k => {
+          byPlayer[k].sort((a, b) => {
+            const an = parseInt(String(a).match(/(\d+)/)?.[1] || '0', 10);
+            const bn = parseInt(String(b).match(/(\d+)/)?.[1] || '0', 10);
+            return an - bn;
+          });
+        });
+        setLeagueWinsByPlayer(byPlayer);
       } catch (e) {
         console.error('리그 우승 명단 로드 실패:', e);
-        setLeagueWinCounts({});
+        setLeagueWinsByPlayer({});
       }
     })();
   }, [clubName]);
@@ -662,10 +674,27 @@ export default function MatchDetailPage() {
                     alt={pos.name}
                     style={{ width: 36, height: 36, objectFit: 'contain' }}
                   />
-                  {/* 🆕 리그 우승 별 — 누적 리그 우승 횟수만큼 골드 별 (유니폼 가장 위쪽) */}
+                  {/* 🆕 리그 우승 별 — 우승한 리그별로 다른 색 별 (유니폼 가장 위쪽) */}
                   {(() => {
-                    const lw = leagueWinCounts[pos.name] || 0;
-                    if (lw <= 0) return null;
+                    const wins = leagueWinsByPlayer[pos.name] || [];
+                    if (wins.length === 0) return null;
+                    // 리그별 색상 팔레트 (League1=골드, League2=실버, League3=브론즈, 이후는 컬러 순환)
+                    const LEAGUE_PALETTE = [
+                      { color: '#FFD700', glow: '255,215,0' },   // 1: Gold
+                      { color: '#C0C0C0', glow: '192,192,192' }, // 2: Silver
+                      { color: '#CD7F32', glow: '205,127,50' },  // 3: Bronze
+                      { color: '#E91E63', glow: '233,30,99' },   // 4: Pink
+                      { color: '#9C27B0', glow: '156,39,176' },  // 5: Purple
+                      { color: '#2196F3', glow: '33,150,243' },  // 6: Blue
+                      { color: '#4CAF50', glow: '76,175,80' },   // 7: Green
+                      { color: '#FF5722', glow: '255,87,34' },   // 8: Deep Orange
+                      { color: '#00BCD4', glow: '0,188,212' },   // 9: Cyan
+                    ];
+                    const colorOf = (leagueKey) => {
+                      const m = String(leagueKey).match(/(\d+)/);
+                      const idx = m ? parseInt(m[1], 10) - 1 : 0;
+                      return LEAGUE_PALETTE[((idx % LEAGUE_PALETTE.length) + LEAGUE_PALETTE.length) % LEAGUE_PALETTE.length];
+                    };
                     return (
                       <Box
                         sx={{
@@ -679,21 +708,24 @@ export default function MatchDetailPage() {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {Array.from({ length: Math.min(lw, 9) }).map((_, i) => (
-                          <Typography
-                            key={i}
-                            component="span"
-                            sx={{
-                              fontSize: '0.85rem',
-                              lineHeight: 1,
-                              color: '#FFD700',
-                              filter: 'drop-shadow(0 0 3px rgba(255,165,0,1))',
-                              WebkitTextStroke: '0.4px rgba(178,34,34,0.7)',
-                            }}
-                          >
-                            ★
-                          </Typography>
-                        ))}
+                        {wins.slice(0, 9).map((leagueKey, i) => {
+                          const { color, glow } = colorOf(leagueKey);
+                          return (
+                            <Typography
+                              key={`${leagueKey}-${i}`}
+                              component="span"
+                              sx={{
+                                fontSize: '0.85rem',
+                                lineHeight: 1,
+                                color,
+                                filter: `drop-shadow(0 0 3px rgba(${glow}, 1))`,
+                                WebkitTextStroke: '0.4px rgba(0,0,0,0.55)',
+                              }}
+                            >
+                              ★
+                            </Typography>
+                          );
+                        })}
                       </Box>
                     );
                   })()}
