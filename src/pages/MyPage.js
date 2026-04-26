@@ -692,18 +692,19 @@ export default function MyPage() {
   }, [allStatsForRank, userName, rankThreshold]);
 
   // 주차별 순위 추이 (차트용) + 마지막에 현재 순위 반영
-  // 🔧 그 주에 본인이 실제 승/무/패 기록이 있는 주만 표시
-  //    (출전했으나 결과가 없는 케이스 — 스케줄만 있고 경기 미진행 등 — 도 제외)
+  // 🔧 그 주에 팀(클럽 전체) 경기가 있었던 주만 표시 (본인 출전여부 무관)
+  //    팀에 아무 경기 없는 주는 누적 데이터 변동도 거의 없으므로 제외하는 게 자연스러움
   const rankHistory = useMemo(() => {
     if (!weeklyStandings || !userName) return null;
     const history = Object.keys(weeklyStandings).sort().map(weekKey => {
       const weekData = weeklyStandings[weekKey];
-      const me = weekData?.[userName];
-      // 그 주 승+무+패 합이 0이면 제외 (weeklyOnly 없는 옛 데이터는 호환을 위해 통과)
-      if (me && me.weeklyOnly !== undefined) {
-        const wo = me.weeklyOnly || {};
-        const total = (wo.wins || 0) + (wo.draws || 0) + (wo.losses || 0);
-        if (total === 0) return null;
+      // 팀 경기 유무 판정: weekData 내 어떤 선수든 weeklyOnly.games > 0 이면 팀 경기 있었음
+      // (weeklyOnly 없는 옛 데이터는 호환을 위해 통과 — 팀 경기 정보 없음)
+      const players = Object.values(weekData || {});
+      const hasWeeklyData = players.some(p => p?.weeklyOnly !== undefined);
+      if (hasWeeklyData) {
+        const teamPlayed = players.some(p => (p?.weeklyOnly?.games || 0) > 0);
+        if (!teamPlayed) return null;
       }
       // 정렬 우선순위: 능력치(내림) → 승점율(내림) → 골득실(내림)
       const eligible = Object.entries(weekData)
@@ -739,18 +740,27 @@ export default function MyPage() {
   }, [weeklyStandings, userName, rankThreshold, currentRank]);
 
   // 🆕 주차별 승점율 추이 — 그 주(월~일)만의 (승*3 + 무*1) / (출전*3) * 100
-  // weeklyOnly 필드(rebuildStats 에서 저장) 우선 사용. 없으면 누적 pointRate fallback (호환).
+  // 🔧 필터: 팀(클럽) 경기가 있었던 주만 포함 (본인 출전여부 무관)
+  //    본인이 미출전한 주는 차트의 라인을 끊지 않도록 0% 로 표시 (툴팁에 '미출전' 명시)
   const pointRateHistory = useMemo(() => {
     if (!weeklyStandings || !userName) return null;
     const history = Object.keys(weeklyStandings).sort().map(weekKey => {
-      const me = weeklyStandings[weekKey]?.[userName];
-      if (!me) return null;
-      const wo = me.weeklyOnly;
-      // weeklyOnly 데이터가 있으면 그 주만의 통계 사용
-      if (wo) {
-        // 🔧 승+무+패 합이 0인 주는 제외 (출전 기록이 있어도 결과가 없는 경우 포함)
-        const total = (wo.wins || 0) + (wo.draws || 0) + (wo.losses || 0);
-        if (total === 0) return null;
+      const weekData = weeklyStandings[weekKey];
+      const players = Object.values(weekData || {});
+      const me = weekData?.[userName];
+
+      // 팀 경기 유무 판정 (weeklyOnly.games > 0 인 선수가 한 명이라도 있으면 팀 경기 있었음)
+      const hasWeeklyData = players.some(p => p?.weeklyOnly !== undefined);
+      if (hasWeeklyData) {
+        const teamPlayed = players.some(p => (p?.weeklyOnly?.games || 0) > 0);
+        if (!teamPlayed) return null;
+      }
+
+      const wo = me?.weeklyOnly;
+      const woTotal = wo ? (wo.wins || 0) + (wo.draws || 0) + (wo.losses || 0) : 0;
+
+      // 본인 W/D/L 있음 → 본인 데이터 표시
+      if (wo && woTotal > 0) {
         return {
           week: weekKey,
           pointRate: Number(wo.pointRate || 0),
@@ -758,11 +768,24 @@ export default function MyPage() {
           draws: wo.draws || 0,
           losses: wo.losses || 0,
           games: wo.games || 0,
+          attended: true,
           weekOnly: true,
         };
       }
-      // fallback: 백업이 새 형식으로 갱신되기 전이면 누적값 사용 (대체로 부정확하지만 빈 차트 방지)
-      if (!(me.participatedMatches > 0)) return null;
+
+      // 새 형식인데 본인 미출전 → 팀 경기는 있으니 주차 자체는 표시 (0%)
+      if (hasWeeklyData) {
+        return {
+          week: weekKey,
+          pointRate: 0,
+          wins: 0, draws: 0, losses: 0, games: 0,
+          attended: false,
+          weekOnly: true,
+        };
+      }
+
+      // fallback: 옛 형식 호환 (팀 경기 유무 판정 불가)
+      if (!(me?.participatedMatches > 0)) return null;
       return {
         week: weekKey,
         pointRate: Number(me.pointRate || 0),
@@ -770,6 +793,7 @@ export default function MyPage() {
         draws: me.draws || 0,
         losses: me.losses || 0,
         games: me.participatedMatches || 0,
+        attended: true,
         weekOnly: false,
       };
     }).filter(Boolean);
@@ -1583,28 +1607,53 @@ export default function MyPage() {
               <Typography sx={{ fontSize: '0.72rem', color: '#999', mb: 1.5 }}>
                 각 주의 경기 결과만 반영 · (승×3 + 무×1) / (출전×3) × 100%
               </Typography>
-              {/* 현재 승점율 + 변화량 */}
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2 }}>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography sx={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#2E7D32', lineHeight: 1 }}>
-                    {last.pointRate.toFixed(1)}<span style={{ fontSize: '1.4rem' }}>%</span>
-                  </Typography>
-                  <Typography sx={{ fontSize: '0.75rem', color: '#999', mt: 0.3 }}>
-                    승 {last.wins} · 무 {last.draws} · 패 {last.losses} ({last.games}경기)
-                  </Typography>
-                </Box>
-                {Math.abs(diff) >= 0.5 && (
-                  <Chip
-                    label={diff > 0 ? `▲ ${diff.toFixed(1)}%p` : `▼ ${Math.abs(diff).toFixed(1)}%p`}
-                    size="small"
-                    sx={{
-                      bgcolor: diff > 0 ? '#E8F5E9' : '#FFEBEE',
-                      color: diff > 0 ? '#388E3C' : '#D32F2F',
-                      fontWeight: 'bold', fontSize: '0.8rem',
-                    }}
-                  />
-                )}
-              </Box>
+              {/* 현재 승점율 + 변화량 (가장 최근 본인 출전 주 기준) */}
+              {(() => {
+                // 마지막 출전 주를 찾아 표시 (미출전 주 제외)
+                const lastAttended = [...pointRateHistory].reverse().find(r => r.attended);
+                if (!lastAttended) {
+                  return (
+                    <Box sx={{ textAlign: 'center', mb: 2 }}>
+                      <Typography sx={{ fontSize: '0.9rem', color: '#999' }}>
+                        최근 출전한 경기가 없습니다.
+                      </Typography>
+                    </Box>
+                  );
+                }
+                // 변화량은 출전 주끼리 비교
+                const attendedList = pointRateHistory.filter(r => r.attended);
+                const idx = attendedList.findIndex(r => r.week === lastAttended.week);
+                const prevAttended = idx > 0 ? attendedList[idx - 1] : null;
+                const diffAtt = prevAttended ? lastAttended.pointRate - prevAttended.pointRate : 0;
+                return (
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2 }}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography sx={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#2E7D32', lineHeight: 1 }}>
+                        {lastAttended.pointRate.toFixed(1)}<span style={{ fontSize: '1.4rem' }}>%</span>
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.75rem', color: '#999', mt: 0.3 }}>
+                        승 {lastAttended.wins} · 무 {lastAttended.draws} · 패 {lastAttended.losses} ({lastAttended.games}경기)
+                      </Typography>
+                      {lastAttended.week !== last.week && (
+                        <Typography sx={{ fontSize: '0.66rem', color: '#aaa', mt: 0.2 }}>
+                          최근 출전: {lastAttended.week.replace(/\d{4}-/, '')}
+                        </Typography>
+                      )}
+                    </Box>
+                    {Math.abs(diffAtt) >= 0.5 && (
+                      <Chip
+                        label={diffAtt > 0 ? `▲ ${diffAtt.toFixed(1)}%p` : `▼ ${Math.abs(diffAtt).toFixed(1)}%p`}
+                        size="small"
+                        sx={{
+                          bgcolor: diffAtt > 0 ? '#E8F5E9' : '#FFEBEE',
+                          color: diffAtt > 0 ? '#388E3C' : '#D32F2F',
+                          fontWeight: 'bold', fontSize: '0.8rem',
+                        }}
+                      />
+                    )}
+                  </Box>
+                );
+              })()}
               {/* 라인 차트 */}
               <Box sx={{ height: 150 }}>
                 <Line
@@ -1618,8 +1667,13 @@ export default function MyPage() {
                       pointRadius: pointRateHistory.map((r, i) =>
                         i === pointRateHistory.length - 1 ? 6 : 4
                       ),
+                      // 미출전 주는 회색, 출전 주는 초록 (마지막은 진한 색)
                       pointBackgroundColor: pointRateHistory.map((r, i) =>
+                        !r.attended ? '#BDBDBD' :
                         i === pointRateHistory.length - 1 ? '#1B5E20' : '#43A047'
+                      ),
+                      pointBorderColor: pointRateHistory.map((r) =>
+                        !r.attended ? '#9E9E9E' : '#2E7D32'
                       ),
                       tension: 0.3,
                       fill: true,
@@ -1644,6 +1698,7 @@ export default function MyPage() {
                         callbacks: {
                           label: (ctx) => {
                             const r = pointRateHistory[ctx.dataIndex];
+                            if (!r.attended) return ['미출전 (팀 경기 있음)', '터치하여 상세 보기'];
                             return [`승 ${r.wins} · 무 ${r.draws} · 패 ${r.losses}  →  ${r.pointRate.toFixed(1)}%`, '터치하여 상세 보기'];
                           }
                         }
