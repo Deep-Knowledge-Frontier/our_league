@@ -895,32 +895,19 @@ export default function MatchDetailPage() {
           </Box>
         </Box>
 
-        {/* 🆕 3D Perspective 컨테이너 — 강한 기울임 + 별 부각 */}
-        <Box
-          sx={{
-            perspective: '700px',
-            perspectiveOrigin: '50% 30%',
-            width: '100%',
-            maxWidth: FIELD_W,
-            mx: 'auto',
-            mb: 2,
-          }}
-        >
-        {/* Soccer Field (3D 기울임 강화) */}
+        {/* 🔧 평면 2D 필드 — 관리탭(FormationField) 스타일 */}
         <Box
           sx={{
             position: 'relative',
             width: '100%',
+            maxWidth: FIELD_W,
             height: FIELD_H,
             mx: 'auto',
-            // 🔧 위쪽 모서리는 살짝만 둥글게 → 탭과 자연스럽게 연결
-            borderRadius: '4px 4px 12px 12px',
+            mb: 2,
+            borderRadius: '4px 4px 8px 8px',
             overflow: 'visible',
-            boxShadow: '0 24px 50px -10px rgba(0,0,0,0.6), 0 10px 20px rgba(0,0,0,0.3)',
-            background: 'linear-gradient(180deg, #2e7d32 0%, #388e3c 25%, #2e7d32 25%, #388e3c 50%, #2e7d32 50%, #388e3c 75%, #2e7d32 75%, #388e3c 100%)',
-            transform: 'rotateX(18deg)',
-            transformStyle: 'preserve-3d',
-            transformOrigin: '50% 100%',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+            background: '#388E3C',
           }}
         >
           {/* Field markings */}
@@ -951,48 +938,21 @@ export default function MatchDetailPage() {
                   top: pos.y - 22,
                   width: 60,
                   textAlign: 'center',
-                  // 🆕 카운터 회전 — 필드는 18° 기울어졌지만 선수는 정면 향함
-                  transformStyle: 'preserve-3d',
-                  animation: `dropIn3d 0.5s ease-out ${idx * 0.05}s both`,
-                  '@keyframes dropIn3d': {
-                    '0%': { opacity: 0, transform: 'translateY(-40px) rotateX(-18deg)' },
-                    '100%': { opacity: 1, transform: 'translateY(0) rotateX(-18deg)' },
+                  animation: `dropIn 0.4s ease-out ${idx * 0.04}s both`,
+                  '@keyframes dropIn': {
+                    '0%': { opacity: 0, transform: 'translateY(-20px)' },
+                    '100%': { opacity: 1, transform: 'translateY(0)' },
                   },
                 }}
               >
-                {/* Uniform — JerseySVG (포지션 라벨 내장) + 서 있는 3D 효과 */}
-                <Box sx={{
-                  position: 'relative',
-                  display: 'inline-block',
-                  transform: 'translateZ(6px)',
-                  transformStyle: 'preserve-3d',
-                }}>
-                  {/* 발 아래 그림자 — 필드 평면에 누운 타원 */}
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      bottom: -3,
-                      left: '50%',
-                      width: 30,
-                      height: 6,
-                      transform: 'translateX(-50%) translateZ(-6px) rotateX(90deg)',
-                      bgcolor: 'rgba(0,0,0,0.4)',
-                      borderRadius: '50%',
-                      filter: 'blur(2px)',
-                      pointerEvents: 'none',
-                    }}
+                {/* Uniform — JerseySVG (포지션 라벨 내장), 평면 */}
+                <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                  <JerseySVG
+                    color={teamColor(pos.isHome)}
+                    posLabel={pos.posLabel}
+                    width={36}
+                    height={30}
                   />
-                  <Box sx={{
-                    filter: 'drop-shadow(2px 4px 3px rgba(0,0,0,0.55)) drop-shadow(-1px 0 1px rgba(0,0,0,0.2))',
-                    position: 'relative',
-                  }}>
-                    <JerseySVG
-                      color={teamColor(pos.isHome)}
-                      posLabel={pos.posLabel}
-                      width={36}
-                      height={30}
-                    />
-                  </Box>
                   {/* 🆕 별 영역 — 유니폼 위쪽(머리 부분)에 SVG 별로 표시
                       · 위쪽 줄: 리그 우승 별 (블루, 동일 크기)
                       · 아래쪽 줄: 캡틴 누적 별 (3진법 티어, 크기 차등)
@@ -1029,7 +989,7 @@ export default function MatchDetailPage() {
                           position: 'absolute',
                           bottom: '100%',
                           left: '50%',
-                          transform: 'translateX(-50%) translateZ(20px)',
+                          transform: 'translateX(-50%)',
                           mb: '1px',
                           display: 'flex',
                           flexDirection: 'column-reverse', // 캡틴 아래(유니폼 가까이), 리그 위
@@ -1103,7 +1063,6 @@ export default function MatchDetailPage() {
             );
           })}
         </Box>
-        </Box>{/* /3D Perspective 컨테이너 */}
 
         {/* Back + Share button */}
         <Box sx={{ mt: 3, textAlign: 'center', display: 'flex', justifyContent: 'center', gap: 1.2 }}>
