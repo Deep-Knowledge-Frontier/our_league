@@ -557,18 +557,10 @@ export default function MatchDetailPage() {
               fontSize: '0.85rem', textAlign: 'left', lineHeight: 1.65, mb: 0.2,
             }}>
               <span style={{ fontSize: '0.95rem' }}>⚽</span>
-              <span style={{
-                fontWeight: 800, color, marginLeft: 6,
-              }}>
+              <span style={{ fontWeight: 700, color, marginLeft: 6 }}>
                 {g.scorer}
+                {g.assist && g.assist !== '없음' ? ` (${g.assist})` : ''}
               </span>
-              {g.assist && g.assist !== '없음' && (
-                <span style={{
-                  fontSize: '0.74rem', color: '#888', marginLeft: 6, fontWeight: 500,
-                }}>
-                  ↗ {g.assist}
-                </span>
-              )}
             </Typography>
           );
           return (
