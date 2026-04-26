@@ -4,9 +4,11 @@ import { auth, db } from '../config/firebase';
 import { ref, get } from 'firebase/database';
 import {
   Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
-  Divider, Chip, FormControl, InputLabel, Select, MenuItem, LinearProgress, IconButton,
+  Divider, Chip, FormControl, InputLabel, Select, MenuItem, Menu, LinearProgress, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import CheckIcon from '@mui/icons-material/Check';
 import LogoutIcon from '@mui/icons-material/Logout';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
@@ -89,6 +91,8 @@ export default function MyPage() {
   const [teammates, setTeammates] = useState(null);
   const [weeklyStandings, setWeeklyStandings] = useState(null);
   const [rankThreshold, setRankThreshold] = useState(15);
+  // 🆕 출전율 셀렉트 메뉴 anchor (Chip + Menu UI)
+  const [thresholdMenuAnchor, setThresholdMenuAnchor] = useState(null);
   // 🆕 차트 포인트 클릭 시 표시할 주차별 상세 — { weekKey }
   const [weekDetailDialog, setWeekDetailDialog] = useState(null);
   const [networkGraph, setNetworkGraph] = useState(null);
@@ -1436,17 +1440,77 @@ export default function MyPage() {
                   순위 추이
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <FormControl size="small" sx={{ minWidth: 75 }}>
-                    <Select
-                      value={rankThreshold}
-                      onChange={e => setRankThreshold(e.target.value)}
-                      sx={{ fontSize: '0.75rem', height: 28 }}
-                    >
-                      {[5, 10, 15, 20, 30, 50].map(v => (
-                        <MenuItem key={v} value={v} sx={{ fontSize: '0.8rem' }}>{v}%</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                  {/* 🆕 칩 스타일 — 출전율 선택 (클릭 시 메뉴 팝업) */}
+                  <Chip
+                    label={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                        <Typography component="span" sx={{
+                          fontSize: '0.68rem', fontWeight: 600, color: '#1976D2', opacity: 0.85,
+                        }}>
+                          출전율
+                        </Typography>
+                        <Typography component="span" sx={{
+                          fontSize: '0.78rem', fontWeight: 800, color: '#1565C0',
+                        }}>
+                          {rankThreshold}%
+                        </Typography>
+                        <KeyboardArrowDownIcon sx={{
+                          fontSize: '0.95rem', color: '#1565C0',
+                          transition: 'transform 0.18s',
+                          transform: thresholdMenuAnchor ? 'rotate(180deg)' : 'rotate(0)',
+                        }} />
+                      </Box>
+                    }
+                    onClick={(e) => setThresholdMenuAnchor(e.currentTarget)}
+                    sx={{
+                      height: 28, px: 0.5, borderRadius: 99,
+                      bgcolor: thresholdMenuAnchor ? '#BBDEFB' : '#E3F2FD',
+                      border: '1px solid #BBDEFB',
+                      transition: 'all 0.15s',
+                      cursor: 'pointer',
+                      '&:hover': { bgcolor: '#BBDEFB', borderColor: '#90CAF9' },
+                      '& .MuiChip-label': { px: 1, py: 0 },
+                    }}
+                  />
+                  <Menu
+                    anchorEl={thresholdMenuAnchor}
+                    open={!!thresholdMenuAnchor}
+                    onClose={() => setThresholdMenuAnchor(null)}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                    PaperProps={{
+                      sx: {
+                        mt: 0.5, borderRadius: 2, minWidth: 110,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                      },
+                    }}
+                  >
+                    {[5, 10, 15, 20, 30, 50].map(v => {
+                      const active = v === rankThreshold;
+                      return (
+                        <MenuItem
+                          key={v}
+                          selected={active}
+                          onClick={() => {
+                            setRankThreshold(v);
+                            setThresholdMenuAnchor(null);
+                          }}
+                          sx={{
+                            fontSize: '0.85rem',
+                            fontWeight: active ? 800 : 500,
+                            color: active ? '#1565C0' : '#444',
+                            justifyContent: 'space-between',
+                            py: 0.7,
+                            '&.Mui-selected': { bgcolor: '#E3F2FD' },
+                            '&.Mui-selected:hover': { bgcolor: '#BBDEFB' },
+                          }}
+                        >
+                          <span>{v}%</span>
+                          {active && <CheckIcon sx={{ fontSize: '1rem', color: '#1565C0' }} />}
+                        </MenuItem>
+                      );
+                    })}
+                  </Menu>
                 </Box>
               </Box>
               <Typography sx={{ fontSize: '0.72rem', color: '#999', mb: 1.5 }}>
