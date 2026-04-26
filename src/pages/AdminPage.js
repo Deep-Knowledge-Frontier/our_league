@@ -1491,6 +1491,10 @@ export default function AdminPage() {
           return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
         };
 
+        // 🔧 타임존 안전 YYYY-MM-DD 포매터 (toISOString은 UTC라 KST 기준 하루 밀림)
+        const localYMD = (d) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
         const todayD = new Date();
         const last12Weeks = [];
         for (let i = 11; i >= 0; i--) {
@@ -1500,7 +1504,7 @@ export default function AdminPage() {
           const daysToSunday = (7 - dayOfWeek) % 7;
           d.setDate(todayD.getDate() + daysToSunday - i * 7);
           if (d > todayD) d.setTime(todayD.getTime()); // 미래면 오늘로
-          const maxDateStr = d.toISOString().slice(0, 10);
+          const maxDateStr = localYMD(d);
           last12Weeks.push({ weekKey: getISOWeekKey(maxDateStr), maxDate: maxDateStr });
         }
 
@@ -1529,9 +1533,10 @@ export default function AdminPage() {
           if (Object.keys(wStats).length === 0) continue;
 
           // 🆕 그 주만의 stats (월요일 ~ 일요일) — 주차별 승점율 차트용
+          // 🔧 toISOString 대신 로컬 YMD 사용 — KST(+9)에서 하루 밀려 이전 주 일요일이 포함되던 버그 수정
           const weekStartDate = new Date(wMax + 'T00:00:00');
           weekStartDate.setDate(weekStartDate.getDate() - 6);
-          const weekStartStr = weekStartDate.toISOString().slice(0, 10);
+          const weekStartStr = localYMD(weekStartDate);
           const wOnlyStats = calcStats(scoreData, selData, null, wMax, weekStartStr);
 
           const weekData = {};

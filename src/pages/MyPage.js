@@ -692,11 +692,16 @@ export default function MyPage() {
   }, [allStatsForRank, userName, rankThreshold]);
 
   // 주차별 순위 추이 (차트용) + 마지막에 현재 순위 반영
+  // 🔧 그 주에 본인이 실제 출전한 주만 표시 (weeklyOnly.games > 0)
+  //    누적 데이터로 점 찍히는 것보다, 출전 주만 표시하는 게 의미상 정확
   const rankHistory = useMemo(() => {
     if (!weeklyStandings || !userName) return null;
     const history = Object.keys(weeklyStandings).sort().map(weekKey => {
       const weekData = weeklyStandings[weekKey];
-      // 🔧 정렬 우선순위: 능력치(내림) → 승점율(내림) → 골득실(내림)
+      const me = weekData?.[userName];
+      // 그 주 본인 미출전이면 차트에서 제외 (weeklyOnly 없는 옛 데이터는 호환을 위해 통과)
+      if (me && me.weeklyOnly !== undefined && !(me.weeklyOnly?.games > 0)) return null;
+      // 정렬 우선순위: 능력치(내림) → 승점율(내림) → 골득실(내림)
       const eligible = Object.entries(weekData)
         .filter(([, p]) => (p.attendanceRate || 0) >= rankThreshold)
         .sort((a, b) => {
