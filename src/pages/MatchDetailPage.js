@@ -718,21 +718,12 @@ export default function MatchDetailPage() {
         {/* Score */}
         <Box sx={{ textAlign: 'center', mb: 0.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-            <Box
-              onClick={() => setViewTeam(v => v === 'home' ? 'all' : 'home')}
-              sx={{
-                flex: 1, textAlign: 'center',
-                cursor: 'pointer',
-                p: 0.5, borderRadius: 2,
-                opacity: viewTeam === 'away' ? 0.4 : 1,
-                bgcolor: viewTeam === 'home' ? 'rgba(198,40,40,0.10)' : 'transparent',
-                border: viewTeam === 'home' ? '1.5px solid #C62828' : '1.5px solid transparent',
-                transition: 'all 0.18s',
-                '&:hover': { bgcolor: 'rgba(198,40,40,0.06)' },
-              }}
-              title="클릭: Team A 만 보기"
-            >
-              <img src="/uniform1.png" alt="Team A" style={{ width: 56, height: 56, objectFit: 'contain' }} />
+            <Box sx={{
+              flex: 1, textAlign: 'center',
+              opacity: viewTeam === 'away' ? 0.45 : 1,
+              transition: 'opacity 0.18s',
+            }}>
+              <img src="/uniform1.png" alt="Team A" style={{ width: 60, height: 60, objectFit: 'contain' }} />
               <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', mt: 0.3 }}>
                 {formatTeamLabel(team1Name)}
               </Typography>
@@ -753,21 +744,12 @@ export default function MatchDetailPage() {
               </Box>
             </Box>
 
-            <Box
-              onClick={() => setViewTeam(v => v === 'away' ? 'all' : 'away')}
-              sx={{
-                flex: 1, textAlign: 'center',
-                cursor: 'pointer',
-                p: 0.5, borderRadius: 2,
-                opacity: viewTeam === 'home' ? 0.4 : 1,
-                bgcolor: viewTeam === 'away' ? 'rgba(249,168,37,0.15)' : 'transparent',
-                border: viewTeam === 'away' ? '1.5px solid #F9A825' : '1.5px solid transparent',
-                transition: 'all 0.18s',
-                '&:hover': { bgcolor: 'rgba(249,168,37,0.10)' },
-              }}
-              title="클릭: Team B 만 보기"
-            >
-              <img src="/uniform2.png" alt="Team B" style={{ width: 56, height: 56, objectFit: 'contain' }} />
+            <Box sx={{
+              flex: 1, textAlign: 'center',
+              opacity: viewTeam === 'home' ? 0.45 : 1,
+              transition: 'opacity 0.18s',
+            }}>
+              <img src="/uniform2.png" alt="Team B" style={{ width: 60, height: 60, objectFit: 'contain' }} />
               <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', mt: 0.3 }}>
                 {formatTeamLabel(team2Name)}
               </Typography>
@@ -846,12 +828,70 @@ export default function MatchDetailPage() {
           );
         })()}
 
+        {/* 🆕 팀 선택 탭 — 필드 위쪽에 붙는 형태 (벤치마크 디자인) */}
+        <Box sx={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: FIELD_W,
+          mx: 'auto',
+        }}>
+          <Box sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            px: 2.5,
+            mb: '-1px', // 필드와 시각적으로 연결되도록
+            position: 'relative',
+            zIndex: 3,
+          }}>
+            {[
+              { key: 'home', label: 'Team A', color: '#C62828', bg: '#FFEBEE', logoSrc: '/uniform1.png' },
+              { key: 'away', label: 'Team B', color: '#F9A825', bg: '#FFF8E1', logoSrc: '/uniform2.png' },
+            ].map((t) => {
+              const isActive = viewTeam === t.key;
+              return (
+                <Box
+                  key={t.key}
+                  onClick={() => setViewTeam(v => v === t.key ? 'all' : t.key)}
+                  sx={{
+                    cursor: 'pointer',
+                    minWidth: 82,
+                    bgcolor: isActive ? t.bg : 'white',
+                    border: `2px solid ${isActive ? t.color : '#E0E0E0'}`,
+                    borderBottom: isActive ? `2px solid ${t.bg}` : '2px solid #E0E0E0',
+                    borderRadius: '10px 10px 0 0',
+                    px: 1.5, py: 0.6,
+                    display: 'flex', alignItems: 'center', gap: 0.6, justifyContent: 'center',
+                    boxShadow: isActive
+                      ? `0 -3px 10px ${t.color}33`
+                      : '0 -1px 4px rgba(0,0,0,0.08)',
+                    transform: isActive ? 'translateY(0)' : 'translateY(2px)',
+                    transition: 'all 0.18s',
+                    '&:hover': { bgcolor: isActive ? t.bg : '#FAFAFA' },
+                  }}
+                >
+                  <img
+                    src={t.logoSrc}
+                    alt={t.label}
+                    style={{ width: 18, height: 18, objectFit: 'contain', opacity: isActive ? 1 : 0.65 }}
+                  />
+                  <Typography sx={{
+                    fontSize: '0.78rem',
+                    fontWeight: isActive ? 900 : 600,
+                    color: isActive ? t.color : '#888',
+                    letterSpacing: '-0.02em',
+                  }}>
+                    {t.label}
+                  </Typography>
+                </Box>
+              );
+            })}
+          </Box>
+        </Box>
+
         {/* 🆕 3D Perspective 컨테이너 — 강한 기울임 + 별 부각 */}
         <Box
           sx={{
-            // 🔧 perspective 작게 → 더 강한 원근 (가까운 것 크고, 먼 것 작음)
             perspective: '700px',
-            // 시점을 위쪽으로 이동 → 아래쪽이 더 가까이 보이고 크게 보임
             perspectiveOrigin: '50% 30%',
             width: '100%',
             maxWidth: FIELD_W,
@@ -890,29 +930,6 @@ export default function MatchDetailPage() {
           <Box sx={{ position: 'absolute', top: 0, left: '35%', width: '30%', height: '6%', border: '2px solid rgba(255,255,255,0.6)', borderTop: 'none' }} />
           {/* Bottom goal area */}
           <Box sx={{ position: 'absolute', bottom: 0, left: '35%', width: '30%', height: '6%', border: '2px solid rgba(255,255,255,0.6)', borderBottom: 'none' }} />
-
-          {/* 🆕 팀 필터 클릭 영역 — 좌/우 상단 (Team A/B 토글) */}
-          <Box
-            onClick={() => setViewTeam(v => v === 'home' ? 'all' : 'home')}
-            sx={{
-              position: 'absolute', top: 0, left: 0, width: '50%', height: '50%',
-              cursor: 'pointer', zIndex: 1,
-              // 활성 표시 (선택된 팀의 영역에 미세한 배경)
-              bgcolor: viewTeam === 'home' ? 'rgba(198,40,40,0.08)' : 'transparent',
-              transition: 'all 0.18s',
-              '&:hover': { bgcolor: 'rgba(198,40,40,0.05)' },
-            }}
-          />
-          <Box
-            onClick={() => setViewTeam(v => v === 'away' ? 'all' : 'away')}
-            sx={{
-              position: 'absolute', top: 0, right: 0, width: '50%', height: '50%',
-              cursor: 'pointer', zIndex: 1,
-              bgcolor: viewTeam === 'away' ? 'rgba(249,168,37,0.10)' : 'transparent',
-              transition: 'all 0.18s',
-              '&:hover': { bgcolor: 'rgba(249,168,37,0.06)' },
-            }}
-          />
 
           {/* Players (필터 적용) */}
           {allPositions
