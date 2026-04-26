@@ -16,16 +16,6 @@ const dailyTeamMedalColor = (count) => {
   return null;
 };
 
-// 이미지 로드 헬퍼
-const loadImage = (src) =>
-  new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('이미지 로드 실패: ' + src));
-    img.src = src;
-  });
-
 // 5각 별 path 그리기 (canvas) — 폰트 글리프 누락 방지
 const drawStar = (ctx, cx, cy, outerR, innerR, fill, stroke, strokeWidth = 0.5) => {
   ctx.beginPath();
@@ -47,6 +37,55 @@ const drawStar = (ctx, cx, cy, outerR, innerR, fill, stroke, strokeWidth = 0.5) 
     ctx.lineWidth = strokeWidth;
     ctx.strokeStyle = stroke;
     ctx.stroke();
+  }
+};
+
+// 🆕 유니폼(티셔츠) 그리기 — SVG path와 동일 모양 (벤치마크 디자인)
+const drawJersey = (ctx, cx, cy, w, h, color, posLabel = '') => {
+  // 100x83 viewBox 좌표를 실제 좌표로 매핑
+  const sx = (px) => cx - w / 2 + (px / 100) * w;
+  const sy = (py) => cy - h / 2 + (py / 83) * h;
+
+  ctx.beginPath();
+  ctx.moveTo(sx(30), sy(6));
+  ctx.lineTo(sx(18), sy(10));
+  ctx.lineTo(sx(6), sy(22));
+  ctx.quadraticCurveTo(sx(4), sy(28), sx(8), sy(32));
+  ctx.lineTo(sx(14), sy(38));
+  ctx.lineTo(sx(22), sy(34));
+  ctx.lineTo(sx(22), sy(74));
+  ctx.quadraticCurveTo(sx(22), sy(80), sx(28), sy(80));
+  ctx.lineTo(sx(72), sy(80));
+  ctx.quadraticCurveTo(sx(78), sy(80), sx(78), sy(74));
+  ctx.lineTo(sx(78), sy(34));
+  ctx.lineTo(sx(86), sy(38));
+  ctx.lineTo(sx(92), sy(32));
+  ctx.quadraticCurveTo(sx(96), sy(28), sx(94), sy(22));
+  ctx.lineTo(sx(82), sy(10));
+  ctx.lineTo(sx(70), sy(6));
+  ctx.lineTo(sx(64), sy(12));
+  ctx.quadraticCurveTo(sx(50), sy(22), sx(36), sy(12));
+  ctx.lineTo(sx(30), sy(6));
+  ctx.closePath();
+
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.stroke();
+
+  // 포지션 라벨 (유니폼 내부 가운데)
+  if (posLabel) {
+    const labelLen = String(posLabel).length;
+    const fontSize = labelLen >= 4 ? h * 0.18 : labelLen === 3 ? h * 0.24 : h * 0.32;
+    ctx.font = `900 ${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.strokeText(posLabel, cx, sy(56));
+    ctx.fillStyle = 'white';
+    ctx.fillText(posLabel, cx, sy(56));
   }
 };
 
@@ -148,18 +187,7 @@ export async function shareMatchImage({
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
 
-  // 1) 유니폼 이미지 미리 로드 (스코어 + 필드 양쪽에 사용)
-  let uniform1Img = null, uniform2Img = null;
-  try {
-    [uniform1Img, uniform2Img] = await Promise.all([
-      loadImage('/uniform1.png'),
-      loadImage('/uniform2.png'),
-    ]);
-  } catch {
-    /* 이미지 로드 실패 시 폴백 (단순 사각형) */
-  }
-
-  // 2) SVG → 이미지로 변환 후 캔버스에 그리기
+  // 1) SVG → 이미지로 변환 후 캔버스에 그리기 (배경/라인/스코어 텍스트/골 리스트)
   const baseImg = await new Promise((resolve, reject) => {
     const img = new Image();
     const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
@@ -170,42 +198,35 @@ export async function shareMatchImage({
   });
   ctx.drawImage(baseImg, 0, 0, totalW, totalH);
 
-  // 3) 스코어 영역 유니폼 (실제 이미지)
-  const scoreUniformY = headerH + 8;
-  const scoreUniformSize = 48;
-  if (uniform1Img) {
-    ctx.drawImage(uniform1Img, padX + 50 - scoreUniformSize / 2, scoreUniformY, scoreUniformSize, scoreUniformSize);
-  } else {
-    ctx.fillStyle = '#C62828';
-    ctx.fillRect(padX + 50 - scoreUniformSize / 2, scoreUniformY, scoreUniformSize, scoreUniformSize);
-  }
-  if (uniform2Img) {
-    ctx.drawImage(uniform2Img, totalW - padX - 50 - scoreUniformSize / 2, scoreUniformY, scoreUniformSize, scoreUniformSize);
-  } else {
-    ctx.fillStyle = '#FBC02D';
-    ctx.fillRect(totalW - padX - 50 - scoreUniformSize / 2, scoreUniformY, scoreUniformSize, scoreUniformSize);
-  }
+  // 2) 스코어 영역 유니폼 (벤치마크 스타일 SVG 티셔츠)
+  const scoreUniformW = 50;
+  const scoreUniformH = 42;
+  const scoreUniformY = headerH + 28;
+  drawJersey(ctx, padX + 50, scoreUniformY, scoreUniformW, scoreUniformH, '#C62828');
+  drawJersey(ctx, totalW - padX - 50, scoreUniformY, scoreUniformW, scoreUniformH, '#F9A825');
 
   // 4) 필드 위 선수 — 유니폼 + 별 + 라벨 + 이름 + 메달
-  // 🆕 유니폼 크기 압축 (가로:세로 = 32:24)
-  const uniformW = 32;
-  const uniformH = 24;
+  // 🆕 SVG 유니폼 + 포지션 라벨 내장 → 살짝 크게
+  const uniformW = 36;
+  const uniformH = 30;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
   positions.forEach((pos) => {
     const cx = fieldX + pos.x;
     const cy2 = fieldY + pos.y;
-
-    // 4-1) 유니폼 (실제 이미지) — 압축된 크기
-    const uimg = pos.isHome ? uniform1Img : uniform2Img;
     const uTop = cy2 - uniformH / 2;
-    if (uimg) {
-      ctx.drawImage(uimg, cx - uniformW / 2, uTop, uniformW, uniformH);
-    } else {
-      ctx.fillStyle = pos.isHome ? '#C62828' : '#FBC02D';
-      ctx.fillRect(cx - uniformW / 2, uTop, uniformW, uniformH);
-    }
+
+    // 4-1) 유니폼 (벤치마크 SVG 티셔츠 + 포지션 라벨 내장)
+    drawJersey(
+      ctx,
+      cx,
+      cy2,
+      uniformW,
+      uniformH,
+      pos.isHome ? '#C62828' : '#F9A825',
+      pos.posLabel || ''
+    );
 
     // 4-2) 캡틴 누적 별 (3진법 + 크기 차등) — 유니폼 위쪽 머리 부분
     const captainTiers = [];
@@ -256,14 +277,7 @@ export async function shareMatchImage({
       }
     }
 
-    // 4-4) 포지션 라벨 (유니폼 하단 안쪽)
-    if (pos.posLabel) {
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillRect(cx - 12, uTop + uniformH - 11, 24, 10);
-      ctx.fillStyle = '#FFD700';
-      ctx.font = 'bold 7.5px sans-serif';
-      ctx.fillText(pos.posLabel, cx, uTop + uniformH - 6);
-    }
+    // 4-4) 포지션 라벨은 drawJersey 내부에 통합됨 (별도 그리지 않음)
 
     // 4-5) 이름 (유니폼 아래)
     ctx.font = 'bold 9.5px sans-serif';

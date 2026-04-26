@@ -569,6 +569,62 @@ export default function MatchDetailPage() {
     </svg>
   );
 
+  // 🆕 유니폼 SVG — 티셔츠 silhouette + 포지션 라벨 내장 (벤치마크 디자인 적용)
+  const JerseySVG = ({ color = '#1976D2', posLabel = '', width = 36, height = 30 }) => {
+    const labelLen = String(posLabel || '').length;
+    // 라벨 길이에 따라 폰트 크기 조정 (3글자=18, 2글자=24)
+    const labelSize = labelLen >= 4 ? 14 : labelLen === 3 ? 18 : 24;
+    return (
+      <svg width={width} height={height} viewBox="0 0 100 83" style={{ display: 'block' }}>
+        {/* 티셔츠 본체 (어깨, 소매, 몸통) */}
+        <path
+          d="M 30 6
+             L 18 10
+             L 6 22
+             Q 4 28 8 32
+             L 14 38
+             L 22 34
+             L 22 74
+             Q 22 80 28 80
+             L 72 80
+             Q 78 80 78 74
+             L 78 34
+             L 86 38
+             L 92 32
+             Q 96 28 94 22
+             L 82 10
+             L 70 6
+             L 64 12
+             Q 50 22 36 12
+             L 30 6 Z"
+          fill={color}
+          stroke="rgba(0,0,0,0.4)"
+          strokeWidth="0.8"
+        />
+        {/* 포지션 라벨 (유니폼 가운데) */}
+        {posLabel && (
+          <text
+            x="50"
+            y="56"
+            textAnchor="middle"
+            fill="white"
+            fontSize={labelSize}
+            fontWeight="900"
+            fontFamily="sans-serif"
+            stroke="rgba(0,0,0,0.45)"
+            strokeWidth="0.6"
+            paintOrder="stroke"
+          >
+            {posLabel}
+          </text>
+        )}
+      </svg>
+    );
+  };
+
+  // 팀 컬러 매핑
+  const teamColor = (isHome) => isHome ? '#C62828' : '#F9A825'; // 빨강 / 노랑(살짝 진하게)
+
   const handlePrevGame = async () => {
     if (gameNum <= 1) return;
     setGameNum(gameNum - 1);
@@ -661,7 +717,9 @@ export default function MatchDetailPage() {
         <Box sx={{ textAlign: 'center', mb: 0.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
             <Box sx={{ flex: 1, textAlign: 'center' }}>
-              <img src="/uniform1.png" alt="Team A" style={{ width: 60, height: 60, objectFit: 'contain' }} />
+              <Box sx={{ display: 'inline-block' }}>
+                <JerseySVG color={teamColor(true)} width={60} height={50} />
+              </Box>
               <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', mt: 0.5 }}>
                 {formatTeamLabel(team1Name)}
               </Typography>
@@ -683,7 +741,9 @@ export default function MatchDetailPage() {
             </Box>
 
             <Box sx={{ flex: 1, textAlign: 'center' }}>
-              <img src="/uniform2.png" alt="Team B" style={{ width: 60, height: 60, objectFit: 'contain' }} />
+              <Box sx={{ display: 'inline-block' }}>
+                <JerseySVG color={teamColor(false)} width={60} height={50} />
+              </Box>
               <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem', mt: 0.5 }}>
                 {formatTeamLabel(team2Name)}
               </Typography>
@@ -827,15 +887,14 @@ export default function MatchDetailPage() {
                   },
                 }}
               >
-                {/* Uniform — 위아래 압축 + 서 있는 3D 효과 */}
+                {/* Uniform — JerseySVG (포지션 라벨 내장) + 서 있는 3D 효과 */}
                 <Box sx={{
                   position: 'relative',
                   display: 'inline-block',
-                  // 🆕 살짝 z축 띄워서 필드 위에 떠있는 듯
                   transform: 'translateZ(6px)',
                   transformStyle: 'preserve-3d',
                 }}>
-                  {/* 🆕 그림자 — 필드 평면에 누워있는 타원 (선수 발 아래) */}
+                  {/* 발 아래 그림자 — 필드 평면에 누운 타원 */}
                   <Box
                     sx={{
                       position: 'absolute',
@@ -850,18 +909,17 @@ export default function MatchDetailPage() {
                       pointerEvents: 'none',
                     }}
                   />
-                  <img
-                    src={pos.isHome ? '/uniform1.png' : '/uniform2.png'}
-                    alt={pos.name}
-                    style={{
-                      width: 36,
-                      height: 26,
-                      objectFit: 'fill',
-                      // 🆕 서 있는 입체감 — 살짝 진한 측면 그림자
-                      filter: 'drop-shadow(2px 4px 3px rgba(0,0,0,0.55)) drop-shadow(-1px 0 1px rgba(0,0,0,0.2))',
-                      position: 'relative',
-                    }}
-                  />
+                  <Box sx={{
+                    filter: 'drop-shadow(2px 4px 3px rgba(0,0,0,0.55)) drop-shadow(-1px 0 1px rgba(0,0,0,0.2))',
+                    position: 'relative',
+                  }}>
+                    <JerseySVG
+                      color={teamColor(pos.isHome)}
+                      posLabel={pos.posLabel}
+                      width={36}
+                      height={30}
+                    />
+                  </Box>
                   {/* 🆕 별 영역 — 유니폼 위쪽(머리 부분)에 SVG 별로 표시
                       · 위쪽 줄: 리그 우승 별 (블루, 동일 크기)
                       · 아래쪽 줄: 캡틴 누적 별 (3진법 티어, 크기 차등)
@@ -927,15 +985,7 @@ export default function MatchDetailPage() {
                       </Box>
                     );
                   })()}
-                  {pos.posLabel && (
-                    <Box sx={{
-                      position: 'absolute', bottom: -1, left: '50%', transform: 'translateX(-50%)',
-                      bgcolor: 'rgba(0,0,0,0.7)', color: '#FFD700', fontSize: '0.5rem', fontWeight: 700,
-                      px: 0.4, py: 0.1, borderRadius: 0.5, lineHeight: 1, whiteSpace: 'nowrap',
-                    }}>
-                      {pos.posLabel}
-                    </Box>
-                  )}
+                  {/* 포지션 라벨은 이제 JerseySVG 내부에 통합됨 */}
                 </Box>
                 {/* Name */}
                 <Typography
