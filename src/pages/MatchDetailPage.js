@@ -548,20 +548,20 @@ export default function MatchDetailPage() {
           </Box>
         )}
 
-        {/* Goal/Assist List */}
+        {/* Goal/Assist List — 팀별 왼쪽 정렬, 시간 표시 제거 */}
         {(goalList1.length > 0 || goalList2.length > 0) && (
           <Box sx={{ display: 'flex', mb: 2, gap: 1 }}>
-            <Box sx={{ flex: 1 }}>
+            <Box sx={{ flex: 1, pl: 1.5 }}>
               {goalList1.map((g, i) => (
-                <Typography key={i} sx={{ fontSize: '0.8rem', textAlign: 'center', color: '#333' }}>
-                  ⚽ {g.scorer} {g.assist !== '없음' ? `(${g.assist})` : ''} <span style={{ color: '#999' }}>{g.time}</span>
+                <Typography key={i} sx={{ fontSize: '0.8rem', textAlign: 'left', color: '#333' }}>
+                  ⚽ {g.scorer} {g.assist !== '없음' ? `(${g.assist})` : ''}
                 </Typography>
               ))}
             </Box>
-            <Box sx={{ flex: 1 }}>
+            <Box sx={{ flex: 1, pl: 1.5 }}>
               {goalList2.map((g, i) => (
-                <Typography key={i} sx={{ fontSize: '0.8rem', textAlign: 'center', color: '#333' }}>
-                  ⚽ {g.scorer} {g.assist !== '없음' ? `(${g.assist})` : ''} <span style={{ color: '#999' }}>{g.time}</span>
+                <Typography key={i} sx={{ fontSize: '0.8rem', textAlign: 'left', color: '#333' }}>
+                  ⚽ {g.scorer} {g.assist !== '없음' ? `(${g.assist})` : ''}
                 </Typography>
               ))}
             </Box>
