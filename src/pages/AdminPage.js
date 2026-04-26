@@ -2698,7 +2698,7 @@ export default function AdminPage() {
                         <Typography sx={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
                           {league.leagueName || `${clubName} 리그`}
                         </Typography>
-                        {hasWinners && (
+                        {hasWinners && String(league.id) === '1' && (
                           <Chip
                             size="small"
                             label={`🏆 ${winnerTeams.join(',')}팀 ${winnerCount}명`}
@@ -2715,14 +2715,17 @@ export default function AdminPage() {
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', flexShrink: 0 }}>
-                      <IconButton
-                        size="small"
-                        onClick={() => openWinnerDialog(league)}
-                        sx={{ color: hasWinners ? '#FFB300' : '#bbb' }}
-                        title={hasWinners ? '우승팀 수정' : '우승팀 설정'}
-                      >
-                        <EmojiEventsIcon fontSize="small" />
-                      </IconButton>
+                      {/* 🚧 현재 League1만 우승팀 등록 활성화 — 나머지는 보류 */}
+                      {String(league.id) === '1' && (
+                        <IconButton
+                          size="small"
+                          onClick={() => openWinnerDialog(league)}
+                          sx={{ color: hasWinners ? '#FFB300' : '#bbb' }}
+                          title={hasWinners ? '우승팀 수정' : '우승팀 설정'}
+                        >
+                          <EmojiEventsIcon fontSize="small" />
+                        </IconButton>
+                      )}
                       <IconButton size="small" onClick={() => openLeagueEdit(league)}>
                         <EditIcon fontSize="small" />
                       </IconButton>

@@ -296,37 +296,31 @@ export default function MatchDetailPage() {
   }, [date, clubName]);
 
   // 🆕 리그 우승 명단 로드 — TeamOfWinner/{clubName}
-  // 각 선수가 어떤 리그를 우승했는지(중복 제거) 배열로 보관 → 리그별 색상 표시
+  // 🚧 현재 League1만 활성화 — League2+ 데이터는 무시 (보류)
+  //    추후 활성화: ENABLED_LEAGUES 에 추가 또는 필터 제거
   useEffect(() => {
     if (!clubName) { setLeagueWinsByPlayer({}); return; }
+    const ENABLED_LEAGUES = new Set(['League1']);
     (async () => {
       try {
         const snap = await get(ref(db, `TeamOfWinner/${clubName}`));
         if (!snap.exists()) { setLeagueWinsByPlayer({}); return; }
         const data = snap.val();
         const byPlayer = {};
-        // 구조: { League1: { C: [...names] }, League2: { ... }, ... }
         Object.entries(data || {}).forEach(([leagueKey, leagueData]) => {
+          if (!ENABLED_LEAGUES.has(leagueKey)) return; // 🚧 League1만 처리
           const seenInThisLeague = new Set();
           Object.values(leagueData || {}).forEach(roster => {
             const list = Array.isArray(roster) ? roster : (roster && typeof roster === 'object' ? Object.values(roster) : []);
             list.forEach(n => {
               if (typeof n === 'string' && n.trim()) {
                 const k = n.trim();
-                if (seenInThisLeague.has(k)) return; // 같은 리그 내 중복 방지
+                if (seenInThisLeague.has(k)) return;
                 seenInThisLeague.add(k);
                 if (!byPlayer[k]) byPlayer[k] = [];
                 byPlayer[k].push(leagueKey);
               }
             });
-          });
-        });
-        // 리그 키를 숫자 기준 정렬 (League1, League2, ...)
-        Object.keys(byPlayer).forEach(k => {
-          byPlayer[k].sort((a, b) => {
-            const an = parseInt(String(a).match(/(\d+)/)?.[1] || '0', 10);
-            const bn = parseInt(String(b).match(/(\d+)/)?.[1] || '0', 10);
-            return an - bn;
           });
         });
         setLeagueWinsByPlayer(byPlayer);
