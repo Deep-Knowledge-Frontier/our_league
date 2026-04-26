@@ -16,6 +16,16 @@ const dailyTeamMedalColor = (count) => {
   return null;
 };
 
+// 이미지 로드 헬퍼
+const loadImage = (src) =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('이미지 로드 실패: ' + src));
+    img.src = src;
+  });
+
 // 5각 별 path 그리기 (canvas) — 폰트 글리프 누락 방지
 const drawStar = (ctx, cx, cy, outerR, innerR, fill, stroke, strokeWidth = 0.5) => {
   ctx.beginPath();
@@ -180,12 +190,15 @@ export async function shareMatchImage({
   svg += `</svg>`;
 
   // ── 캔버스에 SVG + 유니폼 이미지 + 텍스트(별/이름) 합성 ──
-  const scale = 2;
+  // 🔧 해상도 향상 (2x → 3x)
+  const scale = 3;
   const canvas = document.createElement('canvas');
   canvas.width = totalW * scale;
   canvas.height = totalH * scale;
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   // 1) SVG → 이미지로 변환 후 캔버스에 그리기 (배경/라인/스코어 텍스트/골 리스트)
   const baseImg = await new Promise((resolve, reject) => {
@@ -198,12 +211,27 @@ export async function shareMatchImage({
   });
   ctx.drawImage(baseImg, 0, 0, totalW, totalH);
 
-  // 2) 스코어 영역 유니폼 (벤치마크 스타일 SVG 티셔츠)
-  const scoreUniformW = 50;
-  const scoreUniformH = 42;
-  const scoreUniformY = headerH + 28;
-  drawJersey(ctx, padX + 50, scoreUniformY, scoreUniformW, scoreUniformH, '#C62828');
-  drawJersey(ctx, totalW - padX - 50, scoreUniformY, scoreUniformW, scoreUniformH, '#F9A825');
+  // 2) 스코어 영역 유니폼 — PNG 이미지 (사용자 요청: 이전 유니폼 그대로)
+  let uniform1Img = null, uniform2Img = null;
+  try {
+    [uniform1Img, uniform2Img] = await Promise.all([
+      loadImage('/uniform1.png'),
+      loadImage('/uniform2.png'),
+    ]);
+  } catch { /* 폴백 */ }
+
+  const scoreUniformSize = 50;
+  const scoreUniformY = headerH + 16;
+  if (uniform1Img) {
+    ctx.drawImage(uniform1Img, padX + 50 - scoreUniformSize / 2, scoreUniformY, scoreUniformSize, scoreUniformSize);
+  } else {
+    drawJersey(ctx, padX + 50, scoreUniformY + scoreUniformSize / 2, scoreUniformSize, scoreUniformSize * 0.83, '#C62828');
+  }
+  if (uniform2Img) {
+    ctx.drawImage(uniform2Img, totalW - padX - 50 - scoreUniformSize / 2, scoreUniformY, scoreUniformSize, scoreUniformSize);
+  } else {
+    drawJersey(ctx, totalW - padX - 50, scoreUniformY + scoreUniformSize / 2, scoreUniformSize, scoreUniformSize * 0.83, '#F9A825');
+  }
 
   // 4) 필드 위 선수 — 유니폼 + 별 + 라벨 + 이름 + 메달
   // 🆕 SVG 유니폼 + 포지션 라벨 내장 → 살짝 크게
