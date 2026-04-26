@@ -508,7 +508,7 @@ export default function MatchDetailPage() {
   }, [playerStats, goalList1, goalList2]);
 
   const FIELD_W = 360;
-  const FIELD_H = 580;
+  const FIELD_H = 720; // 🆕 580 → 720 (선수 간 세로 간격 확보, 별/이름 겹침 방지)
 
   const allPositions = useMemo(() => {
     const formations = getFormations(clubType);
@@ -726,7 +726,7 @@ export default function MatchDetailPage() {
           const TEAM_B_COLOR = '#F57F17';   // 원정팀 (노랑 유니폼)
           const renderGoal = (g, i, color) => (
             <Typography key={i} sx={{
-              fontSize: '0.85rem', textAlign: 'left', lineHeight: 1.65, mb: 0.2,
+              fontSize: '0.85rem', textAlign: 'left', lineHeight: 1.5, mb: 0.1,
             }}>
               <span style={{ fontSize: '0.95rem' }}>⚽</span>
               <span style={{ fontWeight: 700, color, marginLeft: 6 }}>
@@ -736,7 +736,7 @@ export default function MatchDetailPage() {
             </Typography>
           );
           return (
-            <Box sx={{ display: 'flex', mb: 2, gap: 1 }}>
+            <Box sx={{ display: 'flex', mb: 0.5, gap: 1 }}>
               <Box sx={{ flex: 1, pl: 1.5 }}>
                 {goalList1.map((g, i) => renderGoal(g, i, TEAM_A_COLOR))}
               </Box>
@@ -756,8 +756,6 @@ export default function MatchDetailPage() {
             maxWidth: FIELD_W,
             mx: 'auto',
             mb: 2,
-            // 기울임으로 위쪽이 살짝 들어가니 위 여백 확보
-            pt: 1,
           }}
         >
         {/* Soccer Field (3D 기울임) */}
@@ -818,34 +816,16 @@ export default function MatchDetailPage() {
                     alt={pos.name}
                     style={{ width: 36, height: 36, objectFit: 'contain' }}
                   />
-                  {/* 🆕 리그 우승 별 — 우승한 리그별로 다른 색 별 (유니폼 가장 위쪽) */}
+                  {/* 🆕 리그 우승 별 — 리그 우승 1회당 블루 별 1개 (3진법 Tier 1 색상) */}
                   {(() => {
                     const wins = leagueWinsByPlayer[pos.name] || [];
                     if (wins.length === 0) return null;
-                    // 리그별 색상 팔레트 (League1=골드, League2=실버, League3=브론즈, 이후는 컬러 순환)
-                    const LEAGUE_PALETTE = [
-                      { color: '#FFD700', glow: '255,215,0' },   // 1: Gold
-                      { color: '#C0C0C0', glow: '192,192,192' }, // 2: Silver
-                      { color: '#CD7F32', glow: '205,127,50' },  // 3: Bronze
-                      { color: '#E91E63', glow: '233,30,99' },   // 4: Pink
-                      { color: '#9C27B0', glow: '156,39,176' },  // 5: Purple
-                      { color: '#2196F3', glow: '33,150,243' },  // 6: Blue
-                      { color: '#4CAF50', glow: '76,175,80' },   // 7: Green
-                      { color: '#FF5722', glow: '255,87,34' },   // 8: Deep Orange
-                      { color: '#00BCD4', glow: '0,188,212' },   // 9: Cyan
-                    ];
-                    const colorOf = (leagueKey) => {
-                      const m = String(leagueKey).match(/(\d+)/);
-                      const idx = m ? parseInt(m[1], 10) - 1 : 0;
-                      return LEAGUE_PALETTE[((idx % LEAGUE_PALETTE.length) + LEAGUE_PALETTE.length) % LEAGUE_PALETTE.length];
-                    };
                     return (
                       <Box
                         sx={{
                           position: 'absolute',
                           top: -22,
                           left: '50%',
-                          // 🆕 z축으로 띄움 — 필드 위로 떠 있는 듯 입체감
                           transform: 'translateX(-50%) translateZ(20px)',
                           display: 'flex',
                           gap: '0px',
@@ -853,80 +833,49 @@ export default function MatchDetailPage() {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {wins.slice(0, 9).map((leagueKey, i) => {
-                          const { color, glow } = colorOf(leagueKey);
-                          return (
-                            <Typography
-                              key={`${leagueKey}-${i}`}
-                              component="span"
-                              sx={{
-                                fontSize: '0.95rem',
-                                lineHeight: 1,
-                                color,
-                                // 떠 있는 느낌: 색 글로우 + 진한 바닥 그림자
-                                filter: `drop-shadow(0 0 4px rgba(${glow}, 1)) drop-shadow(0 3px 4px rgba(0,0,0,0.45))`,
-                                WebkitTextStroke: '0.4px rgba(0,0,0,0.55)',
-                              }}
-                            >
-                              ★
-                            </Typography>
-                          );
-                        })}
+                        {wins.slice(0, 9).map((leagueKey, i) => (
+                          <Typography
+                            key={`${leagueKey}-${i}`}
+                            component="span"
+                            sx={{
+                              fontSize: '0.95rem',
+                              lineHeight: 1,
+                              color: '#29B6F6',
+                              filter: 'drop-shadow(0 0 4px rgba(41,182,246,1)) drop-shadow(0 3px 4px rgba(0,0,0,0.45))',
+                              WebkitTextStroke: '0.4px rgba(0,0,0,0.55)',
+                            }}
+                          >
+                            ★
+                          </Typography>
+                        ))}
                       </Box>
                     );
                   })()}
-                  {/* 우승 주장 별 — 유니폼 위 가운데, 누적 승수에 따라 3진법 승급 표시
-                      Tier 0 (골드, 1~2승): ★ #FFC107
-                      Tier 1 (블루, 3승 = 1개): ★ #29B6F6   (3번 모이면 Tier 2로)
-                      Tier 2 (퍼플, 9승 = 1개): ★ #AB47BC   (3번 모이면 Tier 3로)
-                      Tier 3 (핑크, 27승 = 1개): ★ #E91E63  (최상위, 4+ 승급은 무시)
-                  */}
-                  {isWinningCaptain && winningCaptainTotalWins > 0 && (() => {
-                    let n = winningCaptainTotalWins;
-                    const t3 = Math.min(Math.floor(n / 27), 9); n -= t3 * 27;
-                    const t2 = Math.floor(n / 9);              n -= t2 * 9;
-                    const t1 = Math.floor(n / 3);              n -= t1 * 3;
-                    const t0 = n;
-                    const tiers = [
-                      { n: t3, color: '#E91E63', glow: '233,30,99' },
-                      { n: t2, color: '#AB47BC', glow: '171,71,188' },
-                      { n: t1, color: '#29B6F6', glow: '41,182,246' },
-                      { n: t0, color: '#FFC107', glow: '255,193,7' },
-                    ];
-                    return (
-                      <Box
+                  {/* 🆕 우승팀 주장 별 — 그 경기일 우승 주장에게 골드 별 1개 (3진법 Tier 0 색상) */}
+                  {isWinningCaptain && (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        top: -9,
+                        left: '50%',
+                        transform: 'translateX(-50%) translateZ(12px)',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      <Typography
+                        component="span"
                         sx={{
-                          position: 'absolute',
-                          top: -9,
-                          left: '50%',
-                          // 🆕 z축 약간 띄움 — 리그 별보다는 살짝 낮게
-                          transform: 'translateX(-50%) translateZ(12px)',
-                          display: 'flex',
-                          gap: '0px',
-                          pointerEvents: 'none',
-                          whiteSpace: 'nowrap',
+                          fontSize: '0.85rem',
+                          lineHeight: 1,
+                          color: '#FFC107',
+                          filter: 'drop-shadow(0 0 3px rgba(255,193,7,0.95)) drop-shadow(0 2px 3px rgba(0,0,0,0.4))',
+                          WebkitTextStroke: '0.3px rgba(0,0,0,0.5)',
                         }}
                       >
-                        {tiers.flatMap((tier, ti) =>
-                          Array.from({ length: tier.n }).map((_, i) => (
-                            <Typography
-                              key={`${ti}-${i}`}
-                              component="span"
-                              sx={{
-                                fontSize: '0.78rem',
-                                lineHeight: 1,
-                                color: tier.color,
-                                filter: `drop-shadow(0 0 3px rgba(${tier.glow}, 0.95)) drop-shadow(0 2px 3px rgba(0,0,0,0.4))`,
-                                WebkitTextStroke: '0.3px rgba(0,0,0,0.5)',
-                              }}
-                            >
-                              ★
-                            </Typography>
-                          ))
-                        )}
-                      </Box>
-                    );
-                  })()}
+                        ★
+                      </Typography>
+                    </Box>
+                  )}
                   {pos.posLabel && (
                     <Box sx={{
                       position: 'absolute', bottom: -1, left: '50%', transform: 'translateX(-50%)',
