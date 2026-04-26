@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../config/firebase';
+import { APP_CONFIG } from '../config/app.config';
 import { ref, get, set, push, remove, update, onValue } from 'firebase/database';
 import {
   Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
@@ -127,6 +128,8 @@ export default function AdminPage() {
   const [deleteMatchDialog, setDeleteMatchDialog] = useState(null); // matchDate item
   const [deleteMatchAck, setDeleteMatchAck] = useState(false);
   const [deletingMatch, setDeletingMatch] = useState(false);
+  // 🆕 분 단위 재렌더 트리거 — '경기 운영' 카드가 시간 흐름에 따라 자동 전환되도록
+  const [, setMinuteTick] = useState(0);
 
   // 🆕 팀 삭제/복원 (마스터 전용)
   const [deleteClubDialog, setDeleteClubDialog] = useState(null); // { club, step: 1|2, confirmText: '' }
@@ -290,6 +293,12 @@ export default function AdminPage() {
     };
     loadData();
   }, [authReady, user, canAccess, isAdmin, isModerator, isMaster, emailKey, navigate, loadMatchDates, loadAllowedUsers, loadPlayers, loadLeagues, loadLocationPresets]);
+
+  // 🆕 1분마다 재렌더 — 경기 시작+진행시간+1시간 경과 시 카드가 자동으로 다음 경기로 전환
+  useEffect(() => {
+    const id = setInterval(() => setMinuteTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   /* ── 🆕 가입 신청 실시간 구독 (B3) ── */
   useEffect(() => {
@@ -2131,12 +2140,38 @@ export default function AdminPage() {
 
         {/* 1. 경기일 관리 (운영진 이상) */}
         {(() => {
-          const today = new Date().toISOString().slice(0, 10);
-          // 다가올 경기 중 가장 가까운 것 (오늘 포함)
-          const allUpcoming = matchDates.filter(m => m.dateKey >= today).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+          // 🆕 로컬 시간 기준 today (toISOString은 UTC라 자정 부근 오차 가능)
+          const now = new Date();
+          const today = now.getFullYear() + '-' +
+            String(now.getMonth() + 1).padStart(2, '0') + '-' +
+            String(now.getDate()).padStart(2, '0');
+
+          // 🆕 경기 종료 후 1시간 경과 여부 — 카드가 다음 경기로 자동 전환되도록
+          //   - 경기 시간 = APP_CONFIG.timeWindowMinutes (기본 120분)
+          //   - 컷오프 = 시작 시간 + 경기 시간 + 60분 (= 종료 후 1시간)
+          //   - 1분 단위 재렌더(useEffect 위)로 시간 흐름에 따라 자동 갱신
+          const MATCH_DURATION_MIN = Number(APP_CONFIG.timeWindowMinutes) || 120;
+          const isPastEffective = (m) => {
+            if (!m?.dateKey) return false;
+            if (m.dateKey < today) return true;
+            if (m.dateKey > today) return false;
+            // 오늘 경기 — 시간 정보 없으면 보수적으로 upcoming 유지
+            if (!m.time) return false;
+            const [h, mm] = String(m.time).split(':').map(Number);
+            if (!Number.isFinite(h)) return false;
+            const start = new Date(now);
+            start.setHours(h, Number.isFinite(mm) ? mm : 0, 0, 0);
+            const cutoff = start.getTime() + (MATCH_DURATION_MIN + 60) * 60_000;
+            return now.getTime() >= cutoff;
+          };
+
+          // 다가올 경기 (오늘 종료 후 1시간 미경과 + 미래 경기)
+          const allUpcoming = matchDates
+            .filter((m) => !isPastEffective(m))
+            .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
           const nextMatch = allUpcoming.length > 0 ? allUpcoming[0] : null;
           const upcoming = nextMatch ? allUpcoming.filter(m => m.dateKey !== nextMatch.dateKey) : [];
-          const past = matchDates.filter(m => m.dateKey < today);
+          const past = matchDates.filter(isPastEffective);
           const PAST_PREVIEW = 5;
           const visiblePast = showAllPast ? past : past.slice(0, PAST_PREVIEW);
 
