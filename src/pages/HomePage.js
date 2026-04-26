@@ -227,7 +227,7 @@ function HomePage() {
           const data = statsSnap.val();
           setLeaderboard(
             Object.entries(data)
-              .filter(([, s]) => (s.attendanceRate || 0) >= 10)
+              .filter(([, s]) => (s.attendanceRate || 0) >= 15)
               .map(([name, s]) => ({
                 name,
                 abilityScore: s.abilityScore || 0,
@@ -235,9 +235,15 @@ function HomePage() {
                 assists: s.assists || s.totalAssists || 0,
                 attendanceRate: s.attendanceRate || 0,
                 pointRate: s.pointRate || 0,
+                gd: s.avgGoalDiffPerGame || 0,
                 matches: s.participatedMatches || 0,
               }))
-              .sort((a, b) => b.abilityScore - a.abilityScore)
+              // 🔧 정렬 우선순위: 능력치(내림) → 승점율(내림) → 골득실(내림)
+              .sort((a, b) => {
+                if (b.abilityScore !== a.abilityScore) return b.abilityScore - a.abilityScore;
+                if (b.pointRate !== a.pointRate) return b.pointRate - a.pointRate;
+                return b.gd - a.gd;
+              })
               .slice(0, 5)
           );
         }
@@ -316,14 +322,21 @@ function HomePage() {
       if (statsSnap.exists()) {
         setLeaderboard(
           Object.entries(statsSnap.val())
-            .filter(([, s]) => (s.attendanceRate || 0) >= 10)
+            .filter(([, s]) => (s.attendanceRate || 0) >= 15)
             .map(([name, s]) => ({
               name: nameMap[name] || name,
               abilityScore: s.abilityScore || 0, goals: s.goals || 0,
               assists: s.assists || 0, attendanceRate: s.attendanceRate || 0,
-              pointRate: s.pointRate || 0, matches: s.participatedMatches || 0,
+              pointRate: s.pointRate || 0,
+              gd: s.avgGoalDiffPerGame || 0,
+              matches: s.participatedMatches || 0,
             }))
-            .sort((a, b) => b.abilityScore - a.abilityScore).slice(0, 5)
+            // 🔧 정렬 우선순위: 능력치(내림) → 승점율(내림) → 골득실(내림)
+            .sort((a, b) => {
+              if (b.abilityScore !== a.abilityScore) return b.abilityScore - a.abilityScore;
+              if (b.pointRate !== a.pointRate) return b.pointRate - a.pointRate;
+              return b.gd - a.gd;
+            }).slice(0, 5)
         );
 
         let sum = 0, cnt = 0;

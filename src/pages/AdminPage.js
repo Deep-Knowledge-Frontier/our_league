@@ -1170,7 +1170,9 @@ export default function AdminPage() {
           }
 
           // adjustToRange: eligible = attendance >= 30%
-          const eligible = allEntries.filter(([, p]) => p.attendanceRate >= 30);
+          // 🔧 정규화 기준: 출전율 15% 이상 (이전 30% → 15%로 완화)
+          //   기준이 낮으면 더 많은 선수가 정규화 모집단에 포함되어 신규 선수도 비교 가능
+          const eligible = allEntries.filter(([, p]) => p.attendanceRate >= 15);
           let minS = Infinity, maxS = -Infinity, minA = Infinity, maxA = -Infinity, minD = Infinity, maxD = -Infinity;
           for (const [, p] of eligible) {
             minS = Math.min(minS, p.rawStamina); maxS = Math.max(maxS, p.rawStamina);

@@ -87,7 +87,7 @@ export default function MyPage() {
   const [matchStats, setMatchStats] = useState(null);
   const [teammates, setTeammates] = useState(null);
   const [weeklyStandings, setWeeklyStandings] = useState(null);
-  const [rankThreshold, setRankThreshold] = useState(10);
+  const [rankThreshold, setRankThreshold] = useState(15);
   const [networkGraph, setNetworkGraph] = useState(null);
   const [allPlayerStats, setAllPlayerStats] = useState(null);
   const [graphPeriod, setGraphPeriod] = useState('6m');
@@ -673,9 +673,16 @@ export default function MyPage() {
   // 현재 순위: PlayerStatsBackup_6m 기준 (ResultsPage와 동일)
   const currentRank = useMemo(() => {
     if (!allStatsForRank || !userName) return null;
+    // 🔧 정렬 우선순위: 능력치(내림) → 승점율(내림) → 골득실(내림) — ResultsPage와 동일
     const eligible = Object.entries(allStatsForRank)
       .filter(([, p]) => (p.attendanceRate || 0) >= rankThreshold)
-      .sort((a, b) => (b[1].abilityScore || 0) - (a[1].abilityScore || 0));
+      .sort((a, b) => {
+        const ab = (b[1].abilityScore || 0) - (a[1].abilityScore || 0);
+        if (ab !== 0) return ab;
+        const pr = (b[1].pointRate || 0) - (a[1].pointRate || 0);
+        if (pr !== 0) return pr;
+        return (b[1].avgGoalDiffPerGame || 0) - (a[1].avgGoalDiffPerGame || 0);
+      });
     const myIdx = eligible.findIndex(([n]) => n === userName);
     if (myIdx === -1) return null;
     return { rank: myIdx + 1, total: eligible.length };
@@ -686,9 +693,16 @@ export default function MyPage() {
     if (!weeklyStandings || !userName) return null;
     const history = Object.keys(weeklyStandings).sort().map(weekKey => {
       const weekData = weeklyStandings[weekKey];
+      // 🔧 정렬 우선순위: 능력치(내림) → 승점율(내림) → 골득실(내림)
       const eligible = Object.entries(weekData)
         .filter(([, p]) => (p.attendanceRate || 0) >= rankThreshold)
-        .sort((a, b) => (b[1].abilityScore || 0) - (a[1].abilityScore || 0));
+        .sort((a, b) => {
+          const ab = (b[1].abilityScore || 0) - (a[1].abilityScore || 0);
+          if (ab !== 0) return ab;
+          const pr = (b[1].pointRate || 0) - (a[1].pointRate || 0);
+          if (pr !== 0) return pr;
+          return (b[1].avgGoalDiffPerGame || 0) - (a[1].avgGoalDiffPerGame || 0);
+        });
       const myIdx = eligible.findIndex(([n]) => n === userName);
       if (myIdx === -1) return null;
       return { week: weekKey, rank: myIdx + 1, total: eligible.length };
@@ -1322,7 +1336,7 @@ export default function MyPage() {
                 if (Math.abs(gdDiff) >= 0.01) changes.push({ label: '득실', value: `${gdDiff > 0 ? '+' : ''}${gdDiff.toFixed(2)}`, positive: gdDiff > 0 });
               } else {
                 // 역산: 정규화 범위로 출석 기여분 추정 → 나머지 = 승률·득실 기여
-                const eligible = Object.values(allStatsForRank).filter(p => (p.attendanceRate || 0) >= 30 && (p.participatedMatches || 0) > 0);
+                const eligible = Object.values(allStatsForRank).filter(p => (p.attendanceRate || 0) >= 15 && (p.participatedMatches || 0) > 0);
                 if (eligible.length >= 2) {
                   const atVals = eligible.map(p => p.attendanceRate || 0);
                   const mnAt = Math.min(...atVals), mxAt = Math.max(...atVals);

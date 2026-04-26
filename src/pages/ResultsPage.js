@@ -61,8 +61,8 @@ function ResultsPage() {
   const [demoLoading, setDemoLoading] = useState(false);
   const dataClub = (demoMode || isDemoGuest) ? DEMO_CLUB : clubName;
 
-  // 필터
-  const [attendanceThreshold, setAttendanceThreshold] = useState(10);
+  // 필터 (기본 15% — 능력치 정규화 기준과 일치)
+  const [attendanceThreshold, setAttendanceThreshold] = useState(15);
   const [statsPeriod, setStatsPeriod] = useState('6m'); // '6m' | 'season' | 'all'
 
   // 팝업
