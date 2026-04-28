@@ -316,7 +316,7 @@ export default function MatchDetailPage() {
         const data = snap.val();
         const byPlayer = {};
         Object.entries(data || {}).forEach(([leagueKey, leagueData]) => {
-          if (!ENABLED_LEAGUES.has(leagueKey)) return; // 🚧 League1만 처리
+          if (!ENABLED_LEAGUES.has(leagueKey)) return;
           const seenInThisLeague = new Set();
           Object.values(leagueData || {}).forEach(roster => {
             const list = Array.isArray(roster) ? roster : (roster && typeof roster === 'object' ? Object.values(roster) : []);
@@ -510,7 +510,7 @@ export default function MatchDetailPage() {
   }, [playerStats, goalList1, goalList2]);
 
   const FIELD_W = 360;
-  const FIELD_H = 720; // 🆕 580 → 720 (선수 간 세로 간격 확보, 별/이름 겹침 방지)
+  const FIELD_H = 460; // 🆕 580 → 460 (모바일 화면에 위아래 전부 들어오도록 축소)
 
   const allPositions = useMemo(() => {
     const formations = getFormations(clubType);
@@ -527,23 +527,33 @@ export default function MatchDetailPage() {
       if (!fmDef || !tf?.players) {
         return calculateTeamPositions(fallbackPlayers, isHome, FIELD_W, FIELD_H, enrichedStats);
       }
+      // 🆕 할당된 선수가 있는 포지션만 먼저 수집
+      const assignedPositions = fmDef.positions.filter(pos => !!tf.players[pos.id]);
+      if (assignedPositions.length === 0) {
+        return calculateTeamPositions(fallbackPlayers, isHome, FIELD_W, FIELD_H, enrichedStats);
+      }
+      // 🆕 할당된 포지션의 y 범위로 정규화 → 전체 필드를 활용 (GK 미할당 등의 빈 공간 방지)
+      const ys = assignedPositions.map(p => p.y);
+      const yMin = Math.min(...ys);
+      const yMax = Math.max(...ys);
+      const ySpan = Math.max(1, yMax - yMin); // 0 division 방지
       const positioned = [];
-      const assignedNames = new Set();
-      fmDef.positions.forEach(pos => {
+      assignedPositions.forEach(pos => {
         const playerName = tf.players[pos.id];
-        if (!playerName) return;
-        assignedNames.add(playerName);
+        // 정규화된 y: 0(상단)~1(하단)
+        const yNorm = ySpan > 0 ? (pos.y - yMin) / ySpan : 0.5;
         const px = (pos.x / 100) * FIELD_W;
         let py;
         if (isSolo) {
-          // 한 팀만: 전체 필드 사용 — pos.y=100(GK)→하단, pos.y=0(FW)→상단
-          py = FIELD_H * 0.04 + (pos.y / 100) * FIELD_H * 0.92;
+          // 한 팀만: 전체 필드 사용 — yNorm=0(FW/상단), yNorm=1(GK/하단)
+          // 🆕 상단(FW)은 골 박스보다 살짝 아래에, 하단(GK)은 이름이 잘리지 않도록 여백 확보
+          py = FIELD_H * 0.13 + yNorm * FIELD_H * 0.72;
         } else if (isHome) {
-          // 상단: GK가 위쪽, FW가 중앙선 근처
-          py = FIELD_H * 0.02 + (1 - pos.y / 100) * FIELD_H * 0.46;
+          // 상단: GK가 위쪽, FW가 중앙선 근처 (반전)
+          py = FIELD_H * 0.02 + (1 - yNorm) * FIELD_H * 0.46;
         } else {
           // 하단: FW가 중앙선 근처, GK가 아래쪽
-          py = FIELD_H * 0.52 + (pos.y / 100) * FIELD_H * 0.46;
+          py = FIELD_H * 0.52 + yNorm * FIELD_H * 0.46;
         }
         positioned.push({ name: playerName, x: px, y: py, isHome, posLabel: pos.label });
       });
@@ -554,6 +564,7 @@ export default function MatchDetailPage() {
     const pos2 = buildFromFormation(fmDef2, tf2, false, teamBPlayers);
     return [...pos1, ...pos2];
   }, [teamAPlayers, teamBPlayers, enrichedStats, teamFormations, matchTeamCodes, clubType, viewTeam]);
+
 
   const formatTeamLabel = (name) => {
     if (!name) return '';
@@ -844,7 +855,7 @@ export default function MatchDetailPage() {
           <Box sx={{
             display: 'flex',
             justifyContent: 'space-between',
-            px: 2.5,
+            px: 0, // 🆕 필드 좌/우 끝과 정확히 일치
             mb: 0, // 필드와 직접 붙음 (갭 없음)
             position: 'relative',
             zIndex: 3,
@@ -870,7 +881,8 @@ export default function MatchDetailPage() {
                     boxShadow: isActive
                       ? '0 -2px 8px rgba(0,0,0,0.12)'
                       : 'none',
-                    transform: isActive ? 'translateY(0)' : 'translateY(3px) scale(0.95)',
+                    transform: isActive ? 'translateY(0)' : 'scale(0.95)', // 🆕 비활성 탭의 아래쪽 밀림 제거 (필드와 겹침 방지)
+                    transformOrigin: 'bottom center',
                     opacity: isActive ? 1 : 0.7,
                     transition: 'all 0.18s',
                     '&:hover': { bgcolor: isActive ? '#FFFFFF' : '#DEE0E3' },
@@ -934,9 +946,10 @@ export default function MatchDetailPage() {
                 key={`${pos.name}-${idx}`}
                 sx={{
                   position: 'absolute',
-                  left: pos.x - 30,
-                  top: pos.y - 22,
-                  width: 60,
+                  // 🆕 모바일 축소: 컨테이너 폭 64, 유니폼 폭 52에 맞춤
+                  left: pos.x - 32,
+                  top: pos.y - 18,
+                  width: 64,
                   textAlign: 'center',
                   animation: `dropIn 0.4s ease-out ${idx * 0.04}s both`,
                   '@keyframes dropIn': {
@@ -950,8 +963,8 @@ export default function MatchDetailPage() {
                   <JerseySVG
                     color={teamColor(pos.isHome)}
                     posLabel={pos.posLabel}
-                    width={36}
-                    height={30}
+                    width={52}
+                    height={43}
                   />
                   {/* 🆕 별 영역 — 유니폼 위쪽(머리 부분)에 SVG 별로 표시
                       · 위쪽 줄: 리그 우승 별 (블루, 동일 크기)
@@ -971,10 +984,10 @@ export default function MatchDetailPage() {
                       const t1 = Math.floor(n / 3); n -= t1 * 3;
                       const t0 = n;
                       const tiers = [
-                        { count: t3, color: '#E91E63', glow: '233,30,99', size: 18 },   // Pink (27) — 가장 큼
-                        { count: t2, color: '#AB47BC', glow: '171,71,188', size: 15 },  // Purple (9)
-                        { count: t1, color: '#29B6F6', glow: '41,182,246', size: 13 },  // Blue (3)
-                        { count: t0, color: '#FFC107', glow: '255,193,7', size: 11 },   // Gold (1) — 가장 작음
+                        { count: t3, color: '#E91E63', glow: '233,30,99', size: 24 },   // Pink (27) — 가장 큼
+                        { count: t2, color: '#AB47BC', glow: '171,71,188', size: 21 },  // Purple (9)
+                        { count: t1, color: '#29B6F6', glow: '41,182,246', size: 18 },  // Blue (3)
+                        { count: t0, color: '#FFC107', glow: '255,193,7', size: 15 },   // Gold (1) — 가장 작음
                       ];
                       tiers.forEach((tier, ti) => {
                         for (let i = 0; i < tier.count; i++) {
@@ -990,7 +1003,7 @@ export default function MatchDetailPage() {
                           bottom: '100%',
                           left: '50%',
                           transform: 'translateX(-50%)',
-                          mb: '1px',
+                          mb: '2px',
                           display: 'flex',
                           flexDirection: 'column-reverse', // 캡틴 아래(유니폼 가까이), 리그 위
                           alignItems: 'center',
@@ -999,9 +1012,9 @@ export default function MatchDetailPage() {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {/* 캡틴 별 (3진법, 큰→작은 순서) */}
+                        {/* 캡틴 별 (유니폼에 가장 가까운 줄) */}
                         {capStars.length > 0 && (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: '0px' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: '1px' }}>
                             {capStars.slice(0, 9).map((s) => (
                               <StarIcon key={s.key} size={s.size} color={s.color} glow={s.glow} />
                             ))}
@@ -1011,7 +1024,7 @@ export default function MatchDetailPage() {
                         {lWins.length > 0 && (
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: '0px' }}>
                             {lWins.slice(0, 9).map((lk, i) => (
-                              <StarIcon key={`l-${i}-${lk}`} size={13} color="#29B6F6" glow="41,182,246" />
+                              <StarIcon key={`l-${i}-${lk}`} size={18} color="#29B6F6" glow="41,182,246" />
                             ))}
                           </Box>
                         )}
@@ -1020,45 +1033,23 @@ export default function MatchDetailPage() {
                   })()}
                   {/* 포지션 라벨은 이제 JerseySVG 내부에 통합됨 */}
                 </Box>
-                {/* Name */}
+                {/* Name — 🆕 textAlign: 'center'로 가로 가운데 정렬 명시 */}
                 <Typography
                   sx={{
-                    fontSize: '0.7rem',
+                    fontSize: '1.0rem',
                     fontWeight: 'bold',
                     color: 'white',
                     textShadow: '1px 1px 3px rgba(0,0,0,0.9)',
                     lineHeight: 1.2,
-                    mt: 0.2,
+                    mt: 0.3,
                     whiteSpace: 'nowrap',
+                    textAlign: 'center',
+                    width: '100%',
                   }}
                 >
                   {pos.name}
                 </Typography>
-                {/* 🆕 일별 우승팀 누적 메달 — 단일 티어 색상 (브론즈/실버/골드) */}
-                {(() => {
-                  const w = dailyTeamWinsByPlayer[pos.name] || 0;
-                  if (w <= 0) return null;
-                  const tier =
-                    w >= 30 ? { color: '#FFB300', glow: '255,179,0' } :   // 골드
-                    w >= 10 ? { color: '#B0BEC5', glow: '176,190,197' } : // 실버
-                              { color: '#CD7F32', glow: '205,127,50' };   // 브론즈
-                  return (
-                    <Box sx={{
-                      display: 'flex', justifyContent: 'center', mt: '1px',
-                      pointerEvents: 'none', lineHeight: 1,
-                    }}>
-                      <Typography component="span" sx={{
-                        fontSize: '0.6rem',
-                        lineHeight: 1,
-                        color: tier.color,
-                        filter: `drop-shadow(0 0 2px rgba(${tier.glow}, 0.95))`,
-                        WebkitTextStroke: '0.2px rgba(0,0,0,0.5)',
-                      }} title={`일별 우승 ${w}회`}>
-                        ●
-                      </Typography>
-                    </Box>
-                  );
-                })()}
+                {/* 일별 우승팀 메달은 별 영역(유니폼 위)으로 이동됨 */}
               </Box>
             );
           })}
