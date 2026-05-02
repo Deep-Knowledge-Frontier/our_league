@@ -1790,7 +1790,7 @@ export default function PlayerSelectPage() {
                     },
                   }}
                 >
-                  {formationOpen ? '공개 중' : '오픈하기'}
+                  {formationOpen ? '공개 중 (회원에게 표시)' : '오픈하기 (회원에게 공개)'}
                 </Button>
                 <Button
                   variant="contained"

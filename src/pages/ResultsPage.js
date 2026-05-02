@@ -851,20 +851,55 @@ function ResultsPage() {
                         {leaderboard.length === 0 ? (
                           <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3, fontSize: '1rem' }}>데이터가 없습니다.</TableCell></TableRow>
                         ) : (
-                          leaderboard.map((row) => (
-                            <TableRow key={row.name} sx={{ backgroundColor: row.rank % 2 === 0 ? '#F7F9FC' : 'white' }}>
-                              <TableCell sx={cellStyle}>{row.rank}</TableCell>
+                          leaderboard.map((row) => {
+                            // 🆕 현재 로그인한 사용자 본인 행 강조
+                            const isMe = !!userName && String(row.name).trim() === String(userName).trim();
+                            return (
+                            <TableRow
+                              key={row.name}
+                              sx={{
+                                backgroundColor: isMe
+                                  ? '#FFF8E1'                             // 🆕 본인 행: 연노랑
+                                  : (row.rank % 2 === 0 ? '#F7F9FC' : 'white'),
+                                position: 'relative',
+                                ...(isMe && {
+                                  boxShadow: 'inset 4px 0 0 #F57C00',     // 🆕 좌측 주황 표시줄
+                                  '& td': { fontWeight: 800 },
+                                }),
+                              }}
+                            >
+                              <TableCell sx={{ ...cellStyle, ...(isMe && { color: '#E65100' }) }}>
+                                {row.rank}
+                              </TableCell>
                               <TableCell
                                 sx={{
                                   ...cellStyle,
                                   fontWeight: 'bold',
-                                  color: '#1565C0',
+                                  color: isMe ? '#E65100' : '#1565C0',
                                   cursor: 'pointer',
-                                  textDecoration: 'none'
+                                  textDecoration: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 0.4,
                                 }}
                                 onClick={() => handlePlayerClick(row)}
                               >
+                                {isMe && <Box component="span" sx={{ fontSize: '0.9em' }}>👤</Box>}
                                 {dn(row.name)}
+                                {isMe && (
+                                  <Box component="span" sx={{
+                                    fontSize: '0.65rem',
+                                    fontWeight: 800,
+                                    color: 'white',
+                                    bgcolor: '#F57C00',
+                                    borderRadius: 99,
+                                    px: 0.7, py: 0.1,
+                                    ml: 0.2,
+                                    letterSpacing: '-0.02em',
+                                  }}>
+                                    나
+                                  </Box>
+                                )}
                               </TableCell>
                               <TableCell sx={{ ...cellStyle, color: '#1565C0', fontWeight: 'bold' }}>{Number(row.ability).toFixed(1)}</TableCell>
                               <TableCell sx={cellStyle}>{Number(row.pointRate).toFixed(0)}%</TableCell>
@@ -874,7 +909,8 @@ function ResultsPage() {
                               <TableCell sx={cellStyle}>{Number(row.attendance).toFixed(0)}%</TableCell>
                               <TableCell sx={cellStyle}>{Number(row.voteRate).toFixed(0)}%</TableCell>
                             </TableRow>
-                          ))
+                            );
+                          })
                         )}
                       </TableBody>
                     </Table>

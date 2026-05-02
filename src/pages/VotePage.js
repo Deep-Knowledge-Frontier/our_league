@@ -6,7 +6,7 @@ import {
   Grid, CircularProgress, Chip, Stack, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText, Slide,
   List, ListItem, ListItemText, Divider, ListItemButton, ListItemIcon,
-  TextField, IconButton, Avatar,
+  TextField, IconButton,
   FormControl, InputLabel, Select, MenuItem
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -474,13 +474,13 @@ function VotePage() {
     if (draftStatus === 'confirmed' && hasTeam) {
       return { text: '✅ 팀 확정 — 팀 보기', disabled: false, target: 'team', bg: '#2E7D32', hoverBg: '#1B5E20' };
     }
-    // 4. 팀 + 포메이션 공개
+    // 4. 팀 + 포메이션 공개 (운영진 "오픈하기" 활성화)
     if (hasTeam && formationOpen) {
       return { text: '📋 팀 + 포메이션 보기', disabled: false, target: 'team', bg: '#1565C0', hoverBg: '#0D47A1' };
     }
-    // 5. 팀 구성만 완료
+    // 5. 🆕 팀 구성됨 — but 운영진이 아직 "오픈하기" 안 누름 (회원에게 비공개)
     if (hasTeam) {
-      return { text: '▶ 팀 구성 보기', disabled: false, target: 'team', bg: '#1565C0', hoverBg: '#0D47A1' };
+      return { text: '⏳ 팀 구성 준비 중 (공개 대기)', disabled: true, target: null, bg: '#E0E0E0', hoverBg: '#E0E0E0' };
     }
     // 6. 시간 도달했지만 팀 미구성
     if (isTimeReady) {
@@ -493,9 +493,16 @@ function VotePage() {
   const goToTeamBuild = (date) => {
     const st = getTeamButtonState(date);
     if (st.disabled) {
-      setAlertMessage(!getIsTimeReady(date)
-        ? '팀 구성은 경기 전날 오후 6시(18:00)부터 공개됩니다.'
-        : '아직 팀구성이 완료되지 않았습니다.\n(운영진이 팀을 구성 중입니다)');
+      const info = teamInfo[date] || {};
+      const teamReady = !!info.hasTeam;
+      // 🆕 시간 전 / 팀 미구성 / 팀은 됐지만 미공개 — 3 가지 메시지 분기
+      setAlertMessage(
+        !getIsTimeReady(date)
+          ? '팀 구성은 경기 전날 오후 6시(18:00)부터 공개됩니다.'
+          : teamReady
+          ? '운영진이 팀 구성을 완료했지만 아직 공개하지 않았습니다.\n잠시 후 다시 확인해 주세요.'
+          : '아직 팀구성이 완료되지 않았습니다.\n(운영진이 팀을 구성 중입니다)'
+      );
       setOpenAlert(true); return;
     }
     if (st.target === 'draft') { navigate(`/draft/${date}`); return; }
@@ -1013,14 +1020,6 @@ function VotePage() {
           const fullCount = dialogType === 'attend' ? enriched.filter((e) => !e.isPartial).length : 0;
           const partialCount = dialogType === 'attend' ? enriched.filter((e) => e.isPartial).length : 0;
 
-          // 이름 첫 글자로 아바타 배경 색 결정 (해시)
-          const avatarPalette = ['#1976D2', '#388E3C', '#D32F2F', '#F57C00', '#7B1FA2', '#00796B', '#5D4037', '#455A64', '#C2185B', '#303F9F'];
-          const pickAvatarColor = (name) => {
-            let h = 0;
-            for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-            return avatarPalette[h % avatarPalette.length];
-          };
-
           return (
             <>
               {/* 헤더 — 타입별 그라데이션 */}
@@ -1071,37 +1070,30 @@ function VotePage() {
                     <Typography sx={{ fontSize: '0.88rem' }}>명단이 없습니다.</Typography>
                   </Box>
                 ) : (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.6 }}>
+                  // 🆕 2열 그리드 — 동그라미 아바타 제거
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 0.6 }}>
                     {enriched.map((e, idx) => (
                       <Box
                         key={`${e.raw}-${idx}`}
                         sx={{
-                          display: 'flex', alignItems: 'center', gap: 1.2,
-                          bgcolor: 'white', borderRadius: 2, px: 1.2, py: 0.9,
+                          display: 'flex', alignItems: 'center', gap: 0.8,
+                          bgcolor: 'white', borderRadius: 2, px: 1, py: 0.7,
                           borderLeft: `4px solid ${e.isPartial ? '#FF9800' : theme.main}`,
                           boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                           transition: 'all 0.15s',
+                          minWidth: 0,
                           '&:hover': { boxShadow: '0 2px 6px rgba(0,0,0,0.08)', transform: 'translateY(-1px)' },
                         }}
                       >
                         {/* 순번 */}
                         <Typography sx={{
                           fontSize: '0.7rem', fontWeight: 700, color: '#999',
-                          minWidth: 18, textAlign: 'right', fontFeatureSettings: '"tnum"',
+                          minWidth: 16, textAlign: 'right', fontFeatureSettings: '"tnum"', flexShrink: 0,
                         }}>
                           {idx + 1}
                         </Typography>
-                        {/* 아바타 */}
-                        <Avatar sx={{
-                          width: 32, height: 32, fontSize: '0.85rem', fontWeight: 800,
-                          bgcolor: e.isGuest ? '#888' : pickAvatarColor(e.cleanName),
-                          color: 'white',
-                          border: e.isGuest ? '2px dashed #BDBDBD' : 'none',
-                        }}>
-                          {e.cleanName.charAt(0)}
-                        </Avatar>
                         {/* 이름 + 용병 배지 */}
-                        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.4 }}>
                           <Typography sx={{
                             fontSize: '0.92rem', fontWeight: 700, color: '#222',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -1110,32 +1102,28 @@ function VotePage() {
                           </Typography>
                           {e.isGuest && (
                             <Chip label="용병" size="small" sx={{
-                              height: 18, fontSize: '0.62rem', fontWeight: 700,
+                              height: 16, fontSize: '0.6rem', fontWeight: 700,
                               bgcolor: '#F5F5F5', color: '#666', border: '1px solid #E0E0E0',
+                              flexShrink: 0,
+                              '& .MuiChip-label': { px: 0.6 },
                             }} />
                           )}
                         </Box>
-                        {/* 참석 시간 Chip */}
-                        {dialogType === 'attend' && (
-                          e.isPartial ? (
-                            <Chip
-                              icon={<AccessTimeIcon sx={{ fontSize: '13px !important' }} />}
-                              label={e.timeLabel}
-                              size="small"
-                              sx={{
-                                height: 24, fontSize: '0.7rem', fontWeight: 700,
-                                bgcolor: '#FFF3E0', color: '#E65100',
-                                border: '1px solid #FFE0B2',
-                                '& .MuiChip-icon': { color: '#E65100' },
-                              }}
-                            />
-                          ) : (
-                            <Chip label="전체" size="small" sx={{
-                              height: 24, fontSize: '0.72rem', fontWeight: 800,
-                              bgcolor: theme.light, color: theme.dark,
-                              border: `1px solid ${theme.main}33`,
-                            }} />
-                          )
+                        {/* 참석 시간 Chip — 부분참석만 표시 (전체는 공간 절약 위해 생략) */}
+                        {dialogType === 'attend' && e.isPartial && (
+                          <Chip
+                            icon={<AccessTimeIcon sx={{ fontSize: '12px !important' }} />}
+                            label={e.timeLabel}
+                            size="small"
+                            sx={{
+                              height: 20, fontSize: '0.65rem', fontWeight: 700,
+                              bgcolor: '#FFF3E0', color: '#E65100',
+                              border: '1px solid #FFE0B2',
+                              flexShrink: 0,
+                              '& .MuiChip-icon': { color: '#E65100' },
+                              '& .MuiChip-label': { px: 0.5 },
+                            }}
+                          />
                         )}
                       </Box>
                     ))}
