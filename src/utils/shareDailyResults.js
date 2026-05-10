@@ -231,8 +231,9 @@ export async function shareDailyResultsImage({
 
   // ────────── MATCHES ──────────
   const matchesStartY = headerH + mvpCardGap + mvpCardH + matchesTopGap;
-  // 점수 박스 위치 (전체 너비의 약 53%)
-  const scoreCx = totalW * 0.53;
+  // 🆕 점수 박스 중심 — 좌측(게임 번호 ↔ Team1) / 우측(Team2 ↔ MVP) 시각 간격 균형
+  // 53%(우측 치우침) → 46%(좌측 살짝 이동)으로 양쪽 공간 비슷하게
+  const scoreCx = totalW * 0.46;
 
   matches.forEach((m, idx) => {
     const y = matchesStartY + idx * rowH;
