@@ -425,10 +425,96 @@ function ResultsPage() {
     if (!group || sharingDate) return;
     setSharingDate(group.dateStr);
     try {
+      const dateKey = String(group.dateStr || '').split(' ')[0] || 'match';
+
+      // 🆕 MVP 그날 상세 통계 계산 (득점/도움/승무패/승점율)
+      let mvpDayStats = null;
+      if (group.dateMvp && group.dateMvp !== '없음' && dataClub) {
+        try {
+          const [gamesSnap, selSnap] = await Promise.all([
+            get(ref(db, `${dataClub}/${dateKey}`)),
+            get(ref(db, `PlayerSelectionByDate/${dataClub}/${dateKey}`)),
+          ]);
+          if (gamesSnap.exists()) {
+            const gamesData = gamesSnap.val() || {};
+            const selData = selSnap.exists() ? (selSnap.val() || {}) : {};
+            const mvpName = group.dateMvp;
+            const mvpDisplay = `${mvpName} (용병)`;
+            let goals = 0, assists = 0, wins = 0, draws = 0, losses = 0, played = 0;
+
+            const parseGoalList = (gl) => {
+              if (!gl) return [];
+              return Object.values(gl).map((str) => {
+                if (!str || !String(str).includes('|')) return null;
+                const [, rest] = String(str).split('|');
+                if (!rest) return null;
+                const [sc, as] = rest.split('-');
+                return { scorer: sc?.trim(), assist: as?.trim() };
+              }).filter(Boolean);
+            };
+
+            const findMvpTeam = (gameKey, t1Name, t2Name) => {
+              const candidates = [selData[gameKey], selData.AttandPlayer].filter(Boolean);
+              for (const src of candidates) {
+                for (const [key, val] of Object.entries(src)) {
+                  const list = Array.isArray(val)
+                    ? val
+                    : (val && typeof val === 'object' ? Object.values(val) : []);
+                  const inList = list.some((n) => n === mvpName || n === mvpDisplay);
+                  if (!inList) continue;
+                  const code = String(key).replace(/^Team\s*/i, '').replace(/^팀\s*/, '').trim();
+                  const t1Code = String(t1Name || '').replace(/^Team\s*/i, '').replace(/^팀\s*/, '').trim();
+                  const t2Code = String(t2Name || '').replace(/^Team\s*/i, '').replace(/^팀\s*/, '').trim();
+                  if (code === t1Code || key === t1Name) return 'team1';
+                  if (code === t2Code || key === t2Name) return 'team2';
+                }
+              }
+              return null;
+            };
+
+            Object.keys(gamesData).filter((k) => k.startsWith('game')).forEach((gameKey) => {
+              const g = gamesData[gameKey];
+              if (!g) return;
+              const s1 = Number(g.goalCount1) || 0;
+              const s2 = Number(g.goalCount2) || 0;
+
+              // MVP 팀 판별 → 승무패 + 출전 카운트
+              const mvpTeam = findMvpTeam(gameKey, g.team1_name, g.team2_name);
+              if (mvpTeam) {
+                played++;
+                const myScore = mvpTeam === 'team1' ? s1 : s2;
+                const oppScore = mvpTeam === 'team1' ? s2 : s1;
+                if (myScore > oppScore) wins++;
+                else if (myScore < oppScore) losses++;
+                else draws++;
+              }
+
+              // 득점/도움 — 어떤 팀이든 본인 이름 매칭으로 카운트
+              [g.goalList1, g.goalList2].forEach((gl) => {
+                parseGoalList(gl).forEach((rec) => {
+                  if (rec.scorer === mvpName) goals++;
+                  if (rec.assist === mvpName) assists++;
+                });
+              });
+            });
+
+            const pointRate = played > 0
+              ? Math.round(((wins * 3 + draws) * 100) / (played * 3))
+              : 0;
+
+            mvpDayStats = { goals, assists, wins, draws, losses, played, pointRate };
+          }
+        } catch (statsErr) {
+          // 통계 실패해도 공유는 계속 (mvpDayStats만 null)
+          console.warn('[shareDaily] MVP 통계 계산 실패:', statsErr);
+        }
+      }
+
       const blob = await shareDailyResultsImage({
         dateStr: group.dateStr,
         dailyWinner: group.dailyWinner,
         dateMvp: group.dateMvp,
+        mvpDayStats,                                     // 🆕
         matches: (group.matches || []).map((m, idx) => ({
           gameNumber: m.gameNumber || `${idx + 1}경기`,
           team1: m.team1, team2: m.team2,
@@ -436,7 +522,6 @@ function ResultsPage() {
           mvp: m.mvp,
         })),
       });
-      const dateKey = String(group.dateStr || '').split(' ')[0] || 'match';
       const fileName = `${dateKey}_경기결과.png`;
       const file = new File([blob], fileName, { type: 'image/png' });
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
@@ -464,7 +549,7 @@ function ResultsPage() {
     } finally {
       setSharingDate(null);
     }
-  }, [sharingDate]);
+  }, [sharingDate, dataClub]);
 
   const handleMvpClick = useCallback(async (mvpName, e) => {
     if (e) e.stopPropagation();

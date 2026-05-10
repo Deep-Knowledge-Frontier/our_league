@@ -55,12 +55,15 @@ const computeMvpStats = (dateMvp, matches) => {
 
 /**
  * 일자별 경기 결과 카드를 PNG 이미지로 생성
+ * @param {object} props.mvpDayStats - MVP의 그날 상세 통계 (선택)
+ *   { goals, assists, wins, draws, losses, played, pointRate }
  * @returns {Promise<Blob>}
  */
 export async function shareDailyResultsImage({
   dateStr,
   dailyWinner,
   dateMvp,
+  mvpDayStats = null,
   matches = [],
 }) {
   // ── 레이아웃 상수 ──
@@ -68,7 +71,9 @@ export async function shareDailyResultsImage({
   const padX = 20;
   const headerH = 90;
   const mvpStats = computeMvpStats(dateMvp, matches);
-  const mvpCardH = mvpStats ? 80 : 0;
+  // 🆕 상세 stat이 있으면 카드 높이 확장 (스탯 행 추가)
+  const hasDetailedStats = !!(mvpStats && mvpDayStats && mvpDayStats.played > 0);
+  const mvpCardH = mvpStats ? (hasDetailedStats ? 122 : 80) : 0;
   const mvpCardGap = mvpStats ? 14 : 0;
   const rowH = 46;
   const matchesTopGap = 14;
@@ -186,6 +191,45 @@ export async function shareDailyResultsImage({
     // 큰 숫자 + 회 단위
     const countText = String(mvpStats.gameMvpCount);
     svg += `<text x="${rightEdge}" y="${cardY + 60}" text-anchor="end" fill="#3E2723" font-size="30" font-weight="900" font-family="sans-serif" letter-spacing="-0.5">${countText}<tspan font-size="14" font-weight="700" dx="2" fill="#5D4037">회</tspan></text>`;
+
+    // ── 🆕 하단 영역: MVP의 그날 상세 통계 (득점/도움/승점율) ──
+    if (hasDetailedStats) {
+      const statsY = cardY + 82;          // 하단 통계 행 시작
+      const dividerY = cardY + 78;
+
+      // 가로 구분선 (위 카드 ↔ 통계 행 분리)
+      svg += `<line x1="${cardX + 20}" y1="${dividerY}" x2="${cardX + cardW - 20}" y2="${dividerY}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.35"/>`;
+
+      const { goals = 0, assists = 0, wins = 0, draws = 0, losses = 0, played = 0, pointRate = 0 } = mvpDayStats;
+
+      // 3개 영역 균등 분할 (득점, 도움, 승점율)
+      const cellW = (cardW - 40) / 3;
+      const cellMid = [
+        cardX + 20 + cellW * 0.5,
+        cardX + 20 + cellW * 1.5,
+        cardX + 20 + cellW * 2.5,
+      ];
+
+      // 셀 사이 세로 구분선
+      svg += `<line x1="${cardX + 20 + cellW}" y1="${statsY + 2}" x2="${cardX + 20 + cellW}" y2="${statsY + 28}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.25"/>`;
+      svg += `<line x1="${cardX + 20 + cellW * 2}" y1="${statsY + 2}" x2="${cardX + 20 + cellW * 2}" y2="${statsY + 28}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.25"/>`;
+
+      // 라벨 (작게, 위)
+      svg += `<text x="${cellMid[0]}" y="${statsY + 12}" text-anchor="middle" fill="#BF8500" font-size="9" font-weight="800" font-family="sans-serif" letter-spacing="0.5">득점</text>`;
+      svg += `<text x="${cellMid[1]}" y="${statsY + 12}" text-anchor="middle" fill="#BF8500" font-size="9" font-weight="800" font-family="sans-serif" letter-spacing="0.5">도움</text>`;
+      svg += `<text x="${cellMid[2]}" y="${statsY + 12}" text-anchor="middle" fill="#BF8500" font-size="9" font-weight="800" font-family="sans-serif" letter-spacing="0.5">승점율</text>`;
+
+      // 큰 숫자 + 단위 (아래)
+      // 득점
+      svg += `<text x="${cellMid[0]}" y="${statsY + 32}" text-anchor="middle" fill="#3E2723" font-size="18" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${goals}<tspan font-size="11" font-weight="700" dx="1" fill="#5D4037">골</tspan></text>`;
+      // 도움
+      svg += `<text x="${cellMid[1]}" y="${statsY + 32}" text-anchor="middle" fill="#3E2723" font-size="18" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${assists}<tspan font-size="11" font-weight="700" dx="1" fill="#5D4037">도움</tspan></text>`;
+      // 승점율 + 승무패 부제
+      svg += `<text x="${cellMid[2]}" y="${statsY + 30}" text-anchor="middle" fill="#3E2723" font-size="18" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${pointRate}<tspan font-size="11" font-weight="700" dx="1" fill="#5D4037">%</tspan></text>`;
+      // 승무패 부제 (작게)
+      const wdlText = `${wins}승 ${draws}무 ${losses}패 (${played}경기)`;
+      svg += `<text x="${cellMid[2]}" y="${statsY + 41}" text-anchor="middle" fill="#8D6E63" font-size="8" font-weight="600" font-family="sans-serif">${esc(wdlText)}</text>`;
+    }
   }
 
   // ────────── MATCHES ──────────
