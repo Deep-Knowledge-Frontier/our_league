@@ -119,27 +119,23 @@ export async function shareDailyResultsImage({
   // 좌상단 부제: 경기 수 + 라벨
   svg += `<text x="${padX}" y="62" fill="rgba(255,255,255,0.65)" font-size="11.5" font-weight="600" font-family="sans-serif" letter-spacing="0.2">${matches.length}경기 · 일자별 결과</text>`;
 
-  // 우상단: 우승팀 배지
+  // 우상단: 우승팀 배지 (🏆 + 팀명)
   if (dailyWinner) {
     const winnerText = formatTeamName(dailyWinner);
-    const winColor = teamAccent(dailyWinner);
     const trophyW = 22;          // 트로피 자리
-    const dotW = 14;             // 도트 자리
     const textW = measureText(winnerText, 14);
     const insidePad = 14;
-    const badgeW = trophyW + textW + dotW + insidePad * 2 - 8;
+    const badgeW = trophyW + textW + insidePad * 2 - 8;
     const badgeH = 32;
     const badgeX = totalW - padX - badgeW;
     const badgeY = (headerH - badgeH) / 2 - 4;
 
     // 반투명 흰 배경
     svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="16" fill="rgba(255,255,255,0.95)" stroke="rgba(255,255,255,0.4)" stroke-width="0.5"/>`;
-    // 트로피 (그라데이션 컬러로 잘 보이게)
+    // 트로피
     svg += `<text x="${badgeX + insidePad}" y="${badgeY + 22}" font-size="15" font-family="sans-serif">🏆</text>`;
     // 팀명 (남색 글씨)
     svg += `<text x="${badgeX + insidePad + trophyW}" y="${badgeY + 22}" fill="#1A1D4E" font-size="14" font-weight="900" font-family="sans-serif" letter-spacing="-0.2">${esc(winnerText)}</text>`;
-    // 컬러 도트
-    svg += `<circle cx="${badgeX + badgeW - insidePad - 2}" cy="${badgeY + 16}" r="5" fill="${winColor}"/>`;
   }
 
   // ────────── MVP STATS CARD ──────────
