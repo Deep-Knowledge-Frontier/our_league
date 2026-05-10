@@ -114,8 +114,8 @@ export async function shareDailyResultsImage({
   // ────────── HEADER ──────────
   svg += `<path d="M 0 18 Q 0 0 18 0 L ${totalW - 18} 0 Q ${totalW} 0 ${totalW} 18 L ${totalW} ${headerH} L 0 ${headerH} Z" fill="url(#header)"/>`;
 
-  // 좌상단: 날짜 (📅 + 텍스트)
-  svg += `<text x="${padX}" y="42" fill="white" font-size="22" font-weight="900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" letter-spacing="-0.4">📅 ${esc(dateStr)}</text>`;
+  // 좌상단: 날짜 (🗓️ + 텍스트) — 📅는 iOS에서 "July 17" 고정 인쇄, ⚽은 푸터에 이미 사용
+  svg += `<text x="${padX}" y="42" fill="white" font-size="22" font-weight="900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" letter-spacing="-0.4">🗓️ ${esc(dateStr)}</text>`;
 
   // 좌상단 부제: 경기 수 + 라벨
   svg += `<text x="${padX}" y="68" fill="rgba(255,255,255,0.65)" font-size="13" font-weight="600" font-family="sans-serif" letter-spacing="0.2">${matches.length}경기 · 일자별 결과</text>`;
