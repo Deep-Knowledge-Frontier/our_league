@@ -88,39 +88,7 @@
     "PlayerSelectionByDate": {
       ".read": "auth != null",
       "$clubName": {
-        "$date": {
-          // 🆕 회원: 자기 투표(AttandPlayer/all, AbsentPlayer/all, UndecidedPlayer/all)와
-          //          본인 시간/용병(AttendTime/{my}, Guests/{my})만 쓰기 가능
-          // 🆕 운영자(admin/moderator): 모든 자식 path 쓰기 가능 (게임 로스터, 주장, 포메이션 등)
-
-          "AttandPlayer": {
-            "all":  { ".write": "auth != null" },
-            "A":    { ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())" },
-            "B":    { ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())" },
-            "C":    { ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())" }
-          },
-          "AbsentPlayer": {
-            "all":  { ".write": "auth != null" }
-          },
-          "UndecidedPlayer": {
-            "all":  { ".write": "auth != null" }
-          },
-          "AttendTime": {
-            "$emailKey": {
-              ".write": "auth != null && ($emailKey === auth.token.email.replace('.', ',') || root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
-            }
-          },
-          "Guests": {
-            "$emailKey": {
-              ".write": "auth != null && ($emailKey === auth.token.email.replace('.', ',') || root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
-            }
-          },
-
-          // 운영자 전용 영역 — game1/2/.../TeamCaptains/MatchOrder/FormationOpen/Draft/Formation/keyPop 등 위에 명시되지 않은 모든 자식
-          "$adminOnly": {
-            ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
-          }
-        }
+        ".write": "auth != null"
       }
     },
 
