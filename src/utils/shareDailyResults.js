@@ -67,9 +67,9 @@ export async function shareDailyResultsImage({
   matches = [],
 }) {
   // ── 레이아웃 상수 ──
-  // 🆕 너비 확장 + 글자 크기 키워서 가독성 향상
-  const totalW = 540;
-  const padX = 22;
+  // 🆕 너비는 컴팩트하게, 글자 크기는 가독성 위해 유지
+  const totalW = 460;
+  const padX = 18;
   const headerH = 100;
   const mvpStats = computeMvpStats(dateMvp, matches);
   // 🆕 상세 stat이 있으면 카드 높이 확장 (스탯 행 추가)
