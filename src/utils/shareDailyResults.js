@@ -67,18 +67,19 @@ export async function shareDailyResultsImage({
   matches = [],
 }) {
   // ── 레이아웃 상수 ──
-  const totalW = 480;
-  const padX = 20;
-  const headerH = 90;
+  // 🆕 너비 확장 + 글자 크기 키워서 가독성 향상
+  const totalW = 540;
+  const padX = 22;
+  const headerH = 100;
   const mvpStats = computeMvpStats(dateMvp, matches);
   // 🆕 상세 stat이 있으면 카드 높이 확장 (스탯 행 추가)
   const hasDetailedStats = !!(mvpStats && mvpDayStats && mvpDayStats.played > 0);
-  const mvpCardH = mvpStats ? (hasDetailedStats ? 122 : 80) : 0;
-  const mvpCardGap = mvpStats ? 14 : 0;
-  const rowH = 46;
-  const matchesTopGap = 14;
-  const matchesH = matches.length * rowH + 6;
-  const footerH = 36;
+  const mvpCardH = mvpStats ? (hasDetailedStats ? 140 : 92) : 0;
+  const mvpCardGap = mvpStats ? 16 : 0;
+  const rowH = 52;
+  const matchesTopGap = 16;
+  const matchesH = matches.length * rowH + 8;
+  const footerH = 38;
   const totalH = headerH + mvpCardGap + mvpCardH + matchesTopGap + matchesH + footerH;
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}">`;
@@ -114,28 +115,28 @@ export async function shareDailyResultsImage({
   svg += `<path d="M 0 18 Q 0 0 18 0 L ${totalW - 18} 0 Q ${totalW} 0 ${totalW} 18 L ${totalW} ${headerH} L 0 ${headerH} Z" fill="url(#header)"/>`;
 
   // 좌상단: 날짜 (📅 + 텍스트)
-  svg += `<text x="${padX}" y="38" fill="white" font-size="20" font-weight="900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" letter-spacing="-0.4">📅 ${esc(dateStr)}</text>`;
+  svg += `<text x="${padX}" y="42" fill="white" font-size="22" font-weight="900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" letter-spacing="-0.4">📅 ${esc(dateStr)}</text>`;
 
   // 좌상단 부제: 경기 수 + 라벨
-  svg += `<text x="${padX}" y="62" fill="rgba(255,255,255,0.65)" font-size="11.5" font-weight="600" font-family="sans-serif" letter-spacing="0.2">${matches.length}경기 · 일자별 결과</text>`;
+  svg += `<text x="${padX}" y="68" fill="rgba(255,255,255,0.65)" font-size="13" font-weight="600" font-family="sans-serif" letter-spacing="0.2">${matches.length}경기 · 일자별 결과</text>`;
 
   // 우상단: 우승팀 배지 (🏆 + 팀명)
   if (dailyWinner) {
     const winnerText = formatTeamName(dailyWinner);
-    const trophyW = 22;          // 트로피 자리
-    const textW = measureText(winnerText, 14);
-    const insidePad = 14;
+    const trophyW = 24;          // 트로피 자리
+    const textW = measureText(winnerText, 16);
+    const insidePad = 15;
     const badgeW = trophyW + textW + insidePad * 2 - 8;
-    const badgeH = 32;
+    const badgeH = 36;
     const badgeX = totalW - padX - badgeW;
     const badgeY = (headerH - badgeH) / 2 - 4;
 
     // 반투명 흰 배경
-    svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="16" fill="rgba(255,255,255,0.95)" stroke="rgba(255,255,255,0.4)" stroke-width="0.5"/>`;
+    svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="18" fill="rgba(255,255,255,0.95)" stroke="rgba(255,255,255,0.4)" stroke-width="0.5"/>`;
     // 트로피
-    svg += `<text x="${badgeX + insidePad}" y="${badgeY + 22}" font-size="15" font-family="sans-serif">🏆</text>`;
+    svg += `<text x="${badgeX + insidePad}" y="${badgeY + 25}" font-size="17" font-family="sans-serif">🏆</text>`;
     // 팀명 (남색 글씨)
-    svg += `<text x="${badgeX + insidePad + trophyW}" y="${badgeY + 22}" fill="#1A1D4E" font-size="14" font-weight="900" font-family="sans-serif" letter-spacing="-0.2">${esc(winnerText)}</text>`;
+    svg += `<text x="${badgeX + insidePad + trophyW}" y="${badgeY + 25}" fill="#1A1D4E" font-size="16" font-weight="900" font-family="sans-serif" letter-spacing="-0.2">${esc(winnerText)}</text>`;
   }
 
   // ────────── MVP STATS CARD ──────────
@@ -150,81 +151,81 @@ export async function shareDailyResultsImage({
     svg += `<rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="14" fill="url(#mvpCard)" stroke="#FFB300" stroke-width="1.5" filter="url(#cardShadow)"/>`;
 
     // ── 좌측 영역: 별 + 이름 + 팀 칩 ──
-    const leftX = cardX + 20;
+    const leftX = cardX + 22;
 
     // 별 아이콘 (큰 사이즈)
-    svg += `<text x="${leftX}" y="${cardY + 50}" font-size="36" font-family="sans-serif">⭐</text>`;
+    svg += `<text x="${leftX}" y="${cardY + 56}" font-size="40" font-family="sans-serif">⭐</text>`;
 
     // DAY MVP 라벨
-    svg += `<text x="${leftX + 50}" y="${cardY + 25}" fill="#BF8500" font-size="10" font-weight="800" font-family="sans-serif" letter-spacing="1.5">DAY MVP</text>`;
+    svg += `<text x="${leftX + 56}" y="${cardY + 28}" fill="#BF8500" font-size="11" font-weight="800" font-family="sans-serif" letter-spacing="1.5">DAY MVP</text>`;
 
     // MVP 이름 (큼직하게)
-    svg += `<text x="${leftX + 50}" y="${cardY + 50}" fill="#3E2723" font-size="22" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${esc(dateMvp)}</text>`;
+    svg += `<text x="${leftX + 56}" y="${cardY + 55}" fill="#3E2723" font-size="25" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${esc(dateMvp)}</text>`;
 
     // 소속팀 칩 (이름 아래)
     if (mvpStats.mvpTeam) {
       const teamColor = teamAccent(mvpStats.mvpTeam);
       const teamText = formatTeamName(mvpStats.mvpTeam);
-      const teamTextW = measureText(teamText, 11);
-      const teamChipW = teamTextW + 26;
-      const teamChipX = leftX + 50;
-      const teamChipY = cardY + 56;
-      svg += `<rect x="${teamChipX}" y="${teamChipY}" width="${teamChipW}" height="18" rx="9" fill="white" stroke="${teamColor}" stroke-width="1.3"/>`;
-      svg += `<circle cx="${teamChipX + 9}" cy="${teamChipY + 9}" r="3.5" fill="${teamColor}"/>`;
-      svg += `<text x="${teamChipX + 17}" y="${teamChipY + 13}" fill="${teamColor}" font-size="11" font-weight="800" font-family="sans-serif" letter-spacing="-0.1">${esc(teamText)}</text>`;
+      const teamTextW = measureText(teamText, 12);
+      const teamChipW = teamTextW + 28;
+      const teamChipX = leftX + 56;
+      const teamChipY = cardY + 62;
+      svg += `<rect x="${teamChipX}" y="${teamChipY}" width="${teamChipW}" height="20" rx="10" fill="white" stroke="${teamColor}" stroke-width="1.3"/>`;
+      svg += `<circle cx="${teamChipX + 10}" cy="${teamChipY + 10}" r="4" fill="${teamColor}"/>`;
+      svg += `<text x="${teamChipX + 19}" y="${teamChipY + 14}" fill="${teamColor}" font-size="12" font-weight="800" font-family="sans-serif" letter-spacing="-0.1">${esc(teamText)}</text>`;
     }
 
     // ── 우측 영역: 통계 ──
-    const rightEdge = cardX + cardW - 20;
+    const rightEdge = cardX + cardW - 22;
 
     // 세로 구분선
-    const dividerX = cardX + cardW - 110;
-    svg += `<line x1="${dividerX}" y1="${cardY + 18}" x2="${dividerX}" y2="${cardY + cardH - 18}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.3"/>`;
+    const dividerX = cardX + cardW - 124;
+    svg += `<line x1="${dividerX}" y1="${cardY + 18}" x2="${dividerX}" y2="${cardY + (hasDetailedStats ? 76 : cardH - 18)}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.3"/>`;
 
     // "게임 MVP" 라벨
-    svg += `<text x="${rightEdge}" y="${cardY + 28}" text-anchor="end" fill="#BF8500" font-size="10" font-weight="800" font-family="sans-serif" letter-spacing="1">게임 MVP</text>`;
+    svg += `<text x="${rightEdge}" y="${cardY + 32}" text-anchor="end" fill="#BF8500" font-size="11" font-weight="800" font-family="sans-serif" letter-spacing="1">게임 MVP</text>`;
 
     // 큰 숫자 + 회 단위
     const countText = String(mvpStats.gameMvpCount);
-    svg += `<text x="${rightEdge}" y="${cardY + 60}" text-anchor="end" fill="#3E2723" font-size="30" font-weight="900" font-family="sans-serif" letter-spacing="-0.5">${countText}<tspan font-size="14" font-weight="700" dx="2" fill="#5D4037">회</tspan></text>`;
+    svg += `<text x="${rightEdge}" y="${cardY + 66}" text-anchor="end" fill="#3E2723" font-size="34" font-weight="900" font-family="sans-serif" letter-spacing="-0.5">${countText}<tspan font-size="16" font-weight="700" dx="2" fill="#5D4037">회</tspan></text>`;
 
     // ── 🆕 하단 영역: MVP의 그날 상세 통계 (득점/도움/승점율) ──
     if (hasDetailedStats) {
-      const statsY = cardY + 82;          // 하단 통계 행 시작
-      const dividerY = cardY + 78;
+      const statsY = cardY + 90;          // 하단 통계 행 시작
+      const dividerY = cardY + 86;
 
       // 가로 구분선 (위 카드 ↔ 통계 행 분리)
-      svg += `<line x1="${cardX + 20}" y1="${dividerY}" x2="${cardX + cardW - 20}" y2="${dividerY}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.35"/>`;
+      svg += `<line x1="${cardX + 22}" y1="${dividerY}" x2="${cardX + cardW - 22}" y2="${dividerY}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.35"/>`;
 
       const { goals = 0, assists = 0, wins = 0, draws = 0, losses = 0, played = 0, pointRate = 0 } = mvpDayStats;
 
       // 3개 영역 균등 분할 (득점, 도움, 승점율)
-      const cellW = (cardW - 40) / 3;
+      const cellW = (cardW - 44) / 3;
       const cellMid = [
-        cardX + 20 + cellW * 0.5,
-        cardX + 20 + cellW * 1.5,
-        cardX + 20 + cellW * 2.5,
+        cardX + 22 + cellW * 0.5,
+        cardX + 22 + cellW * 1.5,
+        cardX + 22 + cellW * 2.5,
       ];
 
       // 셀 사이 세로 구분선
-      svg += `<line x1="${cardX + 20 + cellW}" y1="${statsY + 2}" x2="${cardX + 20 + cellW}" y2="${statsY + 28}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.25"/>`;
-      svg += `<line x1="${cardX + 20 + cellW * 2}" y1="${statsY + 2}" x2="${cardX + 20 + cellW * 2}" y2="${statsY + 28}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.25"/>`;
+      svg += `<line x1="${cardX + 22 + cellW}" y1="${statsY + 2}" x2="${cardX + 22 + cellW}" y2="${statsY + 32}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.25"/>`;
+      svg += `<line x1="${cardX + 22 + cellW * 2}" y1="${statsY + 2}" x2="${cardX + 22 + cellW * 2}" y2="${statsY + 32}" stroke="#FFB300" stroke-width="1" stroke-opacity="0.25"/>`;
 
       // 라벨 (작게, 위)
-      svg += `<text x="${cellMid[0]}" y="${statsY + 12}" text-anchor="middle" fill="#BF8500" font-size="9" font-weight="800" font-family="sans-serif" letter-spacing="0.5">득점</text>`;
-      svg += `<text x="${cellMid[1]}" y="${statsY + 12}" text-anchor="middle" fill="#BF8500" font-size="9" font-weight="800" font-family="sans-serif" letter-spacing="0.5">도움</text>`;
-      svg += `<text x="${cellMid[2]}" y="${statsY + 12}" text-anchor="middle" fill="#BF8500" font-size="9" font-weight="800" font-family="sans-serif" letter-spacing="0.5">승점율</text>`;
+      svg += `<text x="${cellMid[0]}" y="${statsY + 13}" text-anchor="middle" fill="#BF8500" font-size="10" font-weight="800" font-family="sans-serif" letter-spacing="0.5">득점</text>`;
+      svg += `<text x="${cellMid[1]}" y="${statsY + 13}" text-anchor="middle" fill="#BF8500" font-size="10" font-weight="800" font-family="sans-serif" letter-spacing="0.5">도움</text>`;
+      svg += `<text x="${cellMid[2]}" y="${statsY + 13}" text-anchor="middle" fill="#BF8500" font-size="10" font-weight="800" font-family="sans-serif" letter-spacing="0.5">승점율</text>`;
 
       // 큰 숫자 + 단위 (아래)
       // 득점
-      svg += `<text x="${cellMid[0]}" y="${statsY + 32}" text-anchor="middle" fill="#3E2723" font-size="18" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${goals}<tspan font-size="11" font-weight="700" dx="1" fill="#5D4037">골</tspan></text>`;
+      svg += `<text x="${cellMid[0]}" y="${statsY + 36}" text-anchor="middle" fill="#3E2723" font-size="22" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${goals}<tspan font-size="13" font-weight="700" dx="2" fill="#5D4037">골</tspan></text>`;
       // 도움
-      svg += `<text x="${cellMid[1]}" y="${statsY + 32}" text-anchor="middle" fill="#3E2723" font-size="18" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${assists}<tspan font-size="11" font-weight="700" dx="1" fill="#5D4037">도움</tspan></text>`;
+      svg += `<text x="${cellMid[1]}" y="${statsY + 36}" text-anchor="middle" fill="#3E2723" font-size="22" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${assists}<tspan font-size="13" font-weight="700" dx="2" fill="#5D4037">도움</tspan></text>`;
       // 승점율 + 승무패 부제
-      svg += `<text x="${cellMid[2]}" y="${statsY + 30}" text-anchor="middle" fill="#3E2723" font-size="18" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${pointRate}<tspan font-size="11" font-weight="700" dx="1" fill="#5D4037">%</tspan></text>`;
+      svg += `<text x="${cellMid[2]}" y="${statsY + 34}" text-anchor="middle" fill="#3E2723" font-size="22" font-weight="900" font-family="sans-serif" letter-spacing="-0.3">${pointRate}<tspan font-size="13" font-weight="700" dx="2" fill="#5D4037">%</tspan></text>`;
       // 승무패 부제 (작게)
       const wdlText = `${wins}승 ${draws}무 ${losses}패 (${played}경기)`;
-      svg += `<text x="${cellMid[2]}" y="${statsY + 41}" text-anchor="middle" fill="#8D6E63" font-size="8" font-weight="600" font-family="sans-serif">${esc(wdlText)}</text>`;
+      svg += `<text x="${cellMid[2]}" y="${statsY + 47}" text-anchor="middle" fill="#8D6E63" font-size="9" font-weight="600" font-family="sans-serif">${esc(wdlText)}</text>`;
     }
   }
 
@@ -236,13 +237,13 @@ export async function shareDailyResultsImage({
   matches.forEach((m, idx) => {
     const y = matchesStartY + idx * rowH;
 
-    // 행 배경 — 흰 카드
-    svg += `<rect x="${padX}" y="${y}" width="${totalW - padX * 2}" height="${rowH - 6}" rx="12" fill="white" stroke="#E8EAEC" stroke-width="1" filter="url(#cardShadow)"/>`;
+    // 행 배경 — 흰 카드 (행 높이 52, 카드 46)
+    svg += `<rect x="${padX}" y="${y}" width="${totalW - padX * 2}" height="${rowH - 6}" rx="13" fill="white" stroke="#E8EAEC" stroke-width="1" filter="url(#cardShadow)"/>`;
 
     // 게임 번호 (왼쪽 인디고 칩)
     const gameLabel = String(m.gameNumber || idx + 1).replace(/경기$/, '');
-    svg += `<rect x="${padX + 10}" y="${y + 10}" width="26" height="22" rx="11" fill="#EEF2FF"/>`;
-    svg += `<text x="${padX + 23}" y="${y + 25}" text-anchor="middle" fill="#3F51B5" font-size="12" font-weight="900" font-family="sans-serif">${esc(gameLabel)}</text>`;
+    svg += `<rect x="${padX + 11}" y="${y + 11}" width="30" height="24" rx="12" fill="#EEF2FF"/>`;
+    svg += `<text x="${padX + 26}" y="${y + 28}" text-anchor="middle" fill="#3F51B5" font-size="13" font-weight="900" font-family="sans-serif">${esc(gameLabel)}</text>`;
 
     const score1 = Number(m.score1) || 0;
     const score2 = Number(m.score2) || 0;
@@ -250,29 +251,30 @@ export async function shareDailyResultsImage({
     const t2Win = score2 > score1;
     const isDraw = score1 === score2;
 
-    // 점수 박스 (가운데, 그라데이션)
+    // 점수 박스 (가운데, 그라데이션) — 더 크게
     const scoreText = `${score1} : ${score2}`;
-    const scoreBoxW = 60;
-    svg += `<rect x="${scoreCx - scoreBoxW / 2}" y="${y + 9}" width="${scoreBoxW}" height="22" rx="6" fill="url(#scoreBox)" stroke="#D6DBE0" stroke-width="1"/>`;
-    svg += `<text x="${scoreCx}" y="${y + 25}" text-anchor="middle" fill="#1A1D4E" font-size="13" font-weight="900" font-family="sans-serif" letter-spacing="0.5">${esc(scoreText)}</text>`;
+    const scoreBoxW = 70;
+    const scoreBoxH = 26;
+    svg += `<rect x="${scoreCx - scoreBoxW / 2}" y="${y + 10}" width="${scoreBoxW}" height="${scoreBoxH}" rx="7" fill="url(#scoreBox)" stroke="#D6DBE0" stroke-width="1"/>`;
+    svg += `<text x="${scoreCx}" y="${y + 29}" text-anchor="middle" fill="#1A1D4E" font-size="16" font-weight="900" font-family="sans-serif" letter-spacing="0.5">${esc(scoreText)}</text>`;
 
     // Team 1 (점수 좌측, 우측정렬)
     const t1Color = t1Win ? teamAccent(m.team1) : (isDraw ? '#666' : '#B0BEC5');
     const t1Weight = t1Win ? '900' : '600';
     const t1Name = formatTeamName(m.team1);
-    const dotR = 3.5;
-    const dotPad = 6;  // 도트와 텍스트 사이
+    const dotR = 4;
+    const dotPad = 7;
     const dotX1 = scoreCx - scoreBoxW / 2 - dotPad - dotR;
-    svg += `<circle cx="${dotX1}" cy="${y + 21}" r="${dotR}" fill="${t1Color}" opacity="${t1Win ? 1 : 0.45}"/>`;
-    svg += `<text x="${dotX1 - dotR - 4}" y="${y + 25}" text-anchor="end" fill="${t1Color}" font-size="12.5" font-weight="${t1Weight}" font-family="sans-serif">${esc(t1Name)}</text>`;
+    svg += `<circle cx="${dotX1}" cy="${y + 24}" r="${dotR}" fill="${t1Color}" opacity="${t1Win ? 1 : 0.45}"/>`;
+    svg += `<text x="${dotX1 - dotR - 5}" y="${y + 29}" text-anchor="end" fill="${t1Color}" font-size="14.5" font-weight="${t1Weight}" font-family="sans-serif">${esc(t1Name)}</text>`;
 
     // Team 2 (점수 우측, 좌측정렬)
     const t2Color = t2Win ? teamAccent(m.team2) : (isDraw ? '#666' : '#B0BEC5');
     const t2Weight = t2Win ? '900' : '600';
     const t2Name = formatTeamName(m.team2);
     const dotX2 = scoreCx + scoreBoxW / 2 + dotPad + dotR;
-    svg += `<circle cx="${dotX2}" cy="${y + 21}" r="${dotR}" fill="${t2Color}" opacity="${t2Win ? 1 : 0.45}"/>`;
-    svg += `<text x="${dotX2 + dotR + 4}" y="${y + 25}" text-anchor="start" fill="${t2Color}" font-size="12.5" font-weight="${t2Weight}" font-family="sans-serif">${esc(t2Name)}</text>`;
+    svg += `<circle cx="${dotX2}" cy="${y + 24}" r="${dotR}" fill="${t2Color}" opacity="${t2Win ? 1 : 0.45}"/>`;
+    svg += `<text x="${dotX2 + dotR + 5}" y="${y + 29}" text-anchor="start" fill="${t2Color}" font-size="14.5" font-weight="${t2Weight}" font-family="sans-serif">${esc(t2Name)}</text>`;
 
     // MVP (행 우측 끝) — 일자 MVP는 ⭐ + 주황색 강조
     if (m.mvp && m.mvp !== '없음') {
@@ -280,13 +282,13 @@ export async function shareDailyResultsImage({
       const mvpColor = isDayMvp ? '#E65100' : '#5C6873';
       const mvpIcon = isDayMvp ? '⭐' : '🥇';
       const mvpFontWeight = isDayMvp ? '900' : '700';
-      svg += `<text x="${totalW - padX - 12}" y="${y + 25}" text-anchor="end" fill="${mvpColor}" font-size="11.5" font-weight="${mvpFontWeight}" font-family="sans-serif" letter-spacing="-0.1">${mvpIcon} ${esc(m.mvp)}</text>`;
+      svg += `<text x="${totalW - padX - 14}" y="${y + 29}" text-anchor="end" fill="${mvpColor}" font-size="13.5" font-weight="${mvpFontWeight}" font-family="sans-serif" letter-spacing="-0.1">${mvpIcon} ${esc(m.mvp)}</text>`;
     }
   });
 
   // ────────── FOOTER ──────────
-  const footerY = totalH - 14;
-  svg += `<text x="${totalW / 2}" y="${footerY}" text-anchor="middle" fill="#90A4AE" font-size="10" font-weight="600" font-family="sans-serif" letter-spacing="0.8">⚽ uri-league.web.app</text>`;
+  const footerY = totalH - 15;
+  svg += `<text x="${totalW / 2}" y="${footerY}" text-anchor="middle" fill="#90A4AE" font-size="11" font-weight="600" font-family="sans-serif" letter-spacing="0.8">⚽ uri-league.web.app</text>`;
 
   svg += `</svg>`;
 
