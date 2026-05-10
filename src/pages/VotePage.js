@@ -1070,14 +1070,14 @@ function VotePage() {
                     <Typography sx={{ fontSize: '0.88rem' }}>명단이 없습니다.</Typography>
                   </Box>
                 ) : (
-                  // 🆕 2열 그리드 — 동그라미 아바타 제거
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 0.6 }}>
+                  // 🆕 2열 그리드 — 동그라미 아바타 제거 + 이름 줄바꿈 + 시간 칩 아래로
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 0.6, alignItems: 'stretch' }}>
                     {enriched.map((e, idx) => (
                       <Box
                         key={`${e.raw}-${idx}`}
                         sx={{
-                          display: 'flex', alignItems: 'center', gap: 0.8,
-                          bgcolor: 'white', borderRadius: 2, px: 1, py: 0.7,
+                          display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                          bgcolor: 'white', borderRadius: 2, px: 1, py: 0.6,
                           borderLeft: `4px solid ${e.isPartial ? '#FF9800' : theme.main}`,
                           boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                           transition: 'all 0.15s',
@@ -1085,45 +1085,50 @@ function VotePage() {
                           '&:hover': { boxShadow: '0 2px 6px rgba(0,0,0,0.08)', transform: 'translateY(-1px)' },
                         }}
                       >
-                        {/* 순번 */}
-                        <Typography sx={{
-                          fontSize: '0.7rem', fontWeight: 700, color: '#999',
-                          minWidth: 16, textAlign: 'right', fontFeatureSettings: '"tnum"', flexShrink: 0,
-                        }}>
-                          {idx + 1}
-                        </Typography>
-                        {/* 이름 + 용병 배지 */}
-                        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.4 }}>
+                        {/* 첫 줄: 순번 + 이름 (+ 용병 배지) */}
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.6, minWidth: 0 }}>
                           <Typography sx={{
-                            fontSize: '0.92rem', fontWeight: 700, color: '#222',
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            fontSize: '0.7rem', fontWeight: 700, color: '#999',
+                            minWidth: 16, textAlign: 'right', fontFeatureSettings: '"tnum"',
+                            flexShrink: 0, lineHeight: 1.4, pt: '2px',
                           }}>
-                            {e.cleanName}
+                            {idx + 1}
                           </Typography>
-                          {e.isGuest && (
-                            <Chip label="용병" size="small" sx={{
-                              height: 16, fontSize: '0.6rem', fontWeight: 700,
-                              bgcolor: '#F5F5F5', color: '#666', border: '1px solid #E0E0E0',
-                              flexShrink: 0,
-                              '& .MuiChip-label': { px: 0.6 },
-                            }} />
-                          )}
+                          <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.4, flexWrap: 'wrap' }}>
+                            <Typography sx={{
+                              fontSize: '0.88rem', fontWeight: 700, color: '#222',
+                              // 🆕 긴 이름(괄호 정보 등)은 두 줄로 줄바꿈 허용
+                              whiteSpace: 'normal', wordBreak: 'break-word',
+                              lineHeight: 1.25,
+                            }}>
+                              {e.cleanName}
+                            </Typography>
+                            {e.isGuest && (
+                              <Chip label="용병" size="small" sx={{
+                                height: 16, fontSize: '0.6rem', fontWeight: 700,
+                                bgcolor: '#F5F5F5', color: '#666', border: '1px solid #E0E0E0',
+                                flexShrink: 0,
+                                '& .MuiChip-label': { px: 0.6 },
+                              }} />
+                            )}
+                          </Box>
                         </Box>
-                        {/* 참석 시간 Chip — 부분참석만 표시 (전체는 공간 절약 위해 생략) */}
+                        {/* 둘째 줄: 부분 참석 시간 칩 (이름 폭 영향 없도록 분리) */}
                         {dialogType === 'attend' && e.isPartial && (
-                          <Chip
-                            icon={<AccessTimeIcon sx={{ fontSize: '12px !important' }} />}
-                            label={e.timeLabel}
-                            size="small"
-                            sx={{
-                              height: 20, fontSize: '0.65rem', fontWeight: 700,
-                              bgcolor: '#FFF3E0', color: '#E65100',
-                              border: '1px solid #FFE0B2',
-                              flexShrink: 0,
-                              '& .MuiChip-icon': { color: '#E65100' },
-                              '& .MuiChip-label': { px: 0.5 },
-                            }}
-                          />
+                          <Box sx={{ display: 'flex', mt: 0.4, pl: '22px' /* 순번 폭만큼 들여쓰기 */ }}>
+                            <Chip
+                              icon={<AccessTimeIcon sx={{ fontSize: '12px !important' }} />}
+                              label={e.timeLabel}
+                              size="small"
+                              sx={{
+                                height: 18, fontSize: '0.65rem', fontWeight: 700,
+                                bgcolor: '#FFF3E0', color: '#E65100',
+                                border: '1px solid #FFE0B2',
+                                '& .MuiChip-icon': { color: '#E65100', ml: '4px' },
+                                '& .MuiChip-label': { px: 0.5 },
+                              }}
+                            />
+                          </Box>
                         )}
                       </Box>
                     ))}
