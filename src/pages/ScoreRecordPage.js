@@ -22,6 +22,7 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { getFormations } from '../config/formations';
 import FormationField from '../components/FormationField';
 import MatchTimer from '../components/MatchTimer';
@@ -53,6 +54,7 @@ export default function ScoreRecordPage() {
   const gameParam = parseInt(searchParams.get('game') || '1', 10);
 
   const { clubName, isAdmin, isModerator, isDemoGuest, userName } = useAuth();
+  const toast = useToast();
   const canEdit = isAdmin || isModerator;
 
   const [loading, setLoading] = useState(true);
@@ -435,9 +437,9 @@ export default function ScoreRecordPage() {
       });
       await syncDailyResultsBackup();
       cb?.();
-    } catch (e) { alert('저장 실패: ' + e.message); }
+    } catch (e) { toast.error('저장 실패: ' + e.message); }
     setSaving(false);
-  }, [canEdit, currentMatch, gameNumber, clubName, dateParam, computeMvp, syncDailyResultsBackup, getTeamLabel, isQuarterLabel]);
+  }, [canEdit, currentMatch, gameNumber, clubName, dateParam, computeMvp, syncDailyResultsBackup, getTeamLabel, isQuarterLabel, toast]);
 
   const addGoal = useCallback((team) => {
     if (!canEdit) return;
@@ -447,7 +449,7 @@ export default function ScoreRecordPage() {
     const setList = team === 1 ? setGoalList1 : setGoalList2;
     const list = team === 1 ? [...goalList1] : [...goalList2];
     const otherList = team === 1 ? goalList2 : goalList1;
-    if (!scorer) { alert('골 넣은 선수를 선택해주세요.'); return; }
+    if (!scorer) { toast.warning('골 넣은 선수를 선택해주세요.'); return; }
     const seq = editIdx >= 0 ? editIdx + 1 : list.length + 1;
     let record = `${seq} | ${scorer}`;
     if (assist) record += ` - ${assist}`;
@@ -456,7 +458,7 @@ export default function ScoreRecordPage() {
     saveToFirebase(team === 1 ? list : otherList, team === 2 ? list : otherList);
     if (team === 1) { setScorer1(null); setAssist1(null); setEditIdx1(-1); }
     else { setScorer2(null); setAssist2(null); setEditIdx2(-1); }
-  }, [canEdit, scorer1, assist1, scorer2, assist2, editIdx1, editIdx2, goalList1, goalList2, saveToFirebase]);
+  }, [canEdit, scorer1, assist1, scorer2, assist2, editIdx1, editIdx2, goalList1, goalList2, saveToFirebase, toast]);
 
   const deleteGoal = useCallback((team, idx) => {
     if (!canEdit) return;

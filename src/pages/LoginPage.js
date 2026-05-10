@@ -9,6 +9,7 @@ import { auth, googleProvider, db } from '../config/firebase';
 import { getSafeEmailKey } from '../utils/format';
 import { APP_CONFIG } from '../config/app.config';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 // =========================================================================
 // Particle Intro Animation
@@ -181,6 +182,7 @@ const ParticleIntro = ({ isDataLoaded, onReveal, onComplete }) => {
 function LoginPage() {
   const navigate = useNavigate();
   const { enterDemoGuest } = useAuth();
+  const toast = useToast();
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState(null);
   const [targetPath, setTargetPath] = useState(null);
@@ -200,9 +202,10 @@ function LoginPage() {
         const target = window.location.href.replace(/https?:\/\//i, '');
         window.location.href = `intent://${target}#Intent;scheme=https;package=com.android.chrome;end`;
       } else {
-        alert('구글 로그인은 카카오톡 인앱 브라우저에서 보안상 제한됩니다.\n\n화면 우측 하단 [⋮] 점 세 개 버튼을 누른 후 [Safari로 열기]를 선택해주세요.');
+        toast.warning('구글 로그인은 카카오톡 인앱 브라우저에서 보안상 제한됩니다.\n화면 우측 하단 [⋮] 점 세 개 버튼을 누른 후 [Safari로 열기]를 선택해주세요.', 8000);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 자동 로그인 체크
@@ -247,14 +250,14 @@ function LoginPage() {
   const handleGoogleLogin = async () => {
     if (navigator.userAgent.match(/KAKAOTALK/i)) {
       if (navigator.userAgent.match(/Android/i)) return;
-      alert('화면 우측 하단의 메뉴를 눌러 [브라우저로 열기]를 해주세요.');
+      toast.warning('화면 우측 하단의 메뉴를 눌러 [브라우저로 열기]를 해주세요.');
       return;
     }
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
       console.error('로그인 에러:', error);
-      alert('로그인 실패: ' + error.message);
+      toast.error('로그인 실패: ' + error.message);
     }
   };
 

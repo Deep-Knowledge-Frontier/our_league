@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { CircularProgress, Box } from '@mui/material';
 import { AuthProvider } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import LoginPage from './pages/LoginPage';
 import TabLayout from './components/layout/TabLayout';
 
@@ -112,10 +113,12 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <ProdWarningBanner />
-        <AppContent />
-      </Router>
+      <ToastProvider>
+        <Router>
+          <ProdWarningBanner />
+          <AppContent />
+        </Router>
+      </ToastProvider>
     </AuthProvider>
   );
 }

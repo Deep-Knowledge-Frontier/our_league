@@ -331,37 +331,40 @@ function VotePage() {
     return slots;
   };
 
-  const handleVote = (date, type, isFull = true, start = null, end = null) => {
+  // 🆕 회원 투표 — 각 child path별 runTransaction으로 분리
+  // 이전: PlayerSelectionByDate/{date} 부모 노드 단위 (보안 규칙 강화 불가)
+  // 변경: 각 자식 path별로 runTransaction → 회원은 자기에게 허용된 path만 쓰기 가능
+  const handleVote = async (date, type, isFull = true, start = null, end = null) => {
     if (!getIsVotingAllowed(date)) { setAlertMessage('투표가 마감되었습니다.'); setOpenAlert(true); return; }
     if (!userName || !emailKey) { setAlertMessage('사용자 정보를 불러오는 중입니다.'); setOpenAlert(true); return; }
 
-    const dateRef = ref(db, `PlayerSelectionByDate/${clubName}/${date}`);
-    runTransaction(dateRef, (cur) => {
-      if (!cur) cur = { AttandPlayer: { all: [] }, AbsentPlayer: { all: [] }, UndecidedPlayer: { all: [] } };
-      if (!cur.AttandPlayer) cur.AttandPlayer = {};
-      if (!cur.AbsentPlayer) cur.AbsentPlayer = {};
-      if (!cur.UndecidedPlayer) cur.UndecidedPlayer = {};
+    const base = `PlayerSelectionByDate/${clubName}/${date}`;
 
-      let attend = normalizeNames(cur.AttandPlayer.all).filter((n) => n !== userName);
-      let absent = normalizeNames(cur.AbsentPlayer.all).filter((n) => n !== userName);
-      let undecided = normalizeNames(cur.UndecidedPlayer.all).filter((n) => n !== userName);
+    // 한 사람이 동시에 한 카테고리에만 속할 수 있도록 — 본인을 모든 리스트에서 제거 후 선택한 곳에만 추가
+    const updateList = (path, shouldInclude) =>
+      runTransaction(ref(db, path), (arr) => {
+        const list = normalizeNames(arr).filter((n) => n !== userName);
+        if (shouldInclude) list.push(userName);
+        return list;
+      });
 
-      if (type === 'attend') attend.push(userName);
-      else if (type === 'absent') absent.push(userName);
-      else if (type === 'undecided') undecided.push(userName);
+    const updateAttendTime = () =>
+      runTransaction(ref(db, `${base}/AttendTime/${emailKey}`), () => {
+        if (type !== 'attend') return null; // 불참/미정이면 본인 시간 정보 삭제
+        return { name: userName, full: !!isFull, start: isFull ? null : start, end: isFull ? null : end };
+      });
 
-      cur.AttandPlayer.all = attend;
-      cur.AbsentPlayer.all = absent;
-      cur.UndecidedPlayer.all = undecided;
-
-      if (!cur.AttendTime) cur.AttendTime = {};
-      if (type === 'attend') {
-        cur.AttendTime[emailKey] = { name: userName, full: !!isFull, start: isFull ? null : start, end: isFull ? null : end };
-      } else if (cur.AttendTime[emailKey]) {
-        delete cur.AttendTime[emailKey];
-      }
-      return cur;
-    }).catch((err) => alert('투표 에러: ' + err.message));
+    try {
+      await Promise.all([
+        updateList(`${base}/AttandPlayer/all`, type === 'attend'),
+        updateList(`${base}/AbsentPlayer/all`, type === 'absent'),
+        updateList(`${base}/UndecidedPlayer/all`, type === 'undecided'),
+        updateAttendTime(),
+      ]);
+    } catch (err) {
+      setAlertMessage('투표 에러: ' + (err?.message || err));
+      setOpenAlert(true);
+    }
   };
 
   const openAttendModeDialog = (dateKey, matchTime) => {
@@ -406,44 +409,56 @@ function VotePage() {
     setOpenGuestDialog(true);
   };
 
-  const handleAddGuest = () => {
+  // 🆕 용병 추가 — Guests/{emailKey}와 AttandPlayer/all에 각각 runTransaction
+  const handleAddGuest = async () => {
     const name = guestInputName.trim();
     if (!name) { setAlertMessage('용병 이름을 입력해주세요.'); setOpenAlert(true); return; }
 
-    const dateRef = ref(db, `PlayerSelectionByDate/${clubName}/${selectedMatchDate}`);
-    runTransaction(dateRef, (cur) => {
-      if (!cur) cur = {};
-      if (!cur.Guests) cur.Guests = {};
-      if (!cur.Guests[emailKey]) cur.Guests[emailKey] = [];
-      let myG = normalizeNames(cur.Guests[emailKey]);
-      if (!myG.includes(name)) myG.push(name);
-      cur.Guests[emailKey] = myG;
+    const base = `PlayerSelectionByDate/${clubName}/${selectedMatchDate}`;
+    const displayName = `${name} (용병)`;
 
-      if (!cur.AttandPlayer) cur.AttandPlayer = {};
-      let attend = normalizeNames(cur.AttandPlayer.all);
-      const displayName = `${name} (용병)`;
-      if (!attend.includes(displayName)) attend.push(displayName);
-      cur.AttandPlayer.all = attend;
-      return cur;
-    }).then(() => {
+    try {
+      await Promise.all([
+        // 본인 Guests 노드에 이름 추가
+        runTransaction(ref(db, `${base}/Guests/${emailKey}`), (arr) => {
+          const myG = normalizeNames(arr);
+          if (!myG.includes(name)) myG.push(name);
+          return myG;
+        }),
+        // 참석 명단에 "이름 (용병)" 추가
+        runTransaction(ref(db, `${base}/AttandPlayer/all`), (arr) => {
+          const attend = normalizeNames(arr);
+          if (!attend.includes(displayName)) attend.push(displayName);
+          return attend;
+        }),
+      ]);
       setGuestInputName('');
       setMyGuests((prev) => prev.includes(name) ? prev : [...prev, name]);
-    }).catch((err) => alert('용병 추가 실패: ' + err.message));
+    } catch (err) {
+      setAlertMessage('용병 추가 실패: ' + (err?.message || err));
+      setOpenAlert(true);
+    }
   };
 
-  const handleRemoveGuest = (guestName) => {
-    const dateRef = ref(db, `PlayerSelectionByDate/${clubName}/${selectedMatchDate}`);
-    runTransaction(dateRef, (cur) => {
-      if (!cur) return cur;
-      if (cur.Guests?.[emailKey]) {
-        cur.Guests[emailKey] = normalizeNames(cur.Guests[emailKey]).filter((n) => n !== guestName);
-      }
-      if (cur.AttandPlayer) {
-        cur.AttandPlayer.all = normalizeNames(cur.AttandPlayer.all).filter((n) => n !== `${guestName} (용병)`);
-      }
-      return cur;
-    }).then(() => setMyGuests((prev) => prev.filter((n) => n !== guestName)))
-      .catch((err) => alert('용병 삭제 실패: ' + err.message));
+  // 🆕 용병 삭제 — Guests/{emailKey}와 AttandPlayer/all에서 각각 제거
+  const handleRemoveGuest = async (guestName) => {
+    const base = `PlayerSelectionByDate/${clubName}/${selectedMatchDate}`;
+    const displayName = `${guestName} (용병)`;
+
+    try {
+      await Promise.all([
+        runTransaction(ref(db, `${base}/Guests/${emailKey}`), (arr) =>
+          normalizeNames(arr).filter((n) => n !== guestName)
+        ),
+        runTransaction(ref(db, `${base}/AttandPlayer/all`), (arr) =>
+          normalizeNames(arr).filter((n) => n !== displayName)
+        ),
+      ]);
+      setMyGuests((prev) => prev.filter((n) => n !== guestName));
+    } catch (err) {
+      setAlertMessage('용병 삭제 실패: ' + (err?.message || err));
+      setOpenAlert(true);
+    }
   };
 
   // 🆕 날짜별 팀 구성 버튼 상태 계산 (관리탭 상태에 따라 동적 문구/색/이동 경로)
