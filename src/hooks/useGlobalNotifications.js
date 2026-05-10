@@ -40,7 +40,7 @@ export function useGlobalNotifications() {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        for (const [dateKey, match] of Object.entries(matches)) {
+        for (const match of Object.values(matches)) {
           if (!match?.date) continue;
           const matchDate = new Date(match.date);
           matchDate.setHours(0, 0, 0, 0);

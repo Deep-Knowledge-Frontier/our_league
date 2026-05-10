@@ -7,7 +7,6 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText, Slide,
   List, ListItem, ListItemText, Divider, ListItemButton, ListItemIcon,
   TextField, IconButton,
-  FormControl, InputLabel, Select, MenuItem
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
@@ -43,14 +42,12 @@ function VotePage() {
   const [loading, setLoading] = useState(true);
   const [matchList, setMatchList] = useState([]);
   const [votesData, setVotesData] = useState({});
-  const [teamExistence, setTeamExistence] = useState({});
   // 🆕 날짜별 팀/드래프트/포메이션 공개 상태 (관리탭 변경 사항 실시간 반영)
   const [teamInfo, setTeamInfo] = useState({}); // {[date]: { hasTeam, draftStatus, formationOpen }}
 
   // 다이얼로그 상태
   const [openList, setOpenList] = useState(false);
   const [dialogDateStr, setDialogDateStr] = useState('');
-  const [dialogSubTitle, setDialogSubTitle] = useState('');
   const [listNames, setListNames] = useState([]);
   const [dialogType, setDialogType] = useState('');
   const [dialogDateKey, setDialogDateKey] = useState('');
@@ -194,20 +191,15 @@ function VotePage() {
 
     const unsubVotes = onValue(votesRef, (snap) => {
       if (snap.exists()) {
-        const vd = snap.val();
-        setVotesData(vd);
-        const em = {};
-        Object.keys(vd).forEach((dk) => { if (vd[dk]?.AttandPlayer?.A) em[dk] = true; });
-        setTeamExistence(em);
+        setVotesData(snap.val());
       } else {
         setVotesData({});
-        setTeamExistence({});
       }
       setLoading(false);
     });
 
     return () => { unsubMatches(); unsubVotes(); };
-  }, [authReady, user, clubName]);
+  }, [authReady, user, clubName, isDemoGuest]);
 
   // 날씨 로드
   useEffect(() => {
@@ -297,9 +289,7 @@ function VotePage() {
 
   const openNameListDialog = (date, type) => {
     const names = getListByType(date, type);
-    const typeLabel = type === 'attend' ? '참석' : type === 'absent' ? '불참' : '미정';
     setDialogDateStr(formatDateWithDay(date));
-    setDialogSubTitle(`${typeLabel} 명단 (${names.length}명)`);
     setListNames(names);
     setDialogType(type);
     setDialogDateKey(date);

@@ -78,6 +78,13 @@
       }
     },
 
+    "MatchTimer": {
+      ".read": "auth != null",
+      "$clubName": {
+        ".write": "auth != null && (root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+      }
+    },
+
     "PlayerSelectionByDate": {
       ".read": "auth != null",
       "$clubName": {

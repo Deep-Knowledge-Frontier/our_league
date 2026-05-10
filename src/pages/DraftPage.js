@@ -73,12 +73,14 @@ export default function DraftPage() {
   const [captainList, setCaptainList] = useState([]); // 주장들 (순서 = 픽 순서)
   const [snake, setSnake] = useState(true);
   // 기존 draft가 있을 때, 로컬 captainList를 자동으로 sync (관리자 편의)
+  // 의도적으로 status에만 의존 — 작업 중 captain/pickOrder 변경 시 사용자 입력이 덮어쓰여 사라지는 것 방지
   useEffect(() => {
     if (draft?.captains && Array.isArray(draft?.pickOrder)) {
       const ordered = draft.pickOrder.map((c) => draft.captains[c]).filter(Boolean);
       setCaptainList(ordered);
       if (typeof draft.snake === 'boolean') setSnake(draft.snake);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft?.status]); // status 변화 시에만 sync (작업 중 덮어쓰기 방지)
 
   // ── 다이얼로그 ──

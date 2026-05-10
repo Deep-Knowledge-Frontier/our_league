@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ref, set, get, push } from 'firebase/database';
+import { ref, set, get } from 'firebase/database';
 import {
   Container, TextField, Button, Typography, Checkbox,
   FormControlLabel, Box, CircularProgress, Card, CardContent,
@@ -99,7 +99,6 @@ function RegisterPage() {
   const goBack = () => { setSlideDir('left'); setStep(s => Math.max(s - 1, 0)); };
 
   const selectClub = (club) => { setFormData(p => ({ ...p, club })); setTimeout(goNext, 200); };
-  const selectPosition = (pos) => { setFormData(p => ({ ...p, position: pos })); setTimeout(goNext, 200); };
   const selectSkill = (skill) => { setFormData(p => ({ ...p, skill })); setTimeout(goNext, 200); };
 
   const handleCreateClub = async () => {

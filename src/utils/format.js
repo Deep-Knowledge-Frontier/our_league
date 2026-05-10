@@ -41,19 +41,44 @@ export const formatDateWithDay = (dateKey) => {
   return `${dateKey} (${dayName})`;
 };
 
-// 경기 시간에서 시/분 추출
+// 경기 시간에서 시/분 추출 — 다양한 포맷 대응
+//   "09:30" / "9:30"        → {hour:9, minute:30}
+//   "9시 30분" / "9시30분"    → {hour:9, minute:30}
+//   "9시"                    → {hour:9, minute:0}
+//   ""/null/잘못된 입력      → {hour:-1, minute:0}
 export const extractHourMinute = (timeStr) => {
   try {
     if (!timeStr) return { hour: -1, minute: 0 };
-    let t = String(timeStr).trim();
+    const t = String(timeStr).trim();
     if (!t) return { hour: -1, minute: 0 };
-    t = t.replace('분', '');
-    if (t.includes('시')) t = t.replace('시', ':00');
-    const parts = t.split(':');
-    const hour = parts[0] != null ? parseInt(parts[0].trim(), 10) : -1;
-    const minute = parts[1] != null ? parseInt(parts[1].trim(), 10) : 0;
-    if (!Number.isFinite(hour)) return { hour: -1, minute: 0 };
-    return { hour, minute: Number.isFinite(minute) ? minute : 0 };
+
+    // 1) 한글 "X시 Y분" / "X시Y분" 우선 처리 (정규식 추출)
+    const koreanMatch = t.match(/(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분)?/);
+    if (koreanMatch) {
+      const hour = parseInt(koreanMatch[1], 10);
+      const minute = koreanMatch[2] != null ? parseInt(koreanMatch[2], 10) : 0;
+      if (Number.isFinite(hour)) {
+        return { hour, minute: Number.isFinite(minute) ? minute : 0 };
+      }
+    }
+
+    // 2) "HH:MM" / "H:M" 포맷
+    const colonMatch = t.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (colonMatch) {
+      const hour = parseInt(colonMatch[1], 10);
+      const minute = parseInt(colonMatch[2], 10);
+      if (Number.isFinite(hour)) {
+        return { hour, minute: Number.isFinite(minute) ? minute : 0 };
+      }
+    }
+
+    // 3) "HH" 단일 시간
+    const hourOnly = parseInt(t, 10);
+    if (Number.isFinite(hourOnly) && /^\d+$/.test(t)) {
+      return { hour: hourOnly, minute: 0 };
+    }
+
+    return { hour: -1, minute: 0 };
   } catch {
     return { hour: -1, minute: 0 };
   }

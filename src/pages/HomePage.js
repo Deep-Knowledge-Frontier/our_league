@@ -272,7 +272,7 @@ function HomePage() {
       setLoading(false);
     };
     loadData();
-  }, [authReady, user, clubName, emailKey, userName]);
+  }, [authReady, user, clubName, emailKey, userName, isDemoGuest]);
 
 
   const loadDemoData = async () => {
@@ -541,7 +541,6 @@ function HomePage() {
   }
 
   const medalLabels = ['🥇', '🥈', '🥉', '4', '5'];
-  const dday = nextMatch ? getDaysDiff(nextMatch.date) : -1;
 
   return (
     <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>

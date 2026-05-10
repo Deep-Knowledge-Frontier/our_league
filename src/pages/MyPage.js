@@ -38,29 +38,11 @@ import ForceGraph2D from 'react-force-graph-2d';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotificationPrefs } from '../hooks/useNotificationPrefs';
 import { calcMean, calcStd, calculateArchetype } from '../utils/stats';
+import { extractTeamRoster } from '../utils/roster';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 import { MyPageSkeleton } from '../components/common/SkeletonLoading';
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, CategoryScale, LinearScale);
-
-/* -- 로스터 추출 헬퍼 -- */
-function extractTeamRoster(rosterData, teamName, fallbackKey) {
-  if (!rosterData) return [];
-  const toArr = v => {
-    if (!v) return [];
-    if (Array.isArray(v)) return v.filter(Boolean);
-    if (typeof v === 'object') return Object.values(v).filter(Boolean);
-    return [v];
-  };
-  if (rosterData[teamName]) return toArr(rosterData[teamName]);
-  const keys = Object.keys(rosterData).sort();
-  if (fallbackKey === 'team1' && rosterData[keys[0]]) return toArr(rosterData[keys[0]]);
-  if (fallbackKey === 'team2' && keys.length > 1 && rosterData[keys[1]]) return toArr(rosterData[keys[1]]);
-  if (keys.length >= 2) {
-    return fallbackKey === 'team1' ? toArr(rosterData[keys[0]]) : toArr(rosterData[keys[1]]);
-  }
-  return [];
-}
 
 export default function MyPage() {
   const navigate = useNavigate();
@@ -226,6 +208,7 @@ export default function MyPage() {
             if (date < cutoff) continue;
             if (dayInfo?.dailyMvp === userName) dailyMvp++;
             if (dayInfo?.matches) {
+              // eslint-disable-next-line no-loop-func
               Object.values(dayInfo.matches).forEach(m => {
                 if (m.mvp === userName) gameMvp++;
               });
@@ -292,24 +275,36 @@ export default function MyPage() {
       let totalGames = 0, totalGoals = 0, totalAssists = 0;
       let totalWins = 0, totalLosses = 0, totalDraws = 0;
       let totalConceded = 0, totalCleanSheets = 0;
+      let totalTeamScored = 0;        // 🆕 본인이 출전한 경기에서 우리 팀이 넣은 골 합계
+      let totalGoalDiffSum = 0;       // 🆕 본인이 출전한 경기의 (우리팀 - 상대팀) 누적
       let totalMatchDays = 0;
       let mvpCount = 0;
       const teammateMap = {};
 
-      for (const date of dates) {
+      // 🆕 모든 일자의 로스터 + 경기 데이터를 병렬 로드 (이전: 직렬 await 루프 → N×레이턴시)
+      // 6개월치 60~120일 기준: 12~24초 → 1~2초로 단축
+      const dateLoads = await Promise.all(dates.map(async (date) => {
+        const [rosterSnap, dateSnap] = await Promise.all([
+          get(ref(db, `PlayerSelectionByDate/${clubName}/${date}`)),
+          get(ref(db, `${clubName}/${date}`)),
+        ]);
+        return { date, rosterSnap, dateSnap };
+      }));
+
+      for (const { date, rosterSnap, dateSnap } of dateLoads) {
         totalMatchDays++;
-        const rosterSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${date}`));
-        const dateSnap = await get(ref(db, `${clubName}/${date}`));
         if (!dateSnap.exists()) continue;
 
         const dayInfo = dailyData[date];
         if (dayInfo?.dailyMvp === playerName) mvpCount++;
         if (dayInfo?.matches) {
+          // eslint-disable-next-line no-loop-func
           Object.values(dayInfo.matches).forEach(m => {
             if (m.mvp === playerName) mvpCount++;
           });
         }
 
+        // eslint-disable-next-line no-loop-func
         dateSnap.forEach(gameChild => {
           if (!gameChild.key.startsWith('game')) return;
           const g = gameChild.val();
@@ -342,6 +337,8 @@ export default function MyPage() {
 
           totalGames++;
           totalConceded += oppScore;
+          totalTeamScored += myScore;                  // 🆕 우리 팀 득점 누적
+          totalGoalDiffSum += (myScore - oppScore);    // 🆕 팀 득실차 누적
           if (oppScore === 0) totalCleanSheets++;
 
           const won = myScore > oppScore;
@@ -381,10 +378,12 @@ export default function MyPage() {
         totalGames, totalGoals, totalAssists,
         totalWins, totalLosses, totalDraws,
         totalConceded, totalCleanSheets, totalMatchDays, mvpCount,
+        totalTeamScored,                                 // 🆕 보존
         goalsPerGame: (totalGoals / totalGames).toFixed(2),
         assistsPerGame: (totalAssists / totalGames).toFixed(2),
         concededPerGame: (totalConceded / totalGames).toFixed(2),
-        goalDiffPerGame: ((totalGoals - totalConceded) / totalGames).toFixed(2),
+        // 🆕 팀 득실차 — 경기결과(ResultsPage)와 동일한 의미: (우리팀 점수 − 상대팀 점수)의 평균
+        goalDiffPerGame: (totalGoalDiffSum / totalGames).toFixed(2),
         winRate: Math.round((totalWins / totalGames) * 100),
       });
 
@@ -432,13 +431,19 @@ export default function MyPage() {
       const tmMap = {};
       const minGames = period === 'all' ? 15 : period === 'season' ? 10 : 13;
 
-      for (const date of dates) {
+      // 🆕 모든 날짜를 병렬 로드 (이전: 직렬 → N×레이턴시)
+      const dateLoads = await Promise.all(dates.map(async (date) => {
         const [rosterSnap, dateSnap] = await Promise.all([
           get(ref(db, `PlayerSelectionByDate/${clubName}/${date}`)),
           get(ref(db, `${clubName}/${date}`)),
         ]);
+        return { date, rosterSnap, dateSnap };
+      }));
+
+      for (const { rosterSnap, dateSnap } of dateLoads) {
         if (!dateSnap.exists() || !rosterSnap.exists()) continue;
 
+        // eslint-disable-next-line no-loop-func
         dateSnap.forEach(gameChild => {
           if (!gameChild.key.startsWith('game')) return;
           const g = gameChild.val();
@@ -498,6 +503,8 @@ export default function MyPage() {
       return;
     }
     loadTeammatesForPeriod(teammatePeriod);
+    // 의도적으로 teammates / loading 미포함 — 기간 변경 시에만 트리거 (데이터 갱신마다 재실행 방지)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teammatePeriod, loadTeammatesForPeriod, isDemoGuest]);
 
   // 통계 기간별 로드
@@ -525,7 +532,11 @@ export default function MyPage() {
           goalsPerGame: d.goalsPerGame || (d.participatedMatches > 0 ? (d.goals / d.participatedMatches).toFixed(2) : '0'),
           assistsPerGame: d.assistsPerGame || (d.participatedMatches > 0 ? (d.assists / d.participatedMatches).toFixed(2) : '0'),
           concededPerGame: d.concededPerGame || (d.participatedMatches > 0 ? (d.goalsConceded / d.participatedMatches).toFixed(2) : '0'),
-          goalDiffPerGame: d.goalDiffPerGame || (d.participatedMatches > 0 ? (((d.goals || 0) - (d.goalsConceded || 0)) / d.participatedMatches).toFixed(2) : '0'),
+          // 🆕 팀 득실차 — PlayerStatsBackup의 avgGoalDiffPerGame 사용 (AdminPage가 (myScore-oppScore)/pm로 정확히 계산함)
+          //    이전 코드는 'goalDiffPerGame'(존재하지 않는 필드)을 시도하다 실패 → fallback에서 (개인골 - 상대팀골) 비대칭 계산
+          goalDiffPerGame: d.avgGoalDiffPerGame != null
+            ? Number(d.avgGoalDiffPerGame).toFixed(2)
+            : '0.00',
           winRate: d.winRate || (d.participatedMatches > 0 ? Math.round(((d.wins || 0) / d.participatedMatches) * 100) : 0),
         };
         statsCache.current[period] = stats;
@@ -1612,6 +1623,9 @@ export default function MyPage() {
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
+                    // 🆕 가장자리 점/라벨 잘림 방지
+                    layout: { padding: { top: 24, right: 18, left: 8, bottom: 4 } },
+                    clip: false,
                     onClick: (_e, elements) => {
                       if (!elements || elements.length === 0) return;
                       const idx = elements[0].index;
@@ -1659,8 +1673,6 @@ export default function MyPage() {
         {/* 🆕 주차별 승점율 추이 카드 */}
         {pointRateHistory && pointRateHistory.length >= 2 && (() => {
           const last = pointRateHistory[pointRateHistory.length - 1];
-          const prev = pointRateHistory[pointRateHistory.length - 2];
-          const diff = last.pointRate - prev.pointRate;
           return (
             <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -1747,6 +1759,9 @@ export default function MyPage() {
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
+                    // 🆕 가장자리 점 잘림 방지
+                    layout: { padding: { top: 8, right: 16, left: 8, bottom: 4 } },
+                    clip: false,
                     onClick: (_e, elements) => {
                       if (!elements || elements.length === 0) return;
                       const idx = elements[0].index;

@@ -24,6 +24,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getFormations } from '../config/formations';
 import FormationField from '../components/FormationField';
+import MatchTimer from '../components/MatchTimer';
 
 const OWN_GOAL_LABEL = '자책골';
 const NO_MVP = '없음';
@@ -51,7 +52,7 @@ export default function ScoreRecordPage() {
   const teamCountParam = parseInt(searchParams.get('teamCount') || '3', 10);
   const gameParam = parseInt(searchParams.get('game') || '1', 10);
 
-  const { clubName, isAdmin, isModerator } = useAuth();
+  const { clubName, isAdmin, isModerator, isDemoGuest, userName } = useAuth();
   const canEdit = isAdmin || isModerator;
 
   const [loading, setLoading] = useState(true);
@@ -794,6 +795,17 @@ export default function ScoreRecordPage() {
       </Box>
 
       <Container maxWidth="sm" sx={{ mt: -2 }}>
+        {/* 🆕 경기 타이머 — Firebase 동기화 (운영자만 조작, 회원은 조회) */}
+        <MatchTimer
+          clubName={clubName}
+          dateParam={dateParam}
+          gameNumber={gameNumber}
+          canEdit={canEdit}
+          isDemoGuest={isDemoGuest}
+          userName={userName}
+          label={isQuarterLabel ? `Q${gameNumber}` : `${gameNumber}경기`}
+        />
+
         {/* 스코어보드 */}
         <Box sx={{ bgcolor: 'white', borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.08)', p: 2.5, mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>

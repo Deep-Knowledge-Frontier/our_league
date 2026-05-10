@@ -313,7 +313,7 @@ function ResultsPage() {
     } finally {
       if (aliveRef.current) setLoadingLeaderboard(false);
     }
-  }, [attendanceThreshold, statsPeriod, loadRegisteredSet, loadStats]);
+  }, [attendanceThreshold, loadRegisteredSet, loadStats]);
 
   const loadLeagueList = useCallback(async () => {
     setLoadingLeagueList(true);
