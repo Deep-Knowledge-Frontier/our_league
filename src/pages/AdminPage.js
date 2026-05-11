@@ -1641,7 +1641,7 @@ export default function AdminPage() {
               pointRate: +(p.pointRate || 0).toFixed(1),
               avgGoalDiffPerGame: +(p.avgGoalDiffPerGame || 0).toFixed(2),
               participatedMatches: p.participatedMatches || 0,
-              // 🆕 weeklyOnly: 그 주(월~일)만의 W/D/L/games/pointRate
+              // 🆕 weeklyOnly: 그 주(월~일)만의 W/D/L/games/pointRate/goals/assists
               weeklyOnly: hasWeekly ? {
                 wins: wo.wins || 0,
                 draws: wo.draws || 0,
@@ -1649,6 +1649,8 @@ export default function AdminPage() {
                 games: wo.participatedMatches || 0,
                 pointRate: +(wo.pointRate || 0).toFixed(1),
                 avgGoalDiffPerGame: +(wo.avgGoalDiffPerGame || 0).toFixed(2),
+                goals: wo.goals || 0,           // 🆕 그 주의 골
+                assists: wo.assists || 0,       // 🆕 그 주의 도움
               } : null,
             };
           });

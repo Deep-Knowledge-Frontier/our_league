@@ -784,6 +784,10 @@ export default function MyPage() {
           draws: wo.draws || 0,
           losses: wo.losses || 0,
           games: wo.games || 0,
+          // 🆕 추가 통계
+          goals: wo.goals != null ? Number(wo.goals) : null,
+          assists: wo.assists != null ? Number(wo.assists) : null,
+          avgGoalDiffPerGame: wo.avgGoalDiffPerGame != null ? Number(wo.avgGoalDiffPerGame) : null,
           attended: true,
           weekOnly: true,
         };
@@ -795,6 +799,7 @@ export default function MyPage() {
           week: weekKey,
           pointRate: 0,
           wins: 0, draws: 0, losses: 0, games: 0,
+          goals: null, assists: null, avgGoalDiffPerGame: null,  // 🆕
           attended: false,
           weekOnly: true,
         };
@@ -1813,7 +1818,7 @@ export default function MyPage() {
             const wk = weekDetailDialog.weekKey;
             const source = weekDetailDialog.source || 'rank';
             const me = weeklyStandings?.[wk]?.[userName] || null;
-            const wo = me?.weeklyOnly || null;
+            // wo(weeklyOnly)는 ph에 이미 통합되어 표시되므로 별도 변수 제거
             const rh = rankHistory?.find(r => r.week === wk);
             const ph = pointRateHistory?.find(r => r.week === wk);
             const fmt = (v, digits = 1, suffix = '') =>
@@ -1906,37 +1911,66 @@ export default function MyPage() {
                         bgcolor: '#E8F5E9', border: '1px solid #C8E6C9',
                       }}>
                         {ph && ph.attended ? (
-                          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                            <Box>
-                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>출전</Typography>
-                              <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
-                                {ph.games}경기
-                              </Typography>
+                          <>
+                            {/* 1행: 핵심 지표 (출전, 승점율, 승/무/패) */}
+                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, mb: 1.2 }}>
+                              <Box>
+                                <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>출전</Typography>
+                                <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
+                                  {ph.games}경기
+                                </Typography>
+                              </Box>
+                              <Box>
+                                <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승점율</Typography>
+                                <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
+                                  {fmt(ph.pointRate, 1, '%')}
+                                </Typography>
+                              </Box>
+                              <Box>
+                                <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승/무/패</Typography>
+                                <Typography sx={{ fontSize: '0.95rem', fontWeight: 800, color: '#333' }}>
+                                  {ph.wins}·{ph.draws}·{ph.losses}
+                                </Typography>
+                              </Box>
                             </Box>
-                            <Box>
-                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승점율</Typography>
-                              <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
-                                {fmt(ph.pointRate, 1, '%')}
-                              </Typography>
+
+                            {/* 구분선 */}
+                            <Box sx={{ borderTop: '1px dashed #A5D6A7', my: 0.6 }} />
+
+                            {/* 2행: 개인 기여 (골, 도움, 득실차) */}
+                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, mt: 1.2 }}>
+                              <Box>
+                                <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>골</Typography>
+                                <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
+                                  {ph.goals != null ? `${ph.goals}골` : '-'}
+                                </Typography>
+                              </Box>
+                              <Box>
+                                <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>도움</Typography>
+                                <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
+                                  {ph.assists != null ? `${ph.assists}도움` : '-'}
+                                </Typography>
+                              </Box>
+                              <Box>
+                                <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>득실차/경기</Typography>
+                                <Typography sx={{
+                                  fontSize: '0.95rem', fontWeight: 800,
+                                  color: (ph.avgGoalDiffPerGame || 0) >= 0 ? '#2E7D32' : '#C62828',
+                                }}>
+                                  {ph.avgGoalDiffPerGame != null
+                                    ? `${ph.avgGoalDiffPerGame >= 0 ? '+' : ''}${ph.avgGoalDiffPerGame.toFixed(2)}`
+                                    : '-'}
+                                </Typography>
+                              </Box>
                             </Box>
-                            <Box>
-                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>승/무/패</Typography>
-                              <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: '#333' }}>
-                                {ph.wins} · {ph.draws} · {ph.losses}
+
+                            {/* 백업 호환 안내 (골/도움이 null이면 옛 백업) */}
+                            {(ph.goals == null || ph.assists == null) && (
+                              <Typography sx={{ fontSize: '0.65rem', color: '#FF6F00', mt: 1, textAlign: 'center' }}>
+                                ⚠️ 골·도움 데이터는 다음 통계 백업 후 표시됩니다.
                               </Typography>
-                            </Box>
-                            <Box>
-                              <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>골득실</Typography>
-                              <Typography sx={{
-                                fontSize: '0.92rem', fontWeight: 800,
-                                color: (wo?.avgGoalDiffPerGame || 0) >= 0 ? '#2E7D32' : '#C62828',
-                              }}>
-                                {wo?.avgGoalDiffPerGame != null
-                                  ? `${wo.avgGoalDiffPerGame >= 0 ? '+' : ''}${wo.avgGoalDiffPerGame.toFixed(2)}`
-                                  : '-'}
-                              </Typography>
-                            </Box>
-                          </Box>
+                            )}
+                          </>
                         ) : (
                           <Typography sx={{ fontSize: '0.9rem', color: '#666', textAlign: 'center', py: 1 }}>
                             🚫 본인 미출전 (팀 경기는 있었음)
