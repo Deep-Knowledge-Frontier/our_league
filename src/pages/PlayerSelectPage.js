@@ -23,6 +23,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { softmaxPercent, averageExcludeZero } from '../utils/stats';
 import { getFormations, getDefaultFormation } from '../config/formations';
 import FormationField from '../components/FormationField';
@@ -246,6 +247,7 @@ export default function PlayerSelectPage() {
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.get('date') || new Date().toISOString().slice(0, 10);
   const { clubName, userName, isAdmin, isModerator, isMaster } = useAuth();
+  const toast = useToast();
   const canEdit = isAdmin || isModerator;
   // 주장은 자기 팀의 포메이션만 편집 가능 (선수 구성/경기순서는 admin 전용)
   const canEditTeamFormation = (code) => canEdit || (!!userName && teamCaptains?.[code] === userName);
@@ -605,7 +607,7 @@ export default function PlayerSelectPage() {
 
   const runDraft = useCallback(() => {
     const picked = Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k);
-    if (picked.length < 2) { alert('최소 2명 이상 선택해주세요.'); return; }
+    if (picked.length < 2) { toast.warning('최소 2명 이상 선택해주세요.'); return; }
     const result = snakeDraft(picked, teamCount, statsMap);
     const newTeams = { A: result[0] || [], B: result[1] || [], C: teamCount === 3 ? (result[2] || []) : [] };
     setTeams(newTeams);
@@ -640,11 +642,11 @@ export default function PlayerSelectPage() {
     setShowResult(true);
     setIsAiOptimized(false);
     setSynergyScores(null);
-  }, [selectedPlayers, teamCount, statsMap, matchOrder, generateDefaultMatchOrder, clubFormation, clubType, clubName, dateParam]);
+  }, [selectedPlayers, teamCount, statsMap, matchOrder, generateDefaultMatchOrder, clubFormation, clubType, clubName, dateParam, toast]);
 
   const runAiDraft = useCallback(() => {
     const picked = Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k);
-    if (picked.length < 2) { alert('최소 2명 이상 선택해주세요.'); return; }
+    if (picked.length < 2) { toast.warning('최소 2명 이상 선택해주세요.'); return; }
 
     setAiOptimizing(true);
     // setTimeout으로 UI 블로킹 방지
@@ -688,7 +690,7 @@ export default function PlayerSelectPage() {
       setSynergyScores(synScores);
       setAiOptimizing(false);
     }, 50);
-  }, [selectedPlayers, teamCount, statsMap, networkData, matchOrder, generateDefaultMatchOrder, clubFormation, clubType, clubName, dateParam]);
+  }, [selectedPlayers, teamCount, statsMap, networkData, matchOrder, generateDefaultMatchOrder, clubFormation, clubType, clubName, dateParam, toast]);
 
   const saveTeams = useCallback(async (teamsToSave, keyPopToSave, cb) => {
     const base = `PlayerSelectionByDate/${clubName}/${dateParam}/AttandPlayer`;
@@ -763,8 +765,8 @@ export default function PlayerSelectPage() {
       }
       cb?.();
     }
-    catch (e) { alert('저장 실패: ' + e.message); }
-  }, [clubName, dateParam, teamCount, matchOrder, teamFormations, quarterFormations, rebuildFormationForRoster, clubFormation]);
+    catch (e) { toast.error('저장 실패: ' + e.message); }
+  }, [clubName, dateParam, teamCount, matchOrder, teamFormations, quarterFormations, rebuildFormationForRoster, clubFormation, toast]);
 
   // 축구 2팀 쿼터 모드: matchesPerTeam = quarterCount (각 쿼터가 독립 경기)
   // formationEnabled 여부와 무관하게 기존 축구 2팀 쿼터 개수 유지
@@ -833,7 +835,7 @@ export default function PlayerSelectPage() {
         navigate('/admin?action=rebuild-stats');
       }
     } catch (e) {
-      alert('삭제 실패: ' + e.message);
+      toast.error('삭제 실패: ' + e.message);
     }
   };
 
@@ -841,7 +843,7 @@ export default function PlayerSelectPage() {
   const restoreMatchRecords = async () => {
     try {
       const backupSnap = await get(ref(db, `DeletedRecords/${clubName}/${dateParam}`));
-      if (!backupSnap.exists()) { alert('복구할 백업이 없습니다.'); return; }
+      if (!backupSnap.exists()) { toast.warning('복구할 백업이 없습니다.'); return; }
       const backup = backupSnap.val();
       const updates = {};
       if (backup.games) updates[`${clubName}/${dateParam}`] = backup.games;
@@ -851,7 +853,7 @@ export default function PlayerSelectPage() {
       setHasMatchResults(true);
       setHasDeletedBackup(false);
     } catch (e) {
-      alert('복구 실패: ' + e.message);
+      toast.error('복구 실패: ' + e.message);
     }
   };
 
@@ -1400,7 +1402,7 @@ export default function PlayerSelectPage() {
                         const codes2 = ['A', 'B'];
                         const fmId = clubFormation || getDefaultFormation(clubType);
                         const fmDef = getFormations(clubType)[fmId];
-                        if (!fmDef) { alert('포메이션 정의를 찾을 수 없습니다.'); return; }
+                        if (!fmDef) { toast.error('포메이션 정의를 찾을 수 없습니다.'); return; }
 
                         const newTeamFormations = { ...teamFormations };
                         const newQuarterFormations = { ...quarterFormations };
@@ -1432,7 +1434,7 @@ export default function PlayerSelectPage() {
                         setQuarterFormations(newQuarterFormations);
                         await update(ref(db), updates);
                       } catch (e) {
-                        alert('포메이션 재설정 실패: ' + e.message);
+                        toast.error('포메이션 재설정 실패: ' + e.message);
                       }
                     }}
                     sx={{
@@ -1772,7 +1774,7 @@ export default function PlayerSelectPage() {
                       setFormationOpen(newVal);
                       await set(ref(db, `PlayerSelectionByDate/${clubName}/${dateParam}/FormationOpen`), newVal);
                     } catch (e) {
-                      alert('처리 실패: ' + e.message);
+                      toast.error('처리 실패: ' + e.message);
                     }
                   }}
                   sx={{

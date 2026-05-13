@@ -14,6 +14,7 @@ import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import CloseIcon from '@mui/icons-material/Close';
 import ShareIcon from '@mui/icons-material/Share';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { calcMean, calcStd } from '../utils/stats';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 import { shareDailyResultsImage } from '../utils/shareDailyResults';
@@ -36,6 +37,7 @@ function ResultsPage() {
   const navigate = useNavigate();
 
   const { clubName, userName, loading: authLoading, isDemoGuest } = useAuth();
+  const toast = useToast();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -545,11 +547,11 @@ function ResultsPage() {
         URL.revokeObjectURL(url);
       }
     } catch (err) {
-      alert('이미지 생성/공유 실패: ' + (err.message || err));
+      toast.error('이미지 생성/공유 실패: ' + (err.message || err));
     } finally {
       setSharingDate(null);
     }
-  }, [sharingDate, dataClub]);
+  }, [sharingDate, dataClub, toast]);
 
   const handleMvpClick = useCallback(async (mvpName, e) => {
     if (e) e.stopPropagation();

@@ -38,6 +38,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import OnboardingModal from '../components/OnboardingModal';
 import { useOnboarding } from '../hooks/useOnboarding';
 
@@ -45,6 +46,7 @@ export default function AdminPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { clubName, isAdmin, isModerator, isMaster, user, emailKey, loading: authLoading, authReady } = useAuth();
+  const toast = useToast();
   const canAccess = isAdmin || isModerator || isMaster;
 
   // 관리자 온보딩 투어 (첫 방문 시 자동 표시)
@@ -367,7 +369,7 @@ export default function AdminPage() {
       // 4) 충돌 있으면 선택 다이얼로그
       setMergeChoiceDialog({ req, existingEntry, orphanedUsers, playersData });
     } catch (e) {
-      alert('승인 처리 실패: ' + e.message);
+      toast.error('승인 처리 실패: ' + e.message);
     }
   };
 
@@ -435,11 +437,11 @@ export default function AdminPage() {
       if (mode === 'merge' && orphanedUsers.length > 0) {
         successMsg += `\n옛 계정 ${orphanedUsers.length}개의 클럽 연결을 해제했습니다.`;
       }
-      alert(successMsg);
+      toast.success(successMsg);
       setMergeChoiceDialog(null);
       setJoinRequestDialog(null);
     } catch (e) {
-      alert('승인 실패: ' + e.message);
+      toast.error('승인 실패: ' + e.message);
     } finally {
       setApproving(false);
     }
@@ -456,10 +458,10 @@ export default function AdminPage() {
       updates[`Users/${emailKey}/pending`] = null;
       updates[`Users/${emailKey}/club`] = null;
       await update(ref(db), updates);
-      alert(`${req.name}님의 가입을 거부했습니다.`);
+      toast.info(`${req.name}님의 가입을 거부했습니다.`);
       setJoinRequestDialog(null);
     } catch (e) {
-      alert('거부 실패: ' + e.message);
+      toast.error('거부 실패: ' + e.message);
     }
   };
 
@@ -509,7 +511,7 @@ export default function AdminPage() {
       setDeleteMatchDialog(null);
       setDeleteMatchAck(false);
     } catch (e) {
-      alert('삭제 실패: ' + e.message);
+      toast.error('삭제 실패: ' + e.message);
     } finally {
       setDeletingMatch(false);
     }
@@ -538,7 +540,7 @@ export default function AdminPage() {
   // 다음(Kakao) 우편번호 검색 — 건물명을 자동으로 장소명으로 사용
   const openDaumSearch = () => {
     if (!window.daum || !window.daum.Postcode) {
-      alert('주소 검색 서비스를 불러오지 못했습니다.');
+      toast.error('주소 검색 서비스를 불러오지 못했습니다.');
       return;
     }
     new window.daum.Postcode({
@@ -560,7 +562,7 @@ export default function AdminPage() {
     if (!permName.trim()) return;
     // Users에서 이름으로 검색
     const usersSnap = await get(ref(db, 'Users'));
-    if (!usersSnap.exists()) { alert('사용자를 찾을 수 없습니다.'); return; }
+    if (!usersSnap.exists()) { toast.error('사용자를 찾을 수 없습니다.'); return; }
     let foundKey = null, foundEmail = null;
     usersSnap.forEach(child => {
       if (child.val().name === permName.trim()) {
@@ -568,7 +570,7 @@ export default function AdminPage() {
         foundEmail = child.key.replace(/,/g, '.');
       }
     });
-    if (!foundKey) { alert('해당 이름의 사용자를 찾을 수 없습니다.'); return; }
+    if (!foundKey) { toast.error('해당 이름의 사용자를 찾을 수 없습니다.'); return; }
 
     await set(ref(db, `AllowedUsers/${permRole}/${foundKey}`), {
       name: permName.trim(),
@@ -614,18 +616,18 @@ export default function AdminPage() {
       setEditPermDialog(false);
       await loadAllowedUsers();
     } catch (e) {
-      alert('권한 변경 실패: ' + e.message);
+      toast.error('권한 변경 실패: ' + e.message);
     }
   };
 
   const addPlayer = async () => {
     const name = newPlayerName.trim();
     if (!name) return;
-    if (players.some(p => p.name === name)) { alert('이미 등록된 선수입니다.'); return; }
+    if (players.some(p => p.name === name)) { toast.warning('이미 등록된 선수입니다.'); return; }
     const today = new Date().toISOString().slice(0, 10);
     const num = newPlayerNumber ? parseInt(newPlayerNumber, 10) : null;
     if (num !== null && (Number.isNaN(num) || num < 0 || num > 99)) {
-      alert('등번호는 0~99 사이 숫자여야 합니다.'); return;
+      toast.warning('등번호는 0~99 사이 숫자여야 합니다.'); return;
     }
     await push(ref(db, `registeredPlayers/${clubName}`), {
       name,
@@ -847,7 +849,7 @@ export default function AdminPage() {
         .filter(Boolean);
       const allNames = [...selected, ...manualNames.filter(n => !selected.has(n))];
       if (allNames.length === 0) {
-        alert('선수가 한 명 이상 선택되어야 합니다.');
+        toast.warning('선수가 한 명 이상 선택되어야 합니다.');
         setWinnerSaving(false);
         return;
       }
@@ -859,9 +861,9 @@ export default function AdminPage() {
       await update(ref(db), updates);
       await loadAllWinners();
       setWinnerDialog(null);
-      alert(`제${league.id}회 우승팀 (${teamCode}팀, ${allNames.length}명)이 저장되었습니다.`);
+      toast.success(`제${league.id}회 우승팀 (${teamCode}팀, ${allNames.length}명)이 저장되었습니다.`);
     } catch (e) {
-      alert('저장 실패: ' + e.message);
+      toast.error('저장 실패: ' + e.message);
     } finally {
       setWinnerSaving(false);
     }
@@ -877,7 +879,7 @@ export default function AdminPage() {
       await loadAllWinners();
       setWinnerDialog(null);
     } catch (e) {
-      alert('삭제 실패: ' + e.message);
+      toast.error('삭제 실패: ' + e.message);
     } finally {
       setWinnerSaving(false);
     }
@@ -1716,8 +1718,8 @@ export default function AdminPage() {
   // 마스터 전용: 팀 추가
   const handleAddClub = async () => {
     const name = newClubName.trim();
-    if (!name) { alert('팀 이름을 입력해주세요.'); return; }
-    if (clubsList.some(c => c.name === name)) { alert('이미 등록된 팀입니다.'); return; }
+    if (!name) { toast.warning('팀 이름을 입력해주세요.'); return; }
+    if (clubsList.some(c => c.name === name)) { toast.warning('이미 등록된 팀입니다.'); return; }
     try {
       await set(ref(db, `clubs/${name}`), {
         name,
@@ -1726,9 +1728,9 @@ export default function AdminPage() {
       });
       setClubsList(prev => [...prev, { key: name, name, createdBy: user.email }]);
       setNewClubName('');
-      alert(`"${name}" 팀이 등록되었습니다.`);
+      toast.success(`"${name}" 팀이 등록되었습니다.`);
     } catch (e) {
-      alert('팀 등록 실패: ' + e.message);
+      toast.error('팀 등록 실패: ' + e.message);
     }
   };
 
@@ -1749,9 +1751,9 @@ export default function AdminPage() {
       await set(ref(db, `ClubRequests/${req.key}/status`), 'approved');
       setClubRequests(prev => prev.filter(r => r.key !== req.key));
       setClubsList(prev => [...prev, { key: req.name, name: req.name, type: req.type, createdBy: req.requestedBy }]);
-      alert(`"${req.name}" 클럽이 승인되었습니다.`);
+      toast.success(`"${req.name}" 클럽이 승인되었습니다.`);
     } catch (e) {
-      alert('승인 실패: ' + e.message);
+      toast.error('승인 실패: ' + e.message);
     }
   };
 
@@ -1761,7 +1763,7 @@ export default function AdminPage() {
       await set(ref(db, `ClubRequests/${req.key}/status`), 'rejected');
       setClubRequests(prev => prev.filter(r => r.key !== req.key));
     } catch (e) {
-      alert('거절 실패: ' + e.message);
+      toast.error('거절 실패: ' + e.message);
     }
   };
 
@@ -1787,9 +1789,9 @@ export default function AdminPage() {
       await remove(ref(db, `clubs/${club.key}`));
       setClubsList(prev => prev.filter(c => c.key !== club.key));
       setDeleteClubDialog(null);
-      alert(`"${club.name}" 팀이 삭제되었습니다.\n삭제된 팀 목록에서 복원할 수 있습니다.`);
+      toast.success(`"${club.name}" 팀이 삭제되었습니다.\n삭제된 팀 목록에서 복원할 수 있습니다.`);
     } catch (e) {
-      alert('팀 삭제 실패: ' + e.message);
+      toast.error('팀 삭제 실패: ' + e.message);
     }
   };
 
@@ -1799,7 +1801,7 @@ export default function AdminPage() {
       // 동일 이름 재사용 중인지 체크
       const existSnap = await get(ref(db, `clubs/${club.key}`));
       if (existSnap.exists()) {
-        alert('같은 이름의 팀이 이미 존재합니다. 먼저 기존 팀을 삭제하거나 이름을 변경하세요.');
+        toast.warning('같은 이름의 팀이 이미 존재합니다. 먼저 기존 팀을 삭제하거나 이름을 변경하세요.');
         return;
       }
       // clubs에 복원 (삭제 메타데이터 제거)
@@ -1810,9 +1812,9 @@ export default function AdminPage() {
       await remove(ref(db, `DeletedClubs/${club.key}`));
       setClubsList(prev => [...prev, club]);
       setDeletedClubs(prev => prev.filter(c => c.key !== club.key));
-      alert(`"${club.name}" 팀이 복원되었습니다.`);
+      toast.success(`"${club.name}" 팀이 복원되었습니다.`);
     } catch (e) {
-      alert('팀 복원 실패: ' + e.message);
+      toast.error('팀 복원 실패: ' + e.message);
     }
   };
 
@@ -1822,9 +1824,9 @@ export default function AdminPage() {
     try {
       await remove(ref(db, `DeletedClubs/${club.key}`));
       setDeletedClubs(prev => prev.filter(c => c.key !== club.key));
-      alert('완전 삭제되었습니다.');
+      toast.success('완전 삭제되었습니다.');
     } catch (e) {
-      alert('완전 삭제 실패: ' + e.message);
+      toast.error('완전 삭제 실패: ' + e.message);
     }
   };
 
@@ -1861,7 +1863,7 @@ export default function AdminPage() {
   const addClubAdmin = async () => {
     if (!clubAdminName.trim() || !selectedClubForAdmin) return;
     const usersSnap = await get(ref(db, 'Users'));
-    if (!usersSnap.exists()) { alert('사용자를 찾을 수 없습니다.'); return; }
+    if (!usersSnap.exists()) { toast.error('사용자를 찾을 수 없습니다.'); return; }
     let foundKey = null, foundEmail = null, foundClub = null;
     usersSnap.forEach(child => {
       if (child.val().name === clubAdminName.trim()) {
@@ -1870,7 +1872,7 @@ export default function AdminPage() {
         foundClub = child.val().club;
       }
     });
-    if (!foundKey) { alert('해당 이름의 사용자를 찾을 수 없습니다.'); return; }
+    if (!foundKey) { toast.error('해당 이름의 사용자를 찾을 수 없습니다.'); return; }
     if (foundClub !== selectedClubForAdmin.name) {
       if (!window.confirm(`${clubAdminName.trim()}님은 "${foundClub}" 소속입니다.\n"${selectedClubForAdmin.name}" 관리자로 추가하시겠습니까?`)) return;
     }
@@ -1890,14 +1892,14 @@ export default function AdminPage() {
 
   // 배너 관리 함수
   const saveBanner = async () => {
-    if (!bannerForm.title.trim()) { alert('배너 제목을 입력해주세요.'); return; }
+    if (!bannerForm.title.trim()) { toast.warning('배너 제목을 입력해주세요.'); return; }
     try {
       const newRef = push(ref(db, 'banners'));
       await set(newRef, { ...bannerForm, active: true, createdAt: new Date().toISOString().slice(0, 10) });
       setBannerList(prev => [...prev, { key: newRef.key, ...bannerForm, active: true }]);
       setBannerDialog(false);
       setBannerForm({ title: '', imageUrl: '', link: '', order: 0 });
-    } catch (e) { alert('배너 저장 실패: ' + e.message); }
+    } catch (e) { toast.error('배너 저장 실패: ' + e.message); }
   };
 
   const removeBanner = async (key) => {
@@ -2476,9 +2478,9 @@ export default function AdminPage() {
             const handleCopy = async () => {
               try {
                 await navigator.clipboard.writeText(joinUrl);
-                alert('가입 링크가 복사되었습니다.\n카카오톡 등에 붙여넣기 해주세요.');
+                toast.success('가입 링크가 복사되었습니다.\n카카오톡 등에 붙여넣기 해주세요.');
               } catch {
-                alert('복사 실패. 직접 선택해서 복사해주세요:\n' + joinUrl);
+                toast.error('복사 실패. 직접 선택해서 복사해주세요:\n' + joinUrl);
               }
             };
             const handleShare = async () => {
@@ -2494,9 +2496,9 @@ export default function AdminPage() {
                 // 데스크톱 fallback: 클립보드 복사 안내
                 try {
                   await navigator.clipboard.writeText(shareText);
-                  alert('링크가 복사되었습니다. 카카오톡에 붙여넣기 하세요.');
+                  toast.success('링크가 복사되었습니다. 카카오톡에 붙여넣기 하세요.');
                 } catch {
-                  alert(shareText);
+                  toast.info(shareText);
                 }
               }
             };
@@ -3717,7 +3719,7 @@ export default function AdminPage() {
           <Button
             variant="contained"
             onClick={async () => {
-              if (!playerEditDialog?.name?.trim()) { alert('이름을 입력하세요.'); return; }
+              if (!playerEditDialog?.name?.trim()) { toast.warning('이름을 입력하세요.'); return; }
               await updatePlayerInfo(playerEditDialog);
               setPlayerEditDialog(null);
             }}

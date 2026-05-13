@@ -10,6 +10,7 @@ import ArrowBackIosIcon from '@mui/icons-material/ArrowBackIos';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import ShareIcon from '@mui/icons-material/Share';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { formatDateWithDay } from '../utils/format';
 import { getFormations } from '../config/formations';
 import { extractTeamRoster } from '../utils/roster';
@@ -98,6 +99,7 @@ export default function MatchDetailPage() {
   const { date, game } = useParams();
   const navigate = useNavigate();
   const { clubName } = useAuth();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [gameNum, setGameNum] = useState(parseInt(game) || 1);
 
@@ -702,7 +704,7 @@ export default function MatchDetailPage() {
         URL.revokeObjectURL(url);
       }
     } catch (e) {
-      alert('이미지 생성/공유 실패: ' + (e.message || e));
+      toast.error('이미지 생성/공유 실패: ' + (e.message || e));
     } finally {
       setSharing(false);
     }

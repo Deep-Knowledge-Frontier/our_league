@@ -16,6 +16,7 @@ import AddIcon from '@mui/icons-material/Add';
 import GroupsIcon from '@mui/icons-material/Groups';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { APP_CONFIG } from '../config/app.config';
 import { CLUB_EMBLEM_MAP } from '../components/ClubEmblems';
 import { sanitizeForPath } from '../utils/validate';
@@ -52,6 +53,7 @@ function RegisterPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, emailKey } = useAuth();
+  const toast = useToast();
   const clubFromUrl = searchParams.get('club');
 
   const [step, setStep] = useState(0);
@@ -103,9 +105,9 @@ function RegisterPage() {
 
   const handleCreateClub = async () => {
     const name = newClub.name.trim();
-    if (!name) { alert('클럽 이름을 입력해주세요.'); return; }
-    if (clubList.includes(name)) { alert('이미 등록된 클럽입니다.'); return; }
-    if (!user) { alert('로그인 정보가 없습니다.'); return; }
+    if (!name) { toast.warning('클럽 이름을 입력해주세요.'); return; }
+    if (clubList.includes(name)) { toast.warning('이미 등록된 클럽입니다.'); return; }
+    if (!user) { toast.error('로그인 정보가 없습니다.'); return; }
     setCreatingClub(true);
     try {
       const requestKey = sanitizeForPath(name);
@@ -116,23 +118,23 @@ function RegisterPage() {
       });
       setNewClub({ name: '', type: 'futsal', region: '' });
       setCreateClubOpen(false);
-      alert('클럽 생성 신청이 완료되었습니다.\n마스터 관리자 승인 후 이용 가능합니다.');
-    } catch (e) { alert('신청 실패: ' + e.message); }
+      toast.success('클럽 생성 신청이 완료되었습니다.\n마스터 관리자 승인 후 이용 가능합니다.');
+    } catch (e) { toast.error('신청 실패: ' + e.message); }
     setCreatingClub(false);
   };
 
   const handleRegister = async () => {
     if (registering) return; // 중복 제출 방지
-    if (!formData.consentGiven) { alert('개인정보 수집 및 이용에 동의해주세요.'); return; }
-    if (!formData.name || !formData.birthYear || !formData.club) { alert('필수 정보를 입력해주세요.'); return; }
-    if (!user || !emailKey) { alert('로그인 정보가 없습니다.'); navigate('/'); return; }
+    if (!formData.consentGiven) { toast.warning('개인정보 수집 및 이용에 동의해주세요.'); return; }
+    if (!formData.name || !formData.birthYear || !formData.club) { toast.warning('필수 정보를 입력해주세요.'); return; }
+    if (!user || !emailKey) { toast.error('로그인 정보가 없습니다.'); navigate('/'); return; }
 
     // 🆕 가입 신청 레이트 리밋 (로컬 스토리지 기반 — 60초 내 재시도 차단)
     const lastRequestKey = `lastJoinRequest:${emailKey}`;
     const lastRequestAt = parseInt(localStorage.getItem(lastRequestKey) || '0', 10);
     const elapsed = Date.now() - lastRequestAt;
     if (elapsed >= 0 && elapsed < 60_000) {
-      alert(`가입 신청은 1분 간격으로 가능합니다. ${Math.ceil((60_000 - elapsed) / 1000)}초 후 다시 시도해주세요.`);
+      toast.warning(`가입 신청은 1분 간격으로 가능합니다. ${Math.ceil((60_000 - elapsed) / 1000)}초 후 다시 시도해주세요.`);
       return;
     }
 
@@ -141,7 +143,7 @@ function RegisterPage() {
       // 이미 가입된 계정 체크
       const existingSnap = await get(ref(db, `Users/${emailKey}`));
       if (existingSnap.exists() && existingSnap.val().club && !existingSnap.val().pending) {
-        alert('이미 등록된 계정입니다.'); navigate('/home'); return;
+        toast.info('이미 등록된 계정입니다.'); navigate('/home'); return;
       }
       const today = new Date().toISOString().slice(0, 10);
       const jerseyNum = formData.jerseyNumber ? parseInt(formData.jerseyNumber, 10) : null;
@@ -178,9 +180,9 @@ function RegisterPage() {
       });
 
       localStorage.setItem(lastRequestKey, String(Date.now()));
-      alert('가입 신청이 완료되었습니다.\n관리자 승인 후 이용하실 수 있습니다.');
+      toast.success('가입 신청이 완료되었습니다.\n관리자 승인 후 이용하실 수 있습니다.');
       navigate('/pending');
-    } catch (error) { alert('등록 실패: ' + error.message); }
+    } catch (error) { toast.error('등록 실패: ' + error.message); }
     finally { setRegistering(false); }
   };
 

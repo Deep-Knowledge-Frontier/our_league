@@ -18,6 +18,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import FormationField from '../components/FormationField';
 import OnboardingModal from '../components/OnboardingModal';
 import { useOnboarding } from '../hooks/useOnboarding';
@@ -63,6 +64,7 @@ export default function DraftPage() {
   const { date } = useParams();
   const navigate = useNavigate();
   const { clubName, userName, emailKey, isAdmin, isModerator, authReady, user } = useAuth();
+  const toast = useToast();
   const canAdmin = isAdmin || isModerator;
 
   const [loading, setLoading] = useState(true);
@@ -169,7 +171,7 @@ export default function DraftPage() {
     setCaptainList((prev) => {
       if (prev.includes(name)) return prev.filter((p) => p !== name);
       if (prev.length >= MAX_CAPTAINS) {
-        alert(`주장은 최대 ${MAX_CAPTAINS}명까지만 선정할 수 있습니다. 기존 주장을 먼저 해제해주세요.`);
+        toast.warning(`주장은 최대 ${MAX_CAPTAINS}명까지만 선정할 수 있습니다. 기존 주장을 먼저 해제해주세요.`);
         return prev;
       }
       return [...prev, name];
@@ -222,13 +224,13 @@ export default function DraftPage() {
       // 최대 3명 강제 (state에 4명 이상이 들어가 있을 경우 방어)
       const effectiveList = captainList.slice(0, 3);
       if (effectiveList.length < 2) {
-        alert('주장은 최소 2명 이상 지정해주세요.');
+        toast.warning('주장은 최소 2명 이상 지정해주세요.');
         return;
       }
       // 모든 주장이 참석자 명단에 있는지 검증
       const missing = effectiveList.filter((n) => !attendees.includes(n));
       if (missing.length > 0) {
-        alert(`참석 명단에 없는 선수가 있습니다: ${missing.join(', ')}`);
+        toast.warning(`참석 명단에 없는 선수가 있습니다: ${missing.join(', ')}`);
         return;
       }
       if (draft && !window.confirm(
@@ -274,7 +276,7 @@ export default function DraftPage() {
       setCaptainEditMode(false);
     } catch (e) {
       console.error('❌ 드래프트 시작 실패:', e);
-      alert(`드래프트 시작 실패: ${e?.message || e}`);
+      toast.error(`드래프트 시작 실패: ${e?.message || e}`);
     }
   };
 
@@ -363,7 +365,7 @@ export default function DraftPage() {
     if (!draft || !tradeForm) return;
     const { fromCode, myPlayer, otherCode, otherPlayer } = tradeForm;
     if (!fromCode || !myPlayer || !otherCode || !otherPlayer) {
-      alert('모든 항목을 선택해주세요.');
+      toast.warning('모든 항목을 선택해주세요.');
       return;
     }
     const newTrade = {

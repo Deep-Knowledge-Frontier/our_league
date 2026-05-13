@@ -10,6 +10,7 @@ import {
 import { useTheme } from '@mui/material/styles';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { DEMO_CLUB, createNameMap, anonymize } from '../utils/demo';
 import { extractTeamRoster } from '../utils/roster';
 
@@ -19,6 +20,7 @@ function LeaguePage() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { clubName, isDemoGuest } = useAuth();
+  const toast = useToast();
 
   const { leagueNumber, startDate, endDate } = location.state || {};
   const dataClub = isDemoGuest ? DEMO_CLUB : clubName;
@@ -33,7 +35,7 @@ function LeaguePage() {
 
   useEffect(() => {
     if (!dataClub || !startDate || !endDate) {
-      alert("잘못된 접근입니다.");
+      toast.error("잘못된 접근입니다.");
       navigate('/');
       return;
     }
