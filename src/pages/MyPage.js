@@ -1643,14 +1643,8 @@ export default function MyPage() {
                     },
                     plugins: {
                       legend: { display: false },
-                      tooltip: {
-                        callbacks: {
-                          label: (ctx) => {
-                            const r = rankHistory[ctx.dataIndex];
-                            return [`${r.rank}위 / ${r.total}명`, '터치하여 상세 보기'];
-                          }
-                        }
-                      }
+                      // 🆕 tooltip 비활성화 — 다이얼로그와 중복 회피
+                      tooltip: { enabled: false },
                     },
                     scales: {
                       y: {
@@ -1779,15 +1773,8 @@ export default function MyPage() {
                     },
                     plugins: {
                       legend: { display: false },
-                      tooltip: {
-                        callbacks: {
-                          label: (ctx) => {
-                            const r = pointRateHistory[ctx.dataIndex];
-                            if (!r.attended) return ['미출전 (팀 경기 있음)', '터치하여 상세 보기'];
-                            return [`승 ${r.wins} · 무 ${r.draws} · 패 ${r.losses}  →  ${r.pointRate.toFixed(1)}%`, '터치하여 상세 보기'];
-                          }
-                        }
-                      }
+                      // 🆕 tooltip 비활성화 — 클릭 시 다이얼로그가 더 상세 정보를 제공하므로 중복 회피
+                      tooltip: { enabled: false },
                     },
                     scales: {
                       y: {
