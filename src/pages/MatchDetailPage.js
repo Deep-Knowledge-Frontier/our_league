@@ -720,7 +720,7 @@ export default function MatchDetailPage() {
   }
 
   return (
-    <Box sx={{ bgcolor: '#f5f5f5', minHeight: '100vh', pb: 4 }}>
+    <Box className="app-fullheight" sx={{ bgcolor: '#f5f5f5', pb: 4 }}>
       {/* Header */}
       <Box sx={{ bgcolor: '#0C0950', p: 1.5, display: 'flex', alignItems: 'center' }}>
         <Button onClick={() => navigate(-1)} sx={{ color: 'white', minWidth: 'auto' }}>

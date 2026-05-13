@@ -95,3 +95,47 @@ input, textarea, [contenteditable="true"],
     min-height: 100dvh; /* Dynamic Viewport Height — Android 주소창 대응 */
   }
 }
+
+/* 🆕 페이지 전체 높이 — iOS Safari 주소창이 보일 때도 정확한 화면 높이 */
+/* 100vh: 구형 브라우저 fallback / 100dvh: 모던 (iOS 15.4+, Chrome 108+, Firefox 101+) */
+.app-fullheight {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* 🆕 매우 작은 화면 (iPhone SE, Galaxy Fold cover 등 ≤360px) 대응 */
+@media (max-width: 360px) {
+  /* 다이얼로그 좌우 여백 축소 */
+  .MuiDialog-paper {
+    margin: 16px !important;
+    width: calc(100% - 32px) !important;
+    max-width: calc(100% - 32px) !important;
+  }
+  /* 다이얼로그 내부 패딩 축소 */
+  .MuiDialogContent-root {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+  .MuiDialogTitle-root {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+  /* Container 좌우 패딩 축소 */
+  .MuiContainer-root {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+}
+
+/* 🆕 Chip 다중 표시 영역에 wrap 기본 적용 — Stack/Box 안에 들어가는 Chip 컨테이너 */
+/* MUI Stack에서 direction="row" + flexWrap="wrap" 권장 패턴 강제 적용 */
+.MuiStack-root[class*="MuiStack-direction-row"] {
+  flex-wrap: wrap;
+}
+
+/* 🆕 큰 폰트 한국어 이름이 좁은 화면에서 잘릴 때 word-break 적용 */
+/* 일반 텍스트는 영향 없음 (Typography는 별도 noWrap 옵션 사용) */
+.MuiChip-label {
+  /* Chip 라벨이 본문 텍스트 잘림 방지 (긴 한국어 이름) */
+  white-space: nowrap;
+}

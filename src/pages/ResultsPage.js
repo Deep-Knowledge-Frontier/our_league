@@ -684,7 +684,7 @@ function ResultsPage() {
   const showGlobalLoading = (loadingPage || authLoading || !dataClub) && tabIndex === 0;
 
   return (
-    <div style={{ backgroundColor: '#F0F2F5', minHeight: '100vh', paddingBottom: '96px' }}>
+    <div className="app-fullheight" style={{ backgroundColor: '#F0F2F5', paddingBottom: '96px' }}>
       <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
         <Card sx={{ mb: 2, borderRadius: 3, boxShadow: 3, overflow: 'hidden',
           background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)' }}>

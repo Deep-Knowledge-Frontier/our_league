@@ -524,7 +524,7 @@ function RegisterPage() {
   };
 
   return (
-    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh' }}>
+    <Box className="app-fullheight" sx={{ bgcolor: '#F0F2F5' }}>
       {/* 헤더 */}
       <Box sx={{ background: 'linear-gradient(135deg, #2D336B 0%, #1A1D4E 100%)', px: 2, pt: 2, pb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>

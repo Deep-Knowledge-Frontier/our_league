@@ -34,7 +34,7 @@ export default function PendingApprovalPage() {
 
   if (!authReady) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+      <Box className="app-fullheight" sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <CircularProgress />
       </Box>
     );

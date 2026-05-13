@@ -1062,7 +1062,7 @@ export default function MyPage() {
 
   if (loading) {
     return (
-      <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
+      <Box className="app-fullheight" sx={{ bgcolor: '#F0F2F5', pb: 12 }}>
         <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
           <MyPageSkeleton />
         </Container>
@@ -1136,7 +1136,7 @@ export default function MyPage() {
   };
 
   return (
-    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
+    <Box className="app-fullheight" sx={{ bgcolor: '#F0F2F5', pb: 12 }}>
       <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
 
         {/* -- 헤더 카드 -- (프로필 + 빠른 액션) */}

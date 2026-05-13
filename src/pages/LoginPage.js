@@ -271,7 +271,7 @@ function LoginPage() {
         opacity: introStage === 'revealed' || introStage === 'done' ? 1 : 0,
         transform: introStage === 'revealed' || introStage === 'done' ? 'translateY(0)' : 'translateY(20px)',
         transition: 'all 1s cubic-bezier(0.7,0,0.3,1)',
-        minHeight: '100vh', backgroundColor: '#050505',
+        minHeight: '100dvh', backgroundColor: '#050505',
         display: 'flex', justifyContent: 'center', alignItems: 'center',
       }}>
         {showLoginForm && (

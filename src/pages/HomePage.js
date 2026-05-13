@@ -532,7 +532,7 @@ function HomePage() {
 
   if (loading) {
     return (
-      <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
+      <Box className="app-fullheight" sx={{ bgcolor: '#F0F2F5', pb: 12 }}>
         <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
           <HomePageSkeleton />
         </Container>
@@ -543,7 +543,7 @@ function HomePage() {
   const medalLabels = ['🥇', '🥈', '🥉', '4', '5'];
 
   return (
-    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
+    <Box className="app-fullheight" sx={{ bgcolor: '#F0F2F5', pb: 12 }}>
 
       <Container maxWidth="sm" sx={{ pt: 2, px: 2 }}>
 

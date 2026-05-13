@@ -30,12 +30,17 @@ export default function BottomNav() {
       /* iOS Safe Area: 홈 인디케이터 위에 배치 (노치 있는 아이폰) */
       bottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
       left: '50%', transform: 'translateX(-50%)', zIndex: 1200,
-      width: 'calc(100% - 24px)', maxWidth: 'calc(600px - 24px)',
+      // 🆕 너비: 모바일 세로(좁은 화면) 전체 폭, 큰 화면/landscape 시 600px 한계
+      width: { xs: 'calc(100% - 24px)', sm: 'calc(100% - 48px)' },
+      maxWidth: 'calc(600px - 24px)',
       bgcolor: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       borderRadius: '20px', boxShadow: '0 4px 24px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.06)',
       border: '1px solid rgba(255,255,255,0.6)',
       display: 'flex', alignItems: 'center', justifyContent: 'space-around',
       height: 60, px: 0.5,
+      // 🆕 가로 모드(landscape) 추가 안정성: 좌우 안전영역 인셋 합산
+      paddingLeft: 'max(0px, env(safe-area-inset-left, 0px))',
+      paddingRight: 'max(0px, env(safe-area-inset-right, 0px))',
     }}>
       {navItems.map((item) => {
         const Icon = item.icon;

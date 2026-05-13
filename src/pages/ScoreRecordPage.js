@@ -746,7 +746,7 @@ export default function ScoreRecordPage() {
   if (loading) return <Container sx={{ mt: 6, textAlign: 'center' }}><CircularProgress /><Typography sx={{ mt: 2 }}>로딩 중...</Typography></Container>;
 
   return (
-    <Box sx={{ bgcolor: '#f0f2f5', minHeight: '100vh', pb: 12 }}>
+    <Box className="app-fullheight" sx={{ bgcolor: '#f0f2f5', pb: 12 }}>
       {/* 헤더 */}
       <Box sx={{ background: 'linear-gradient(135deg, #0C0950 0%, #1E66D0 100%)', p: 2, pb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>

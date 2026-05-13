@@ -524,7 +524,7 @@ function VotePage() {
   }
 
   return (
-    <Box sx={{ bgcolor: '#F0F2F5', minHeight: '100vh', pb: 12 }}>
+    <Box className="app-fullheight" sx={{ bgcolor: '#F0F2F5', pb: 12 }}>
     <Container maxWidth="sm" sx={{ pt: 2, pb: 12 }}>
       <Card sx={{
         mb: 2.5, borderRadius: 3, boxShadow: 3, overflow: 'hidden',

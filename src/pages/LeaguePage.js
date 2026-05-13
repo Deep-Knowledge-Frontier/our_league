@@ -301,7 +301,7 @@ function LeaguePage() {
   };
 
   return (
-    <div style={{ backgroundColor: '#F0F2F5', minHeight: '100vh', paddingBottom: '50px' }}>
+    <div className="app-fullheight" style={{ backgroundColor: '#F0F2F5', paddingBottom: '50px' }}>
       {/* 상단 헤더 */}
       <Box sx={{ background: 'linear-gradient(135deg, #2D336B 0%, #1a1a4e 100%)', p: 2, mb: 2, display: 'flex', alignItems: 'center' }}>
         <Button onClick={() => navigate(-1)} sx={{ color: 'white', minWidth: 'auto', mr: 2 }}>
