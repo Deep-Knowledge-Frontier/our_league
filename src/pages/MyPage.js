@@ -734,24 +734,10 @@ export default function MyPage() {
       if (myIdx === -1) return null;
       return { week: weekKey, rank: myIdx + 1, total: eligible.length };
     }).filter(Boolean);
-    // 현재 순위로 마지막 포인트 교체/추가 (차트와 현재 순위 일치)
-    if (currentRank && history.length > 0) {
-      const lastWeek = history[history.length - 1].week;
-      const now = new Date();
-      const tmp = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-      tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
-      const yr = tmp.getUTCFullYear();
-      const ys = new Date(Date.UTC(yr, 0, 1));
-      const wn = Math.ceil(((tmp - ys) / 86400000 + 1) / 7);
-      const curWeek = `${yr}-W${String(wn).padStart(2, '0')}`;
-      if (curWeek === lastWeek) {
-        history[history.length - 1] = { week: curWeek, ...currentRank };
-      } else {
-        history.push({ week: curWeek, ...currentRank });
-      }
-    }
+    // 🆕 두 차트(순위 추이 / 주차별 승점율)의 주차 범위를 일치시키기 위해
+    //    라이브 "현재 주차" 포인트 추가는 하지 않음. 현재 순위는 차트 위 카드에 별도 표시됨.
     return history;
-  }, [weeklyStandings, userName, rankThreshold, currentRank]);
+  }, [weeklyStandings, userName, rankThreshold]);
 
   // 🆕 주차별 승점율 추이 — 그 주(월~일)만의 (승*3 + 무*1) / (출전*3) * 100
   // 🔧 필터: 팀(클럽) 경기가 있었던 주만 포함 (본인 출전여부 무관)
