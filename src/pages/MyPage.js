@@ -710,6 +710,7 @@ export default function MyPage() {
   }, [allStatsForRank, userName, rankThreshold]);
 
   // 🆕 내 자산: 몸값(6개월 순위 기반) + 포인트(전체 경기 누적)
+  // 잔액(PlayerBalance) 우선 → 없으면 계산값으로 fallback
   useEffect(() => {
     if (!clubName || !userName || isDemoGuest) {
       setMyAssetData(null);
@@ -726,6 +727,10 @@ export default function MyPage() {
     let cancelled = false;
     const load = async () => {
       try {
+        // 🆕 잔액(PlayerBalance) 먼저 조회 — 있으면 우선 사용
+        const balanceSnap = await get(ref(db, `PlayerBalance/${clubName}/${userName}`));
+        const storedBalance = balanceSnap.exists() ? (balanceSnap.val()?.balance ?? null) : null;
+
         // 전체 경기 누적 — PlayerStatsBackup(all-time) + PlayerSelectionByDate(전체) + DailyResultsBackup(전체)
         const [psbSnap, psdSnap, dailySnap] = await Promise.all([
           get(ref(db, `PlayerStatsBackup/${clubName}/${userName}`)),
@@ -787,9 +792,15 @@ export default function MyPage() {
           voteAbsent: counts.voteAbsent * POINTS.voteAbsent,
           voteUndecided: counts.voteUndecided * POINTS.voteUndecided,
         };
-        const total = Object.values(breakdown).reduce((s, v) => s + v, 0);
+        const computedTotal = Object.values(breakdown).reduce((s, v) => s + v, 0);
+        // 🆕 잔액이 있으면 잔액을 표시, 없으면 계산값 (fallback)
+        const total = storedBalance != null ? storedBalance : computedTotal;
+        const isBalance = storedBalance != null;
 
-        if (!cancelled) setMyAssetData({ total, breakdown, counts });
+        if (!cancelled) setMyAssetData({
+          total, breakdown, counts, computedTotal,
+          isBalance,  // 🆕 true면 실제 잔액, false면 계산 추정값
+        });
       } catch (e) {
         console.error('[MyAsset] load error:', e);
         if (!cancelled) setMyAssetData(null);
@@ -1501,7 +1512,7 @@ export default function MyPage() {
                   )}
                 </Box>
 
-                {/* 보유 포인트 — 전체 경기 누적 */}
+                {/* 보유 포인트 — 잔액 우선 / 없으면 계산값 */}
                 <Box sx={{
                   p: 1.5, borderRadius: 2,
                   bgcolor: '#E3F2FD', border: '1px solid #90CAF9',
@@ -1514,7 +1525,7 @@ export default function MyPage() {
                     <Typography component="span" sx={{ fontSize: '1rem', fontWeight: 700, ml: 0.3 }}>P</Typography>
                   </Typography>
                   <Typography sx={{ fontSize: '0.7rem', color: '#888', mt: 0.4 }}>
-                    전체 경기 누적
+                    {myAssetData.isBalance ? '실제 잔액' : '예상 (초기화 대기)'}
                   </Typography>
                 </Box>
               </Box>

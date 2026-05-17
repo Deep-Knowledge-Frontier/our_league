@@ -1376,6 +1376,82 @@ export default function AdminPage() {
         await set(ref(db, `PlayerStatsBackup_season/${clubName}`), seasonStats);
         results.push({ name: '시즌 선수 통계', ok: true, msg: `${Object.keys(seasonStats).length}명` });
 
+        // 🆕 4-B) 잔액(PlayerBalance) 자동 초기화 — 신규 회원만 (기존 entry 보존)
+        try {
+          // 각 회원별 카운트 집계 (전체 기간 누적 — 포인트는 평생 누적)
+          const dailyAllSnap = await get(ref(db, `DailyResultsBackup/${clubName}`));
+          const dailyAll = dailyAllSnap.exists() ? (dailyAllSnap.val() || {}) : {};
+          const psdAll = selData || {};
+
+          const counts = {};
+          // 출전/승무패/골/도움 — allStats(전체)에서
+          for (const [name, p] of Object.entries(allStats)) {
+            counts[name] = {
+              attendance: p.participatedMatches || 0,
+              wins: p.wins || 0,
+              draws: p.draws || 0,
+              losses: p.losses || 0,
+              goals: p.goals || 0,
+              assists: p.assists || 0,
+              gameMvpCount: 0, dayMvpCount: 0,
+              voteAttend: 0, voteAbsent: 0, voteUndecided: 0,
+            };
+          }
+          // 투표 타입별 카운트
+          Object.values(psdAll).forEach((day) => {
+            const inArr = (a, n) => Array.isArray(a) && a.includes(n);
+            const att = day?.AttandPlayer?.all || [];
+            const abs = day?.AbsentPlayer?.all || [];
+            const und = day?.UndecidedPlayer?.all || [];
+            for (const n in counts) {
+              if (inArr(att, n)) counts[n].voteAttend++;
+              else if (inArr(abs, n)) counts[n].voteAbsent++;
+              else if (inArr(und, n)) counts[n].voteUndecided++;
+            }
+          });
+          // MVP 카운트
+          Object.values(dailyAll).forEach((info) => {
+            if (info?.dailyMvp && counts[info.dailyMvp]) counts[info.dailyMvp].dayMvpCount++;
+            if (info?.matches) {
+              Object.values(info.matches).forEach((m) => {
+                if (m?.mvp && counts[m.mvp]) counts[m.mvp].gameMvpCount++;
+              });
+            }
+          });
+
+          // 포인트 계산 (공유 유틸 사용)
+          const { computeTotalPoints } = await import('../utils/playerPoints');
+
+          // 기존 잔액 entry 확인 — 있으면 skip
+          const balanceSnap = await get(ref(db, `PlayerBalance/${clubName}`));
+          const existingBalance = balanceSnap.exists() ? (balanceSnap.val() || {}) : {};
+
+          const updates = {};
+          let initCount = 0;
+          for (const [name, c] of Object.entries(counts)) {
+            if (existingBalance[name]) continue; // 이미 초기화됨 → 건드리지 않음
+            const total = computeTotalPoints(c);
+            updates[`PlayerBalance/${clubName}/${name}`] = {
+              balance: total,
+              initFromComputed: true,
+              initAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+            initCount++;
+          }
+          if (Object.keys(updates).length > 0) {
+            await update(ref(db), updates);
+          }
+          results.push({
+            name: '잔액 초기화',
+            ok: true,
+            msg: initCount > 0 ? `신규 ${initCount}명 초기화` : '신규 없음 (기존 잔액 보존)',
+          });
+        } catch (e) {
+          console.error('[PlayerBalance init] error:', e);
+          results.push({ name: '잔액 초기화', ok: false, msg: e.message });
+        }
+
         // 5) 개인별 상세 통계 (PlayerDetailStats) - per-game, 동료 분석, MVP
         const dailyResultsSnap = await get(ref(db, `DailyResultsBackup/${clubName}`));
         const dailyResultsData = dailyResultsSnap.exists() ? dailyResultsSnap.val() : {};
