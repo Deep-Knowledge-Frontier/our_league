@@ -709,10 +709,9 @@ export default function MyPage() {
     return { rank: myIdx + 1, total: eligible.length };
   }, [allStatsForRank, userName, rankThreshold]);
 
-  // 🆕 내 자산: 몸값(순위 기반) + 포인트(스탯 기반)
-  // 최근 6개월 데이터 기준
+  // 🆕 내 자산: 몸값(6개월 순위 기반) + 포인트(전체 경기 누적)
   useEffect(() => {
-    if (!clubName || !userName || isDemoGuest || !matchStats) {
+    if (!clubName || !userName || isDemoGuest) {
       setMyAssetData(null);
       return;
     }
@@ -727,18 +726,29 @@ export default function MyPage() {
     let cancelled = false;
     const load = async () => {
       try {
-        // 최근 6개월
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        const cutoff = sixMonthsAgo.toISOString().slice(0, 10);
+        // 전체 경기 누적 — PlayerStatsBackup(all-time) + PlayerSelectionByDate(전체) + DailyResultsBackup(전체)
+        const [psbSnap, psdSnap, dailySnap] = await Promise.all([
+          get(ref(db, `PlayerStatsBackup/${clubName}/${userName}`)),
+          get(ref(db, `PlayerSelectionByDate/${clubName}`)),
+          get(ref(db, `DailyResultsBackup/${clubName}`)),
+        ]);
 
-        // 1) 투표 응답 횟수 (참석/불참/미정) — PlayerSelectionByDate에서 카운트
-        const psdSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}`));
+        // 1) 누적 출전/승무패/골/도움 — PlayerStatsBackup에서
+        let attendance = 0, wins = 0, draws = 0, losses = 0, goals = 0, assists = 0;
+        if (psbSnap.exists()) {
+          const p = psbSnap.val() || {};
+          attendance = Number(p.participatedMatches) || 0;
+          wins = Number(p.wins) || 0;
+          draws = Number(p.draws) || 0;
+          losses = Number(p.losses) || 0;
+          goals = Number(p.goals) || 0;
+          assists = Number(p.assists) || 0;
+        }
+
+        // 2) 투표 응답 횟수 (전체 기간)
         let voteAttend = 0, voteAbsent = 0, voteUndecided = 0;
         if (psdSnap.exists()) {
-          const psdData = psdSnap.val() || {};
-          Object.entries(psdData).forEach(([date, data]) => {
-            if (date < cutoff) return;
+          Object.values(psdSnap.val() || {}).forEach((data) => {
             const inArr = (a) => Array.isArray(a) && a.includes(userName);
             if (inArr(data?.AttandPlayer?.all)) voteAttend++;
             else if (inArr(data?.AbsentPlayer?.all)) voteAbsent++;
@@ -746,27 +756,22 @@ export default function MyPage() {
           });
         }
 
-        // 2) DAY MVP 횟수 — DailyResultsBackup에서 카운트
-        const dailySnap = await get(ref(db, `DailyResultsBackup/${clubName}`));
-        let dayMvpCount = 0;
+        // 3) MVP 횟수 (전체 기간) — DAY MVP + 게임 MVP 분리 카운트
+        let gameMvpCount = 0, dayMvpCount = 0;
         if (dailySnap.exists()) {
-          Object.entries(dailySnap.val() || {}).forEach(([date, info]) => {
-            if (date < cutoff) return;
+          Object.values(dailySnap.val() || {}).forEach((info) => {
             if (info?.dailyMvp === userName) dayMvpCount++;
+            if (info?.matches) {
+              Object.values(info.matches).forEach((m) => {
+                if (m.mvp === userName) gameMvpCount++;
+              });
+            }
           });
         }
 
-        // 3) 나머지(출전/승무패/골/어시/게임MVP)는 matchStats에서 가져옴
         const counts = {
-          attendance: matchStats.totalGames || 0,
-          wins: matchStats.totalWins || 0,
-          draws: matchStats.totalDraws || 0,
-          losses: matchStats.totalLosses || 0,
-          goals: matchStats.totalGoals || 0,
-          assists: matchStats.totalAssists || 0,
-          // matchStats.mvpCount는 [일자MVP + 게임MVP] 합산 → 게임MVP만 분리
-          gameMvpCount: Math.max(0, (matchStats.mvpCount || 0) - dayMvpCount),
-          dayMvpCount,
+          attendance, wins, draws, losses, goals, assists,
+          gameMvpCount, dayMvpCount,
           voteAttend, voteAbsent, voteUndecided,
         };
 
@@ -793,7 +798,7 @@ export default function MyPage() {
 
     load();
     return () => { cancelled = true; };
-  }, [clubName, userName, isDemoGuest, matchStats]);
+  }, [clubName, userName, isDemoGuest]);
 
   // 주차별 순위 추이 (차트용) + 마지막에 현재 순위 반영
   // 🔧 신규 백업 후엔 weeklyStandings 에 weekKey 가 있다는 것 자체가 "팀 경기 있음"
@@ -1438,12 +1443,8 @@ export default function MyPage() {
                   내 자산
                 </Typography>
               </Box>
-              <Typography sx={{ fontSize: '0.72rem', color: '#999', mb: 1.5 }}>
-                최근 6개월 누적
-              </Typography>
-
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.5 }}>
-                {/* 몸값 */}
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.5, mt: 1 }}>
+                {/* 몸값 — 6개월 순위 기준 */}
                 <Box sx={{
                   p: 1.5, borderRadius: 2,
                   bgcolor: '#FFF8E1', border: '1px solid #FFE082',
@@ -1455,11 +1456,11 @@ export default function MyPage() {
                     {formatKR(playerValue)}
                   </Typography>
                   <Typography sx={{ fontSize: '0.7rem', color: '#888', mt: 0.4 }}>
-                    {currentRank.rank}위 / {currentRank.total}명
+                    {currentRank.rank}위 / {currentRank.total}명 · 6개월 순위
                   </Typography>
                 </Box>
 
-                {/* 보유 포인트 */}
+                {/* 보유 포인트 — 전체 경기 누적 */}
                 <Box sx={{
                   p: 1.5, borderRadius: 2,
                   bgcolor: '#E3F2FD', border: '1px solid #90CAF9',
@@ -1472,7 +1473,7 @@ export default function MyPage() {
                     <Typography component="span" sx={{ fontSize: '1rem', fontWeight: 700, ml: 0.3 }}>P</Typography>
                   </Typography>
                   <Typography sx={{ fontSize: '0.7rem', color: '#888', mt: 0.4 }}>
-                    출석·승리·골·MVP 등
+                    전체 경기 누적
                   </Typography>
                 </Box>
               </Box>
