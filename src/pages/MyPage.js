@@ -2076,7 +2076,7 @@ export default function MyPage() {
                         bgcolor: '#E3F2FD', border: '1px solid #BBDEFB',
                       }}>
                         {me ? (
-                          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, textAlign: 'center' }}>
                             <Box>
                               <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>능력치</Typography>
                               <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0D47A1' }}>
@@ -2133,7 +2133,7 @@ export default function MyPage() {
                         {ph && ph.attended ? (
                           <>
                             {/* 1행: 핵심 지표 (출전, 승점율, 승/무/패) */}
-                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, mb: 1.2 }}>
+                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, mb: 1.2, textAlign: 'center' }}>
                               <Box>
                                 <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>출전</Typography>
                                 <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
@@ -2158,7 +2158,7 @@ export default function MyPage() {
                             <Box sx={{ borderTop: '1px dashed #A5D6A7', my: 0.6 }} />
 
                             {/* 2행: 개인 기여 (골, 도움, 득실차) */}
-                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, mt: 1.2 }}>
+                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, mt: 1.2, textAlign: 'center' }}>
                               <Box>
                                 <Typography sx={{ fontSize: '0.68rem', color: '#888' }}>골</Typography>
                                 <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#1B5E20' }}>
