@@ -1604,6 +1604,11 @@ export default function MyPage() {
                       pointRadius: rankHistory.map((r, i) =>
                         i === rankHistory.length - 1 ? 6 : 4
                       ),
+                      // 🆕 터치 감지 영역 확장 — 점 주변 24px 이내 탭하면 가장 가까운 점 선택
+                      pointHitRadius: 24,
+                      pointHoverRadius: rankHistory.map((r, i) =>
+                        i === rankHistory.length - 1 ? 8 : 6
+                      ),
                       pointBackgroundColor: rankHistory.map((r, i) =>
                         i === rankHistory.length - 1 ? '#D32F2F' : '#1565C0'
                       ),
@@ -1617,6 +1622,8 @@ export default function MyPage() {
                     // 🆕 가장자리 점/라벨 잘림 방지
                     layout: { padding: { top: 24, right: 18, left: 8, bottom: 4 } },
                     clip: false,
+                    // 🆕 가장 가까운 점 자동 선택 (정확히 점 위 아니어도 탭 인식)
+                    interaction: { mode: 'nearest', intersect: false, axis: 'x' },
                     onClick: (_e, elements) => {
                       if (!elements || elements.length === 0) return;
                       const idx = elements[0].index;
@@ -1729,6 +1736,11 @@ export default function MyPage() {
                       pointRadius: pointRateHistory.map((r, i) =>
                         i === pointRateHistory.length - 1 ? 6 : 4
                       ),
+                      // 🆕 터치 감지 영역 확장 — 점 주변 24px 이내 탭 인식
+                      pointHitRadius: 24,
+                      pointHoverRadius: pointRateHistory.map((r, i) =>
+                        i === pointRateHistory.length - 1 ? 8 : 6
+                      ),
                       // 미출전 주는 회색, 출전 주는 초록 (마지막은 진한 색)
                       pointBackgroundColor: pointRateHistory.map((r, i) =>
                         !r.attended ? '#BDBDBD' :
@@ -1747,6 +1759,8 @@ export default function MyPage() {
                     // 🆕 가장자리 점 잘림 방지
                     layout: { padding: { top: 8, right: 16, left: 8, bottom: 4 } },
                     clip: false,
+                    // 🆕 가장 가까운 점 자동 선택
+                    interaction: { mode: 'nearest', intersect: false, axis: 'x' },
                     onClick: (_e, elements) => {
                       if (!elements || elements.length === 0) return;
                       const idx = elements[0].index;
