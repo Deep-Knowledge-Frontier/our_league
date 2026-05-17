@@ -92,6 +92,17 @@
       }
     },
 
+    "Predictions": {
+      ".read": "auth != null",
+      "$clubName": {
+        "$date": {
+          "$emailKey": {
+            ".write": "auth != null && ($emailKey === auth.token.email.replace('.', ',') || root.child('AllowedUsers/admin/' + auth.token.email.replace('.', ',')).exists() || root.child('AllowedUsers/moderator/' + auth.token.email.replace('.', ',')).exists())"
+          }
+        }
+      }
+    },
+
     "PlayerSelectionByDate": {
       ".read": "auth != null",
       "$clubName": {

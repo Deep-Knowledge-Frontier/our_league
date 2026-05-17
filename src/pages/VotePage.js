@@ -45,6 +45,13 @@ function VotePage() {
   // 🆕 날짜별 팀/드래프트/포메이션 공개 상태 (관리탭 변경 사항 실시간 반영)
   const [teamInfo, setTeamInfo] = useState({}); // {[date]: { hasTeam, draftStatus, formationOpen }}
 
+  // 🆕 베팅 시스템 — 날짜별 모든 예측 + 본인 잔액
+  const [predictionsByDate, setPredictionsByDate] = useState({});  // {[date]: { [emailKey]: {bets:{...}} }}
+  const [myBalance, setMyBalance] = useState(null);                 // 실제 잔액 (PlayerBalance)
+  const [betDialogDate, setBetDialogDate] = useState(null);         // 베팅 다이얼로그 열린 날짜
+  const [betSubmitting, setBetSubmitting] = useState(false);
+  const [betPick, setBetPick] = useState(null);                     // 'A' | 'B' | 'C'
+
   // 다이얼로그 상태
   const [openList, setOpenList] = useState(false);
   const [dialogDateStr, setDialogDateStr] = useState('');
@@ -249,6 +256,147 @@ function VotePage() {
     });
     return () => offs.forEach((f) => f());
   }, [clubName, matchList]);
+
+  // 🆕 베팅: 본인 잔액 구독
+  useEffect(() => {
+    if (!clubName || !userName || isDemoGuest) return;
+    const balRef = ref(db, `PlayerBalance/${clubName}/${userName}`);
+    const off = onValue(balRef, (snap) => {
+      setMyBalance(snap.exists() ? (snap.val()?.balance ?? null) : null);
+    });
+    return () => off();
+  }, [clubName, userName, isDemoGuest]);
+
+  // 🆕 베팅: 표시 중인 각 매치의 모든 예측 구독
+  useEffect(() => {
+    if (!clubName || !matchList?.length) return;
+    const offs = [];
+    matchList.forEach(({ date }) => {
+      if (!date) return;
+      const off = onValue(ref(db, `Predictions/${clubName}/${date}`), (snap) => {
+        setPredictionsByDate((prev) => ({
+          ...prev,
+          [date]: snap.exists() ? (snap.val() || {}) : {},
+        }));
+      });
+      offs.push(off);
+    });
+    return () => offs.forEach((f) => f());
+  }, [clubName, matchList]);
+
+  // 🆕 베팅: 매치별 풀(베팅금 합계) + 본인 베팅 추출
+  const getBetSummary = (date) => {
+    const preds = predictionsByDate[date] || {};
+    const pool = { A: 0, B: 0, C: 0, totalP: 0, totalUsers: 0 };
+    let myPick = null, myAmount = 0;
+    Object.entries(preds).forEach(([ek, data]) => {
+      const wt = data?.bets?.winningTeam;
+      if (!wt || !['A','B','C'].includes(wt.pick)) return;
+      const amt = Number(wt.amount) || 0;
+      pool[wt.pick] += amt;
+      pool.totalP += amt;
+      pool.totalUsers++;
+      if (ek === emailKey) { myPick = wt.pick; myAmount = amt; }
+    });
+    return { pool, myPick, myAmount };
+  };
+
+  // 🆕 베팅: 진행 중(미정산) 베팅 합계 = 잔액에서 사용 중인 금액
+  const getPendingBetTotal = () => {
+    let total = 0;
+    Object.values(predictionsByDate).forEach((datePreds) => {
+      const myBets = datePreds?.[emailKey]?.bets;
+      if (!myBets) return;
+      Object.values(myBets).forEach((b) => {
+        if (b && b.result == null) total += Number(b.amount) || 0; // 정산 안 됨
+      });
+    });
+    return total;
+  };
+
+  // 🆕 베팅: 우승팀 베팅 가능 여부 (포메이션 공개 후 ~ 경기 시작 전)
+  const canBet = (date) => {
+    const info = teamInfo[date] || {};
+    if (!info.formationOpen) return { ok: false, reason: '운영자가 팀 구성을 공개한 뒤 베팅 가능' };
+    // 베팅 마감: 경기 당일 23:59까지 (운영자 정산 전)
+    try {
+      const d = parseDateKeyLocal(date);
+      d.setHours(23, 59, 59, 999);
+      if (Date.now() > d.getTime()) return { ok: false, reason: '베팅 마감 (경기 종료)' };
+    } catch {}
+    return { ok: true };
+  };
+
+  // 🆕 베팅: 다이얼로그 열기
+  const openBetDialog = (date) => {
+    const check = canBet(date);
+    if (!check.ok) { setAlertMessage(check.reason); setOpenAlert(true); return; }
+    if (!userName || !emailKey) { setAlertMessage('사용자 정보를 불러오는 중'); setOpenAlert(true); return; }
+    const { myPick } = getBetSummary(date);
+    setBetPick(myPick);
+    setBetDialogDate(date);
+  };
+
+  // 🆕 베팅: 베팅 확정
+  const BET_AMOUNT_WINNING_TEAM = 100;
+  const handlePlaceBet = async () => {
+    if (!betDialogDate || !betPick || betSubmitting) return;
+    const date = betDialogDate;
+    const check = canBet(date);
+    if (!check.ok) { setAlertMessage(check.reason); setOpenAlert(true); return; }
+
+    const { myPick, myAmount } = getBetSummary(date);
+    const newAmount = BET_AMOUNT_WINNING_TEAM;
+    // 잔액 검증 — 이미 베팅한 게 있으면 차액으로 계산 (변경 = 환불 후 재베팅)
+    const required = newAmount - myAmount; // 양수=추가 차감 / 0 또는 음수=차감 없음
+    const available = (myBalance || 0) - getPendingBetTotal() + myAmount; // 본인 기존 베팅 환산해서 계산
+    if (myBalance == null) { setAlertMessage('잔액 정보가 없습니다.\n운영자가 통계 백업을 한 번 실행해야 합니다.'); setOpenAlert(true); return; }
+    if (required > 0 && available < required) {
+      setAlertMessage(`잔액 부족\n필요: ${newAmount}P / 사용 가능: ${available}P`);
+      setOpenAlert(true);
+      return;
+    }
+
+    setBetSubmitting(true);
+    try {
+      const betData = {
+        pick: betPick,
+        amount: newAmount,
+        placedAt: Date.now(),
+        result: null,    // 정산 후 'won'/'lost'/'refunded'
+        payout: null,    // 정산 후 환급 P
+        settledAt: null,
+      };
+      const updates = {};
+      updates[`Predictions/${clubName}/${date}/${emailKey}/name`] = userName;
+      updates[`Predictions/${clubName}/${date}/${emailKey}/bets/winningTeam`] = betData;
+      // 🆕 잔액에서 차감 (이전 베팅 있으면 차액만)
+      if (required !== 0) {
+        const balanceRef = ref(db, `PlayerBalance/${clubName}/${userName}`);
+        await runTransaction(balanceRef, (cur) => {
+          const bal = (cur?.balance ?? myBalance) || 0;
+          return {
+            balance: bal - required,
+            initFromComputed: cur?.initFromComputed ?? true,
+            initAt: cur?.initAt ?? Date.now(),
+            updatedAt: Date.now(),
+          };
+        });
+      }
+      // ref import 위치에서 'update'를 가져와야 함 → 동적 import 사용 회피, 별도 처리
+      const { update } = await import('firebase/database');
+      await update(ref(db), updates);
+      setBetDialogDate(null);
+      setBetPick(null);
+      setAlertMessage(myPick ? '베팅을 변경했습니다.' : '베팅 완료!');
+      setOpenAlert(true);
+    } catch (e) {
+      setAlertMessage('베팅 실패: ' + (e?.message || e));
+      setOpenAlert(true);
+    } finally {
+      setBetSubmitting(false);
+    }
+  };
 
   const getMyStatus = (date) => {
     const dd = votesData[date];
@@ -700,11 +848,165 @@ function VotePage() {
                     {teamBtn.text}
                   </Button>
                 </Box>
+
+                {/* 🆕 베팅: 우승팀 예측 (Chunk 2) */}
+                {teamBtn && (teamInfo[date]?.formationOpen || teamInfo[date]?.hasTeam) && (() => {
+                  const summary = getBetSummary(date);
+                  const totalP = summary.pool.totalP;
+                  const usersN = summary.pool.totalUsers;
+                  const canB = canBet(date).ok;
+                  return (
+                    <Box sx={{
+                      mt: 2, p: 1.5, borderRadius: 2,
+                      bgcolor: '#FFF8E1', border: '1px solid #FFE082',
+                    }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.6 }}>
+                        <Typography sx={{ fontSize: '0.85rem', fontWeight: 800, color: '#BF8500' }}>
+                          🎯 우승팀 예측
+                        </Typography>
+                        <Typography sx={{ fontSize: '0.72rem', color: '#888', fontWeight: 600 }}>
+                          총 풀 {totalP.toLocaleString()}P · {usersN}명 참여
+                        </Typography>
+                      </Box>
+                      {/* 팀별 베팅 분포 (간단 표시) */}
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 0.5, mb: 0.8 }}>
+                        {['A', 'B', 'C'].map((c) => (
+                          <Box key={c} sx={{
+                            textAlign: 'center', py: 0.4, borderRadius: 1.5,
+                            bgcolor: summary.myPick === c ? '#FFB300' : 'rgba(255,255,255,0.7)',
+                            color: summary.myPick === c ? 'white' : '#5D4037',
+                            fontWeight: summary.myPick === c ? 800 : 600,
+                            fontSize: '0.75rem',
+                          }}>
+                            Team {c}: {summary.pool[c]}P
+                          </Box>
+                        ))}
+                      </Box>
+                      {/* 본인 베팅 / 베팅하기 */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                        <Typography sx={{ fontSize: '0.78rem', color: '#5D4037', fontWeight: 600 }}>
+                          {summary.myPick
+                            ? `내 베팅: Team ${summary.myPick} (${summary.myAmount}P)`
+                            : '아직 베팅 안 함'}
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={() => openBetDialog(date)}
+                          disabled={!canB}
+                          sx={{
+                            bgcolor: '#FF8F00', color: 'white',
+                            fontSize: '0.75rem', fontWeight: 800,
+                            borderRadius: 99, px: 1.5, py: 0.3, minWidth: 80,
+                            '&:hover': { bgcolor: '#E65100' },
+                            '&.Mui-disabled': { bgcolor: '#E0E0E0', color: '#999' },
+                          }}
+                        >
+                          {summary.myPick ? '변경하기' : '베팅하기'}
+                        </Button>
+                      </Box>
+                      {!canB && (
+                        <Typography sx={{ fontSize: '0.68rem', color: '#888', mt: 0.6, textAlign: 'center' }}>
+                          🔒 {canBet(date).reason}
+                        </Typography>
+                      )}
+                    </Box>
+                  );
+                })()}
               </CardContent>
             </Card>
           );
         })
       )}
+
+      {/* 🆕 베팅 다이얼로그 (Chunk 2: 우승팀 단일) */}
+      <Dialog open={!!betDialogDate} onClose={() => !betSubmitting && setBetDialogDate(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ textAlign: 'center', pb: 1, pt: 2.5 }}>
+          <Typography sx={{ fontSize: '1.4rem', mb: 0.4 }}>🎯</Typography>
+          <Typography sx={{ fontSize: '1.05rem', fontWeight: 800, color: '#BF8500' }}>
+            우승팀 예측 베팅
+          </Typography>
+          {betDialogDate && (
+            <Typography sx={{ fontSize: '0.78rem', color: '#666', mt: 0.5 }}>
+              {formatDateWithDay(betDialogDate)} · 베팅 비용 {BET_AMOUNT_WINNING_TEAM}P (고정)
+            </Typography>
+          )}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          {betDialogDate && (() => {
+            const summary = getBetSummary(betDialogDate);
+            const available = (myBalance || 0) - getPendingBetTotal() + (summary.myAmount || 0);
+            return (
+              <>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, p: 1.2, bgcolor: '#E3F2FD', borderRadius: 2 }}>
+                  <Typography sx={{ fontSize: '0.82rem', color: '#1565C0', fontWeight: 700 }}>
+                    내 잔액
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.95rem', color: '#0D47A1', fontWeight: 900 }}>
+                    {(myBalance || 0).toLocaleString()}P
+                  </Typography>
+                </Box>
+                <Typography sx={{ fontSize: '0.78rem', color: '#666', mb: 1, textAlign: 'center' }}>
+                  사용 가능: <b>{available.toLocaleString()}P</b>
+                </Typography>
+
+                <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: '#333', mb: 1, mt: 1.5 }}>
+                  우승할 팀을 선택하세요
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1 }}>
+                  {['A', 'B', 'C'].map((c) => {
+                    const selected = betPick === c;
+                    const poolAmount = summary.pool[c];
+                    return (
+                      <Box key={c}
+                        onClick={() => setBetPick(c)}
+                        sx={{
+                          cursor: 'pointer',
+                          p: 1.2, borderRadius: 2, textAlign: 'center',
+                          bgcolor: selected ? '#FFB300' : 'white',
+                          color: selected ? 'white' : '#5D4037',
+                          border: selected ? '2px solid #FF8F00' : '2px solid #FFE082',
+                          fontWeight: 800,
+                          transition: 'all 0.15s',
+                          '&:active': { transform: 'scale(0.97)' },
+                        }}>
+                        <Typography sx={{ fontSize: '1rem', fontWeight: 900, lineHeight: 1.2 }}>
+                          Team {c}
+                        </Typography>
+                        <Typography sx={{ fontSize: '0.7rem', mt: 0.4, opacity: 0.9 }}>
+                          풀 {poolAmount}P
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
+
+                <Typography sx={{ fontSize: '0.7rem', color: '#888', mt: 2, textAlign: 'center', fontStyle: 'italic', lineHeight: 1.5 }}>
+                  💡 풀 분배 방식: 모든 베팅금이 한 풀에 모이고,<br/>
+                  우승팀에 베팅한 사람들끼리 비례 분배합니다.<br/>
+                  (인기 없는 팀 베팅 → 맞추면 큰 보상)
+                </Typography>
+              </>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions sx={{ px: 2, pb: 2, gap: 1 }}>
+          <Button onClick={() => setBetDialogDate(null)} disabled={betSubmitting} sx={{ flex: 1 }}>
+            취소
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handlePlaceBet}
+            disabled={!betPick || betSubmitting}
+            sx={{
+              flex: 1, bgcolor: '#FF8F00', fontWeight: 800,
+              '&:hover': { bgcolor: '#E65100' },
+            }}
+          >
+            {betSubmitting ? '처리 중...' : '베팅 확정'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 참석 모드 선택 — 옵션 카드 방식 */}
       <Dialog open={openAttendMode} onClose={() => setOpenAttendMode(false)} fullWidth maxWidth="xs" {...bottomSheetProps}>
