@@ -1394,93 +1394,6 @@ export default function MyPage() {
           );
         })()}
 
-        {/* -- 능력치 + AI 분석 통합 카드 -- */}
-        {radarData && (
-          <Paper sx={{ borderRadius: 3, mb: 2, boxShadow: 2, overflow: 'hidden' }}>
-            {/* 선수 아키타입 헤더 (선수순위와 동일 데이터) */}
-            {playerAnalysis && (
-              <Box sx={{
-                background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
-                p: 2, pb: 1.5,
-              }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.8 }}>
-                  <Box>
-                    <Typography sx={{ color: playerAnalysis.color, fontWeight: 900, fontSize: '1.2rem', lineHeight: 1.2 }}>
-                      {playerAnalysis.title}
-                    </Typography>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.78rem', mt: 0.2 }}>
-                      {playerAnalysis.desc}
-                    </Typography>
-                  </Box>
-                  {playerAnalysis.ability > 0 && (
-                    <Box sx={{ textAlign: 'center', ml: 1 }}>
-                      <Typography sx={{ fontSize: '1.8rem', fontWeight: 900, color: '#FFD700', lineHeight: 1 }}>
-                        {playerAnalysis.ability.toFixed(1)}
-                      </Typography>
-                      <Typography sx={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>OVR</Typography>
-                    </Box>
-                  )}
-                </Box>
-                {(playerAnalysis.traits.length > 0 || playerAnalysis.improve.length > 0) && (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4 }}>
-                    {playerAnalysis.traits.map((t, i) => (
-                      <Chip key={`t${i}`} label={t} size="small"
-                        sx={{ fontSize: '0.68rem', height: 20, bgcolor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.1)' }} />
-                    ))}
-                    {playerAnalysis.improve.map((t, i) => (
-                      <Chip key={`i${i}`} label={t} size="small"
-                        sx={{ fontSize: '0.65rem', height: 20, bgcolor: 'rgba(255,183,77,0.15)', color: '#FFB74D', border: '1px solid rgba(255,183,77,0.2)' }} />
-                    ))}
-                  </Box>
-                )}
-              </Box>
-            )}
-
-            {/* 레이더 차트 */}
-            <Box sx={{ p: 2.5, pt: playerAnalysis ? 1.5 : 2.5 }}>
-              {!playerAnalysis && (
-                <Typography sx={{ fontWeight: 'bold', color: '#1565C0', mb: 1, fontSize: '1rem' }}>
-                  능력치
-                </Typography>
-              )}
-              <Box sx={{ maxWidth: 340, mx: 'auto' }}>
-                <Radar data={radarData} options={radarOptions} plugins={[radarLabelPlugin]} />
-              </Box>
-            </Box>
-
-            {/* 주간 운세 */}
-            {weeklyFortune && (
-              <Box sx={{
-                mx: 2.5, mb: 2, p: 1.5, borderRadius: 2.5,
-                background: 'linear-gradient(135deg, #FFF8E1, #FFFDE7)',
-                border: '1px solid #FFE082',
-              }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <Typography sx={{ fontSize: '0.9rem' }}>{weeklyFortune.emoji}</Typography>
-                    <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: '#E65100' }}>이번 주 운세</Typography>
-                  </Box>
-                  <Chip label={`행운 ${weeklyFortune.score}점`} size="small"
-                    sx={{ fontSize: '0.7rem', height: 22, fontWeight: 800,
-                      bgcolor: weeklyFortune.score >= 85 ? '#FF6F00' : '#FFA000',
-                      color: 'white' }} />
-                </Box>
-                {[
-                  { icon: '💼', label: '직장', text: weeklyFortune.work },
-                  { icon: '👨‍👩‍👧‍👦', label: '가족', text: weeklyFortune.family },
-                  { icon: '💪', label: '건강', text: weeklyFortune.health },
-                ].map(f => (
-                  <Box key={f.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mb: 0.4 }}>
-                    <Typography sx={{ fontSize: '0.75rem', flexShrink: 0 }}>{f.icon}</Typography>
-                    <Typography sx={{ fontSize: '0.7rem', color: '#BF360C', fontWeight: 700, flexShrink: 0 }}>{f.label}</Typography>
-                    <Typography sx={{ fontSize: '0.75rem', color: '#5D4037' }}>{f.text}</Typography>
-                  </Box>
-                ))}
-              </Box>
-            )}
-          </Paper>
-        )}
-
         {/* 🆕 내 자산 — 몸값 + 보유 포인트 */}
         {myAssetData && currentRank && (() => {
           // 몸값 산정 (선수순위 기반)
@@ -1623,6 +1536,93 @@ export default function MyPage() {
             </Paper>
           );
         })()}
+
+        {/* -- 능력치 + AI 분석 통합 카드 -- */}
+        {radarData && (
+          <Paper sx={{ borderRadius: 3, mb: 2, boxShadow: 2, overflow: 'hidden' }}>
+            {/* 선수 아키타입 헤더 (선수순위와 동일 데이터) */}
+            {playerAnalysis && (
+              <Box sx={{
+                background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+                p: 2, pb: 1.5,
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.8 }}>
+                  <Box>
+                    <Typography sx={{ color: playerAnalysis.color, fontWeight: 900, fontSize: '1.2rem', lineHeight: 1.2 }}>
+                      {playerAnalysis.title}
+                    </Typography>
+                    <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.78rem', mt: 0.2 }}>
+                      {playerAnalysis.desc}
+                    </Typography>
+                  </Box>
+                  {playerAnalysis.ability > 0 && (
+                    <Box sx={{ textAlign: 'center', ml: 1 }}>
+                      <Typography sx={{ fontSize: '1.8rem', fontWeight: 900, color: '#FFD700', lineHeight: 1 }}>
+                        {playerAnalysis.ability.toFixed(1)}
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>OVR</Typography>
+                    </Box>
+                  )}
+                </Box>
+                {(playerAnalysis.traits.length > 0 || playerAnalysis.improve.length > 0) && (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4 }}>
+                    {playerAnalysis.traits.map((t, i) => (
+                      <Chip key={`t${i}`} label={t} size="small"
+                        sx={{ fontSize: '0.68rem', height: 20, bgcolor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.1)' }} />
+                    ))}
+                    {playerAnalysis.improve.map((t, i) => (
+                      <Chip key={`i${i}`} label={t} size="small"
+                        sx={{ fontSize: '0.65rem', height: 20, bgcolor: 'rgba(255,183,77,0.15)', color: '#FFB74D', border: '1px solid rgba(255,183,77,0.2)' }} />
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            )}
+
+            {/* 레이더 차트 */}
+            <Box sx={{ p: 2.5, pt: playerAnalysis ? 1.5 : 2.5 }}>
+              {!playerAnalysis && (
+                <Typography sx={{ fontWeight: 'bold', color: '#1565C0', mb: 1, fontSize: '1rem' }}>
+                  능력치
+                </Typography>
+              )}
+              <Box sx={{ maxWidth: 340, mx: 'auto' }}>
+                <Radar data={radarData} options={radarOptions} plugins={[radarLabelPlugin]} />
+              </Box>
+            </Box>
+
+            {/* 주간 운세 */}
+            {weeklyFortune && (
+              <Box sx={{
+                mx: 2.5, mb: 2, p: 1.5, borderRadius: 2.5,
+                background: 'linear-gradient(135deg, #FFF8E1, #FFFDE7)',
+                border: '1px solid #FFE082',
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography sx={{ fontSize: '0.9rem' }}>{weeklyFortune.emoji}</Typography>
+                    <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: '#E65100' }}>이번 주 운세</Typography>
+                  </Box>
+                  <Chip label={`행운 ${weeklyFortune.score}점`} size="small"
+                    sx={{ fontSize: '0.7rem', height: 22, fontWeight: 800,
+                      bgcolor: weeklyFortune.score >= 85 ? '#FF6F00' : '#FFA000',
+                      color: 'white' }} />
+                </Box>
+                {[
+                  { icon: '💼', label: '직장', text: weeklyFortune.work },
+                  { icon: '👨‍👩‍👧‍👦', label: '가족', text: weeklyFortune.family },
+                  { icon: '💪', label: '건강', text: weeklyFortune.health },
+                ].map(f => (
+                  <Box key={f.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mb: 0.4 }}>
+                    <Typography sx={{ fontSize: '0.75rem', flexShrink: 0 }}>{f.icon}</Typography>
+                    <Typography sx={{ fontSize: '0.7rem', color: '#BF360C', fontWeight: 700, flexShrink: 0 }}>{f.label}</Typography>
+                    <Typography sx={{ fontSize: '0.75rem', color: '#5D4037' }}>{f.text}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Paper>
+        )}
 
         {/* -- 주별 순위 추이 -- */}
         {(currentRank || (rankHistory && rankHistory.length >= 2)) && (() => {
