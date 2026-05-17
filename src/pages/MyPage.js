@@ -5,7 +5,7 @@ import { ref, get } from 'firebase/database';
 import {
   Container, Box, Typography, CircularProgress, Paper, Button, Card, CardContent,
   Divider, Chip, FormControl, InputLabel, Select, MenuItem, Menu, LinearProgress, IconButton,
-  Dialog, DialogTitle, DialogContent, DialogActions,
+  Dialog, DialogTitle, DialogContent, DialogActions, Collapse,
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import CheckIcon from '@mui/icons-material/Check';
@@ -77,6 +77,9 @@ export default function MyPage() {
   const [thresholdMenuAnchor, setThresholdMenuAnchor] = useState(null);
   // 🆕 차트 포인트 클릭 시 표시할 주차별 상세 — { weekKey }
   const [weekDetailDialog, setWeekDetailDialog] = useState(null);
+  // 🆕 내 자산 (몸값 + 포인트)
+  const [myAssetData, setMyAssetData] = useState(null);
+  const [assetExpanded, setAssetExpanded] = useState(false);
   const [networkGraph, setNetworkGraph] = useState(null);
   const [allPlayerStats, setAllPlayerStats] = useState(null);
   const [graphPeriod, setGraphPeriod] = useState('6m');
@@ -705,6 +708,92 @@ export default function MyPage() {
     if (myIdx === -1) return null;
     return { rank: myIdx + 1, total: eligible.length };
   }, [allStatsForRank, userName, rankThreshold]);
+
+  // 🆕 내 자산: 몸값(순위 기반) + 포인트(스탯 기반)
+  // 최근 6개월 데이터 기준
+  useEffect(() => {
+    if (!clubName || !userName || isDemoGuest || !matchStats) {
+      setMyAssetData(null);
+      return;
+    }
+
+    const POINTS = {
+      attendance: 30, win: 20, draw: 5,
+      goal: 30, assist: 15,
+      gameMvp: 50, dayMvp: 100,
+      voteAttend: 5, voteAbsent: 3, voteUndecided: 1,
+    };
+
+    let cancelled = false;
+    const load = async () => {
+      try {
+        // 최근 6개월
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        const cutoff = sixMonthsAgo.toISOString().slice(0, 10);
+
+        // 1) 투표 응답 횟수 (참석/불참/미정) — PlayerSelectionByDate에서 카운트
+        const psdSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}`));
+        let voteAttend = 0, voteAbsent = 0, voteUndecided = 0;
+        if (psdSnap.exists()) {
+          const psdData = psdSnap.val() || {};
+          Object.entries(psdData).forEach(([date, data]) => {
+            if (date < cutoff) return;
+            const inArr = (a) => Array.isArray(a) && a.includes(userName);
+            if (inArr(data?.AttandPlayer?.all)) voteAttend++;
+            else if (inArr(data?.AbsentPlayer?.all)) voteAbsent++;
+            else if (inArr(data?.UndecidedPlayer?.all)) voteUndecided++;
+          });
+        }
+
+        // 2) DAY MVP 횟수 — DailyResultsBackup에서 카운트
+        const dailySnap = await get(ref(db, `DailyResultsBackup/${clubName}`));
+        let dayMvpCount = 0;
+        if (dailySnap.exists()) {
+          Object.entries(dailySnap.val() || {}).forEach(([date, info]) => {
+            if (date < cutoff) return;
+            if (info?.dailyMvp === userName) dayMvpCount++;
+          });
+        }
+
+        // 3) 나머지(출전/승무패/골/어시/게임MVP)는 matchStats에서 가져옴
+        const counts = {
+          attendance: matchStats.totalGames || 0,
+          wins: matchStats.totalWins || 0,
+          draws: matchStats.totalDraws || 0,
+          losses: matchStats.totalLosses || 0,
+          goals: matchStats.totalGoals || 0,
+          assists: matchStats.totalAssists || 0,
+          // matchStats.mvpCount는 [일자MVP + 게임MVP] 합산 → 게임MVP만 분리
+          gameMvpCount: Math.max(0, (matchStats.mvpCount || 0) - dayMvpCount),
+          dayMvpCount,
+          voteAttend, voteAbsent, voteUndecided,
+        };
+
+        const breakdown = {
+          attendance: counts.attendance * POINTS.attendance,
+          win: counts.wins * POINTS.win,
+          draw: counts.draws * POINTS.draw,
+          goal: counts.goals * POINTS.goal,
+          assist: counts.assists * POINTS.assist,
+          gameMvp: counts.gameMvpCount * POINTS.gameMvp,
+          dayMvp: counts.dayMvpCount * POINTS.dayMvp,
+          voteAttend: counts.voteAttend * POINTS.voteAttend,
+          voteAbsent: counts.voteAbsent * POINTS.voteAbsent,
+          voteUndecided: counts.voteUndecided * POINTS.voteUndecided,
+        };
+        const total = Object.values(breakdown).reduce((s, v) => s + v, 0);
+
+        if (!cancelled) setMyAssetData({ total, breakdown, counts });
+      } catch (e) {
+        console.error('[MyAsset] load error:', e);
+        if (!cancelled) setMyAssetData(null);
+      }
+    };
+
+    load();
+    return () => { cancelled = true; };
+  }, [clubName, userName, isDemoGuest, matchStats]);
 
   // 주차별 순위 추이 (차트용) + 마지막에 현재 순위 반영
   // 🔧 신규 백업 후엔 weeklyStandings 에 weekKey 가 있다는 것 자체가 "팀 경기 있음"
@@ -1391,6 +1480,149 @@ export default function MyPage() {
             )}
           </Paper>
         )}
+
+        {/* 🆕 내 자산 — 몸값 + 보유 포인트 */}
+        {myAssetData && currentRank && (() => {
+          // 몸값 산정 (선수순위 기반)
+          const computeValue = (rank) => {
+            if (!rank) return 0;
+            if (rank === 1) return 100_000_000;
+            if (rank <= 3) return 80_000_000;
+            if (rank <= 5) return 65_000_000;
+            if (rank <= 10) return 50_000_000;
+            if (rank <= 15) return 35_000_000;
+            if (rank <= 20) return 25_000_000;
+            if (rank <= 25) return 18_000_000;
+            return 12_000_000;
+          };
+          const formatKR = (won) => {
+            const eok = Math.floor(won / 100_000_000);
+            const man = Math.floor((won % 100_000_000) / 10_000);
+            if (eok > 0 && man > 0) return `${eok}억 ${man.toLocaleString()}만원`;
+            if (eok > 0) return `${eok}억원`;
+            return `${man.toLocaleString()}만원`;
+          };
+          const playerValue = computeValue(currentRank.rank);
+
+          const items = [
+            { icon: '📅', label: `출석 ${myAssetData.counts.attendance}회`, value: myAssetData.breakdown.attendance },
+            { icon: '✅', label: `참석 투표 ${myAssetData.counts.voteAttend}회`, value: myAssetData.breakdown.voteAttend },
+            { icon: '❌', label: `불참 투표 ${myAssetData.counts.voteAbsent}회`, value: myAssetData.breakdown.voteAbsent },
+            { icon: '❓', label: `미정 투표 ${myAssetData.counts.voteUndecided}회`, value: myAssetData.breakdown.voteUndecided },
+            { icon: '🏆', label: `승리 ${myAssetData.counts.wins}경기`, value: myAssetData.breakdown.win },
+            { icon: '⚖️', label: `무승부 ${myAssetData.counts.draws}경기`, value: myAssetData.breakdown.draw },
+            { icon: '⚽', label: `골 ${myAssetData.counts.goals}개`, value: myAssetData.breakdown.goal },
+            { icon: '🅰️', label: `도움 ${myAssetData.counts.assists}개`, value: myAssetData.breakdown.assist },
+            { icon: '🥇', label: `게임 MVP ${myAssetData.counts.gameMvpCount}회`, value: myAssetData.breakdown.gameMvp },
+            { icon: '⭐', label: `DAY MVP ${myAssetData.counts.dayMvpCount}회`, value: myAssetData.breakdown.dayMvp },
+          ].filter(it => it.value > 0);
+
+          return (
+            <Paper sx={{ borderRadius: 3, p: 2.5, mb: 2, boxShadow: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.4 }}>
+                <WorkspacePremiumIcon sx={{ color: '#0277BD', mr: 1, fontSize: 22 }} />
+                <Typography sx={{ fontWeight: 'bold', color: '#0277BD', fontSize: '1rem' }}>
+                  내 자산
+                </Typography>
+              </Box>
+              <Typography sx={{ fontSize: '0.72rem', color: '#999', mb: 1.5 }}>
+                최근 6개월 누적
+              </Typography>
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.5 }}>
+                {/* 몸값 */}
+                <Box sx={{
+                  p: 1.5, borderRadius: 2,
+                  bgcolor: '#FFF8E1', border: '1px solid #FFE082',
+                }}>
+                  <Typography sx={{ fontSize: '0.7rem', color: '#BF8500', mb: 0.3, fontWeight: 700 }}>
+                    💰 몸값
+                  </Typography>
+                  <Typography sx={{ fontSize: '1.25rem', fontWeight: 900, color: '#BF360C', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
+                    {formatKR(playerValue)}
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.7rem', color: '#888', mt: 0.4 }}>
+                    {currentRank.rank}위 / {currentRank.total}명
+                  </Typography>
+                </Box>
+
+                {/* 보유 포인트 */}
+                <Box sx={{
+                  p: 1.5, borderRadius: 2,
+                  bgcolor: '#E3F2FD', border: '1px solid #90CAF9',
+                }}>
+                  <Typography sx={{ fontSize: '0.7rem', color: '#1565C0', mb: 0.3, fontWeight: 700 }}>
+                    🪙 보유 포인트
+                  </Typography>
+                  <Typography sx={{ fontSize: '1.45rem', fontWeight: 900, color: '#0D47A1', lineHeight: 1.1 }}>
+                    {myAssetData.total.toLocaleString()}
+                    <Typography component="span" sx={{ fontSize: '1rem', fontWeight: 700, ml: 0.3 }}>P</Typography>
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.7rem', color: '#888', mt: 0.4 }}>
+                    출석·승리·골·MVP 등
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Button
+                size="small"
+                fullWidth
+                onClick={() => setAssetExpanded(v => !v)}
+                sx={{
+                  textTransform: 'none', fontSize: '0.78rem',
+                  color: '#0277BD', fontWeight: 600,
+                  borderRadius: 2,
+                }}
+              >
+                {assetExpanded ? '접기 ▲' : '적립 내역 자세히 보기 ▼'}
+              </Button>
+
+              <Collapse in={assetExpanded}>
+                <Box sx={{
+                  p: 1.5, mt: 1, bgcolor: '#FAFAFA', borderRadius: 2,
+                  border: '1px solid #EEEEEE',
+                }}>
+                  {items.length === 0 ? (
+                    <Typography sx={{ fontSize: '0.8rem', color: '#999', textAlign: 'center', py: 1 }}>
+                      아직 적립된 포인트가 없습니다.
+                    </Typography>
+                  ) : (
+                    <>
+                      {items.map((it, idx) => (
+                        <Box key={idx} sx={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          py: 0.4,
+                        }}>
+                          <Typography sx={{ fontSize: '0.8rem', color: '#555' }}>
+                            {it.icon} {it.label}
+                          </Typography>
+                          <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: '#0277BD' }}>
+                            +{it.value.toLocaleString()}P
+                          </Typography>
+                        </Box>
+                      ))}
+                      <Box sx={{
+                        borderTop: '1px solid #E0E0E0',
+                        mt: 0.8, pt: 0.8,
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      }}>
+                        <Typography sx={{ fontSize: '0.88rem', fontWeight: 800, color: '#333' }}>
+                          합계
+                        </Typography>
+                        <Typography sx={{ fontSize: '0.95rem', fontWeight: 900, color: '#0D47A1' }}>
+                          {myAssetData.total.toLocaleString()}P
+                        </Typography>
+                      </Box>
+                    </>
+                  )}
+                  <Typography sx={{ fontSize: '0.66rem', color: '#999', mt: 1.2, textAlign: 'center', fontStyle: 'italic' }}>
+                    💡 출석 30P · 투표(참석5/불참3/미정1) · 승리 20P · 무 5P · 골 30P · 도움 15P · 게임MVP 50P · DAY MVP 100P
+                  </Typography>
+                </Box>
+              </Collapse>
+            </Paper>
+          );
+        })()}
 
         {/* -- 주별 순위 추이 -- */}
         {(currentRank || (rankHistory && rankHistory.length >= 2)) && (() => {
