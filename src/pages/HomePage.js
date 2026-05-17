@@ -33,6 +33,8 @@ function HomePage() {
   const [loading, setLoading] = useState(true);
   const [banners, setBanners] = useState([]);
   const [bannerIndex, setBannerIndex] = useState(0);
+  // 🆕 MVP/우승팀 자동 광고 배너 데이터
+  const [mvpBanner, setMvpBanner] = useState(null);
   const [nextMatch, setNextMatch] = useState(null);
   const [nextMatchAttend, setNextMatchAttend] = useState(0);
   const [myVoteStatus, setMyVoteStatus] = useState(null);
@@ -48,12 +50,13 @@ function HomePage() {
   const [draftSession, setDraftSession] = useState(null); // 전체 Draft 세션 (confirmed 포함, 재드래프트 요청용)
   const [myCaptainCode, setMyCaptainCode] = useState(null); // 확정된 팀의 내 주장 코드 (포메이션 편집용)
 
-  // 배너 자동 슬라이드
+  // 배너 자동 슬라이드 (MVP 시스템 배너 + 운영자 배너 합산)
   useEffect(() => {
-    if (banners.length <= 1) return;
-    const timer = setInterval(() => setBannerIndex(prev => (prev + 1) % banners.length), 15000);
+    const totalBanners = banners.length + (mvpBanner ? 1 : 0);
+    if (totalBanners <= 1) return;
+    const timer = setInterval(() => setBannerIndex(prev => (prev + 1) % totalBanners), 15000);
     return () => clearInterval(timer);
-  }, [banners.length]);
+  }, [banners.length, mvpBanner]);
 
   // 드래프트 세션 실시간 구독 (주장/관리자 진입점 + 재드래프트 요청 UI)
   useEffect(() => {
@@ -219,6 +222,90 @@ function HomePage() {
             daily: toSorted(dailyMvpMap).slice(0, 5),
             game: toSorted(gameMvpMap).slice(0, 5),
           });
+
+          // 🆕 MVP/우승팀 자동 광고 배너 — 가장 최근 경기일
+          const latestKey = Object.keys(data).sort().reverse()[0];
+          if (latestKey) {
+            const latest = data[latestKey];
+            const latestMatches = latest?.matches ? Object.values(latest.matches) : [];
+            if (latestMatches.length > 0) {
+              const lp = {}, lgd = {}, lgs = {};
+              latestMatches.forEach((m) => {
+                const t1 = m.team1, t2 = m.team2;
+                const s1 = Number(m.score1) || 0, s2 = Number(m.score2) || 0;
+                lgs[t1] = (lgs[t1] || 0) + s1; lgs[t2] = (lgs[t2] || 0) + s2;
+                lgd[t1] = (lgd[t1] || 0) + (s1 - s2); lgd[t2] = (lgd[t2] || 0) + (s2 - s1);
+                lp[t1] = (lp[t1] || 0) + (s1 > s2 ? 3 : s1 === s2 ? 1 : 0);
+                lp[t2] = (lp[t2] || 0) + (s2 > s1 ? 3 : s1 === s2 ? 1 : 0);
+              });
+              const winnerName = Object.keys(lp).sort((a, b) =>
+                (lp[b] || 0) - (lp[a] || 0) ||
+                (lgd[b] || 0) - (lgd[a] || 0) ||
+                (lgs[b] || 0) - (lgs[a] || 0)
+              )[0] || null;
+
+              // 우승팀 코드(A/B/C) 찾기 + 로스터 로드
+              let teamMembers = [];
+              let winnerCode = null;
+              if (winnerName) {
+                const teamNamesSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${latestKey}/TeamNames`));
+                const teamNames = teamNamesSnap.exists() ? (teamNamesSnap.val() || {}) : {};
+                for (const c of ['A', 'B', 'C']) {
+                  if (teamNames[c] === winnerName) { winnerCode = c; break; }
+                }
+                if (!winnerCode) {
+                  const clean = String(winnerName).replace(/^(팀\s*|Team\s*)/i, '').trim();
+                  if (['A', 'B', 'C'].includes(clean)) winnerCode = clean;
+                }
+                if (winnerCode) {
+                  const rosterSnap = await get(ref(db, `PlayerSelectionByDate/${clubName}/${latestKey}/AttandPlayer/${winnerCode}`));
+                  if (rosterSnap.exists()) {
+                    const arr = rosterSnap.val();
+                    teamMembers = (Array.isArray(arr) ? arr : Object.values(arr || {}))
+                      .filter(n => n && typeof n === 'string')
+                      .map(n => n.trim());
+                  }
+                }
+              }
+
+              // MVP 본인 통계 (그날 골/도움)
+              const mvpName = latest?.dailyMvp && latest.dailyMvp !== '없음' ? latest.dailyMvp : null;
+              let mvpGoals = 0, mvpAssists = 0;
+              if (mvpName) {
+                // 그날 게임 데이터에서 골/도움 파싱
+                try {
+                  const gamesSnap = await get(ref(db, `${clubName}/${latestKey}`));
+                  if (gamesSnap.exists()) {
+                    gamesSnap.forEach((gameChild) => {
+                      if (!gameChild.key.startsWith('game')) return;
+                      const g = gameChild.val();
+                      [g.goalList1, g.goalList2].forEach((gl) => {
+                        if (!gl) return;
+                        Object.values(gl).forEach((str) => {
+                          if (!str || !String(str).includes('|')) return;
+                          const [, rest] = String(str).split('|');
+                          if (!rest) return;
+                          const [sc, as] = rest.split('-');
+                          if (sc?.trim() === mvpName) mvpGoals++;
+                          if (as?.trim() === mvpName) mvpAssists++;
+                        });
+                      });
+                    });
+                  }
+                } catch (e) { /* 골/도움 없어도 표시 */ }
+              }
+
+              setMvpBanner({
+                date: latestKey,
+                winnerName: winnerName || null,
+                winnerCode,
+                mvpName,
+                mvpGoals,
+                mvpAssists,
+                members: teamMembers.filter(n => n !== mvpName), // MVP 따로 표시
+              });
+            }
+          }
         }
 
         // 4. 선수순위 리더보드 (abilityScore 기준 TOP 5)
@@ -565,53 +652,200 @@ function HomePage() {
           </CardContent>
         </Card>
 
-        {/* ── 배너 ── */}
-        {banners.length > 0 && (
-          <Card sx={{ mb: 2, borderRadius: 3, overflow: 'hidden', boxShadow: 4 }}>
-            <Box onClick={() => banners[bannerIndex]?.link && window.open(banners[bannerIndex].link, '_blank')}
-              sx={{ cursor: banners[bannerIndex]?.link ? 'pointer' : 'default', position: 'relative' }}>
-              {banners[bannerIndex]?.imageUrl ? (
-                <Box component="img" src={banners[bannerIndex].imageUrl} alt="배너"
-                  sx={{ width: '100%', height: 180, objectFit: 'cover' }} />
-              ) : (
-                <Box sx={{
+        {/* ── 배너 (운영자 등록 + 🆕 MVP 자동 광고) ── */}
+        {(() => {
+          // 🆕 MVP 자동 배너를 첫 번째로 삽입
+          const allBanners = mvpBanner
+            ? [{ __type: 'mvp_system', ...mvpBanner }, ...banners]
+            : banners;
+          if (allBanners.length === 0) return null;
+          const current = allBanners[bannerIndex % allBanners.length];
+          const isMvpBanner = current?.__type === 'mvp_system';
+
+          const handleClick = () => {
+            if (isMvpBanner) {
+              // MVP 배너 클릭 → 해당 경기 결과 페이지로
+              navigate(`/results`);
+            } else if (current?.link) {
+              window.open(current.link, '_blank');
+            }
+          };
+
+          return (
+            <Card sx={{ mb: 2, borderRadius: 3, overflow: 'hidden', boxShadow: 4 }}>
+              <Box onClick={handleClick}
+                sx={{
+                  cursor: (isMvpBanner || current?.link) ? 'pointer' : 'default',
+                  position: 'relative',
                   width: '100%', height: 180,
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  overflow: 'hidden', position: 'relative',
+                  overflow: 'hidden',
                 }}>
-                  <Typography
-                    key={bannerIndex}
-                    sx={{
-                      position: 'absolute', top: '50%',
-                      transform: 'translateY(-50%)',
-                      color: 'white', fontWeight: 'bold', fontSize: '1.2rem',
-                      whiteSpace: 'nowrap',
-                      animation: 'marquee 14s linear infinite',
-                      '@keyframes marquee': {
-                        '0%': { left: '100%' },
-                        '100%': { left: '-250%' },
-                      },
-                    }}
-                  >
-                    {banners[bannerIndex]?.title || '공지사항'}
-                  </Typography>
-                </Box>
-              )}
-              {banners.length > 1 && (
-                <Box sx={{ position: 'absolute', bottom: 10, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                  {banners.map((_, i) => (
-                    <Box key={i} onClick={(e) => { e.stopPropagation(); setBannerIndex(i); }}
-                      sx={{
-                        width: i === bannerIndex ? 20 : 6, height: 6, borderRadius: 3,
-                        bgcolor: i === bannerIndex ? 'white' : 'rgba(255,255,255,0.4)',
-                        transition: 'all 0.3s', cursor: 'pointer',
+                {isMvpBanner ? (
+                  /* 🆕 MVP/우승팀 자동 광고 배너 */
+                  <Box sx={{
+                    width: '100%', height: '100%',
+                    background: 'linear-gradient(135deg, #B8860B 0%, #FFD700 50%, #B8860B 100%)',
+                    backgroundSize: '200% 200%',
+                    animation: 'mvpGradient 6s ease-in-out infinite',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    '@keyframes mvpGradient': {
+                      '0%, 100%': { backgroundPosition: '0% 50%' },
+                      '50%': { backgroundPosition: '100% 50%' },
+                    },
+                  }}>
+                    {/* 반짝이 효과 (점 3개) */}
+                    {[
+                      { top: '15%', left: '10%', delay: '0s' },
+                      { top: '60%', left: '85%', delay: '1s' },
+                      { top: '30%', left: '70%', delay: '2s' },
+                      { top: '75%', left: '20%', delay: '1.5s' },
+                    ].map((s, i) => (
+                      <Box key={i} sx={{
+                        position: 'absolute',
+                        top: s.top, left: s.left,
+                        width: 12, height: 12,
+                        background: 'radial-gradient(circle, white 0%, transparent 70%)',
+                        animation: `mvpSparkle 2.5s ease-in-out ${s.delay} infinite`,
+                        '@keyframes mvpSparkle': {
+                          '0%, 100%': { opacity: 0, transform: 'scale(0.5)' },
+                          '50%': { opacity: 1, transform: 'scale(1.5)' },
+                        },
                       }} />
-                  ))}
-                </Box>
-              )}
-            </Box>
-          </Card>
-        )}
+                    ))}
+
+                    {/* 콘텐츠 */}
+                    <Box sx={{
+                      position: 'absolute', inset: 0,
+                      display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center',
+                      px: 2, py: 1.5,
+                      color: '#5D4037',
+                      textShadow: '0 1px 2px rgba(255,255,255,0.6)',
+                    }}>
+                      {/* 상단: CHAMPION 라벨 + 날짜 */}
+                      <Typography sx={{
+                        fontSize: '0.78rem', fontWeight: 900, letterSpacing: '0.3em',
+                        color: '#3E2723', mb: 0.4,
+                      }}>
+                        ✨ CHAMPION ✨ <Typography component="span" sx={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', ml: 0.5 }}>
+                          {(current.date || '').replace(/^\d{4}-/, '')}
+                        </Typography>
+                      </Typography>
+
+                      {/* 우승팀명 — 펄스 애니메이션 */}
+                      {current.winnerName && (
+                        <Typography sx={{
+                          fontSize: '2rem', fontWeight: 900,
+                          color: '#3E2723',
+                          lineHeight: 1, mb: 0.6,
+                          letterSpacing: '-0.02em',
+                          animation: 'mvpPulse 2s ease-in-out infinite',
+                          '@keyframes mvpPulse': {
+                            '0%, 100%': { transform: 'scale(1)', textShadow: '0 2px 4px rgba(255,255,255,0.6)' },
+                            '50%': { transform: 'scale(1.06)', textShadow: '0 2px 12px rgba(255,255,255,0.9), 0 0 24px rgba(255,215,0,0.5)' },
+                          },
+                        }}>
+                          🏆 {current.winnerName} 🏆
+                        </Typography>
+                      )}
+
+                      {/* 구분선 */}
+                      <Box sx={{
+                        width: '70%', height: 2, my: 0.6,
+                        background: 'linear-gradient(90deg, transparent, #5D4037, transparent)',
+                      }} />
+
+                      {/* 하단: MVP + 멤버 — marquee 자동 스크롤 */}
+                      <Box sx={{
+                        position: 'relative',
+                        width: '100%', height: 32,
+                        overflow: 'hidden',
+                      }}>
+                        <Typography
+                          key={`mvp-marquee-${current.date}`}
+                          sx={{
+                            position: 'absolute', top: '50%',
+                            transform: 'translateY(-50%)',
+                            whiteSpace: 'nowrap',
+                            fontSize: '0.95rem', fontWeight: 800,
+                            color: '#3E2723',
+                            animation: 'mvpMarquee 18s linear infinite',
+                            '@keyframes mvpMarquee': {
+                              '0%': { left: '100%' },
+                              '100%': { left: '-100%' },
+                            },
+                          }}
+                        >
+                          {current.mvpName && (
+                            <Box component="span" sx={{
+                              color: '#BF360C', fontWeight: 900,
+                              bgcolor: 'rgba(255,255,255,0.6)',
+                              px: 1, py: 0.3, borderRadius: 1, mr: 1,
+                            }}>
+                              ⭐ MVP {current.mvpName}
+                              {(current.mvpGoals > 0 || current.mvpAssists > 0) && (
+                                <Box component="span" sx={{ fontSize: '0.8rem', ml: 0.6 }}>
+                                  ({current.mvpGoals > 0 ? `${current.mvpGoals}골` : ''}
+                                  {current.mvpGoals > 0 && current.mvpAssists > 0 ? '·' : ''}
+                                  {current.mvpAssists > 0 ? `${current.mvpAssists}도움` : ''})
+                                </Box>
+                              )}
+                            </Box>
+                          )}
+                          {current.members && current.members.length > 0 && (
+                            <Box component="span" sx={{ color: '#5D4037' }}>
+                              {current.members.join('  ·  ')}
+                            </Box>
+                          )}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Box>
+                ) : current?.imageUrl ? (
+                  <Box component="img" src={current.imageUrl} alt="배너"
+                    sx={{ width: '100%', height: 180, objectFit: 'cover' }} />
+                ) : (
+                  <Box sx={{
+                    width: '100%', height: 180,
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    overflow: 'hidden', position: 'relative',
+                  }}>
+                    <Typography
+                      key={bannerIndex}
+                      sx={{
+                        position: 'absolute', top: '50%',
+                        transform: 'translateY(-50%)',
+                        color: 'white', fontWeight: 'bold', fontSize: '1.2rem',
+                        whiteSpace: 'nowrap',
+                        animation: 'marquee 14s linear infinite',
+                        '@keyframes marquee': {
+                          '0%': { left: '100%' },
+                          '100%': { left: '-250%' },
+                        },
+                      }}
+                    >
+                      {current?.title || '공지사항'}
+                    </Typography>
+                  </Box>
+                )}
+                {allBanners.length > 1 && (
+                  <Box sx={{ position: 'absolute', bottom: 10, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 0.5, zIndex: 2 }}>
+                    {allBanners.map((_, i) => (
+                      <Box key={i} onClick={(e) => { e.stopPropagation(); setBannerIndex(i); }}
+                        sx={{
+                          width: i === bannerIndex ? 20 : 6, height: 6, borderRadius: 3,
+                          bgcolor: i === bannerIndex ? 'white' : 'rgba(255,255,255,0.5)',
+                          transition: 'all 0.3s', cursor: 'pointer',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                        }} />
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            </Card>
+          );
+        })()}
 
         {/* ── 데모 모드 배너 ── */}
         {demoMode && (
