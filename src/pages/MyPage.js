@@ -1401,17 +1401,16 @@ export default function MyPage() {
 
         {/* 🆕 내 자산 — 몸값 + 보유 포인트 */}
         {myAssetData && currentRank && (() => {
-          // 몸값 산정 (선수순위 기반)
-          const computeValue = (rank) => {
-            if (!rank) return 0;
-            if (rank === 1) return 100_000_000;
-            if (rank <= 3) return 80_000_000;
-            if (rank <= 5) return 65_000_000;
-            if (rank <= 10) return 50_000_000;
-            if (rank <= 15) return 35_000_000;
-            if (rank <= 20) return 25_000_000;
-            if (rank <= 25) return 18_000_000;
-            return 12_000_000;
+          // 🆕 몸값 — 순위 연속 곡선 (1억 ~ 1500만, 상위권 보너스 곡선)
+          const computeValue = (rank, total) => {
+            if (!rank || !total) return 0;
+            const baseFloor = 1500;     // 만원 (마지막 순위 보장가)
+            const baseRange = 8500;     // 만원 (1위와 마지막의 차)
+            const factor = Math.max(0, 1 - (rank - 1) / Math.max(1, total - 1));
+            // 1.4승 → 상위권에 더 후하게
+            const manWon = baseFloor + baseRange * Math.pow(factor, 1.4);
+            // 100만원 단위로 반올림
+            return Math.round(manWon / 100) * 100 * 10_000;
           };
           const formatKR = (won) => {
             const eok = Math.floor(won / 100_000_000);
@@ -1420,7 +1419,36 @@ export default function MyPage() {
             if (eok > 0) return `${eok}억원`;
             return `${man.toLocaleString()}만원`;
           };
-          const playerValue = computeValue(currentRank.rank);
+
+          // 🆕 포지션 그룹화 (FW / MF / DF / GK)
+          const positionGroup = (pos) => {
+            if (!pos) return null;
+            const p = String(pos).toUpperCase();
+            if (p === 'GK') return 'GK';
+            if (['FW','ST','CF','LW','RW','WF'].includes(p)) return 'FW';
+            if (['DF','CB','LB','RB','WB','LWB','RWB'].includes(p)) return 'DF';
+            return 'MF'; // MF, DM, AM, CM, OM 등
+          };
+          const POSITION_LABEL = { FW: '공격수', MF: '미드필더', DF: '수비수', GK: '골키퍼' };
+
+          // 🆕 본인이 같은 포지션 그룹 내 1위인지 판정
+          const myPositionRaw = allStatsForRank?.[userName]?.position;
+          const myPosGroup = positionGroup(myPositionRaw);
+          let positionBonus = 0;
+          let isTopInPosition = false;
+          if (myPosGroup && allStatsForRank) {
+            const samePos = Object.entries(allStatsForRank)
+              .filter(([, s]) => positionGroup(s?.position) === myPosGroup)
+              .filter(([, s]) => (s.attendanceRate || 0) >= rankThreshold)
+              .sort((a, b) => (b[1].abilityScore || 0) - (a[1].abilityScore || 0));
+            if (samePos.length >= 2 && samePos[0][0] === userName) {
+              isTopInPosition = true;
+              positionBonus = 15_000_000; // +1500만원
+            }
+          }
+
+          const baseValue = computeValue(currentRank.rank, currentRank.total);
+          const playerValue = baseValue + positionBonus;
 
           const items = [
             { icon: '📅', label: `출석 ${myAssetData.counts.attendance}회`, value: myAssetData.breakdown.attendance },
@@ -1458,6 +1486,19 @@ export default function MyPage() {
                   <Typography sx={{ fontSize: '0.7rem', color: '#888', mt: 0.4 }}>
                     {currentRank.rank}위 / {currentRank.total}명 · 6개월 순위
                   </Typography>
+                  {/* 🆕 포지션 1위 보너스 배지 */}
+                  {isTopInPosition && (
+                    <Box sx={{
+                      mt: 0.6, display: 'inline-flex', alignItems: 'center',
+                      bgcolor: '#FF8F00', color: 'white',
+                      px: 0.8, py: 0.2, borderRadius: 99,
+                      fontSize: '0.62rem', fontWeight: 800,
+                      gap: 0.3,
+                    }}>
+                      <span>🥇 {POSITION_LABEL[myPosGroup] || myPosGroup} 1위</span>
+                      <span style={{ opacity: 0.95 }}>+1,500만</span>
+                    </Box>
+                  )}
                 </Box>
 
                 {/* 보유 포인트 — 전체 경기 누적 */}

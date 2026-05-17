@@ -1339,8 +1339,26 @@ export default function AdminPage() {
         const scoreData = dailySnap.val();
         const selData = selectionSnap.val();
 
+        // 🆕 회원별 포지션 매핑 (Users → name:position)
+        // 회원 페이지에서는 Users 노드 직접 읽기 불가 → 백업 시 PlayerStatsBackup에 포함시켜 우회
+        const usersSnap = await get(ref(db, 'Users'));
+        const namePositionMap = {};
+        if (usersSnap.exists()) {
+          Object.values(usersSnap.val() || {}).forEach((u) => {
+            if (u?.club === clubName && u?.name && u?.position) {
+              namePositionMap[u.name] = u.position;
+            }
+          });
+        }
+        const enrichWithPosition = (stats) => {
+          for (const n in stats) {
+            if (namePositionMap[n]) stats[n].position = namePositionMap[n];
+          }
+          return stats;
+        };
+
         // 전체 통계
-        const allStats = calcStats(scoreData, selData, null);
+        const allStats = enrichWithPosition(calcStats(scoreData, selData, null));
         await set(ref(db, `PlayerStatsBackup/${clubName}`), allStats);
         results.push({ name: '전체 선수 통계', ok: true, msg: `${Object.keys(allStats).length}명` });
 
@@ -1348,13 +1366,13 @@ export default function AdminPage() {
         const sixAgo = new Date();
         sixAgo.setMonth(sixAgo.getMonth() - 6);
         const cutoff = sixAgo.toISOString().slice(0, 10);
-        const recentStats = calcStats(scoreData, selData, cutoff);
+        const recentStats = enrichWithPosition(calcStats(scoreData, selData, cutoff));
         await set(ref(db, `PlayerStatsBackup_6m/${clubName}`), recentStats);
         results.push({ name: '6개월 선수 통계', ok: true, msg: `${Object.keys(recentStats).length}명` });
 
         // 시즌 통계 (올해 1월 1일부터)
         const seasonCutoff = new Date().getFullYear() + '-01-01';
-        const seasonStats = calcStats(scoreData, selData, seasonCutoff);
+        const seasonStats = enrichWithPosition(calcStats(scoreData, selData, seasonCutoff));
         await set(ref(db, `PlayerStatsBackup_season/${clubName}`), seasonStats);
         results.push({ name: '시즌 선수 통계', ok: true, msg: `${Object.keys(seasonStats).length}명` });
 
