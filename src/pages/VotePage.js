@@ -367,24 +367,13 @@ function VotePage() {
         payout: null,    // 정산 후 환급 P
         settledAt: null,
       };
+      // 🆕 잔액(PlayerBalance) 차감은 Chunk 3 정산에서 운영자가 처리.
+      //    여기서는 Predictions만 저장. "사용 가능 잔액"은 클라이언트가
+      //    (잔액 - pendingBets) 로 동적 계산해 표시.
+      const { update } = await import('firebase/database');
       const updates = {};
       updates[`Predictions/${clubName}/${date}/${emailKey}/name`] = userName;
       updates[`Predictions/${clubName}/${date}/${emailKey}/bets/winningTeam`] = betData;
-      // 🆕 잔액에서 차감 (이전 베팅 있으면 차액만)
-      if (required !== 0) {
-        const balanceRef = ref(db, `PlayerBalance/${clubName}/${userName}`);
-        await runTransaction(balanceRef, (cur) => {
-          const bal = (cur?.balance ?? myBalance) || 0;
-          return {
-            balance: bal - required,
-            initFromComputed: cur?.initFromComputed ?? true,
-            initAt: cur?.initAt ?? Date.now(),
-            updatedAt: Date.now(),
-          };
-        });
-      }
-      // ref import 위치에서 'update'를 가져와야 함 → 동적 import 사용 회피, 별도 처리
-      const { update } = await import('firebase/database');
       await update(ref(db), updates);
       setBetDialogDate(null);
       setBetPick(null);
