@@ -31,7 +31,6 @@ function HomePage() {
   const canAdmin = isAdmin || isModerator;
 
   const [loading, setLoading] = useState(true);
-  const [banners, setBanners] = useState([]);
   const [bannerIndex, setBannerIndex] = useState(0);
   // 🆕 MVP/우승팀 자동 광고 배너 데이터
   const [mvpBanner, setMvpBanner] = useState(null);
@@ -50,13 +49,11 @@ function HomePage() {
   const [draftSession, setDraftSession] = useState(null); // 전체 Draft 세션 (confirmed 포함, 재드래프트 요청용)
   const [myCaptainCode, setMyCaptainCode] = useState(null); // 확정된 팀의 내 주장 코드 (포메이션 편집용)
 
-  // 배너 자동 슬라이드 (MVP 시스템 배너 + 운영자 배너 합산)
+  // 배너 자동 슬라이드 — 현재 MVP 시스템 배너만 표시 (1개라 회전 불필요)
   useEffect(() => {
-    const totalBanners = banners.length + (mvpBanner ? 1 : 0);
-    if (totalBanners <= 1) return;
-    const timer = setInterval(() => setBannerIndex(prev => (prev + 1) % totalBanners), 15000);
-    return () => clearInterval(timer);
-  }, [banners.length, mvpBanner]);
+    // MVP 배너만 노출 — 회전 타이머 비활성화 (한 개뿐)
+    setBannerIndex(0);
+  }, [mvpBanner]);
 
   // 드래프트 세션 실시간 구독 (주장/관리자 진입점 + 재드래프트 요청 UI)
   useEffect(() => {
@@ -108,11 +105,7 @@ function HomePage() {
 
     const loadData = async () => {
       try {
-        // 1. 배너
-        const bannerSnap = await get(ref(db, 'banners'));
-        if (bannerSnap.exists()) {
-          setBanners(Object.values(bannerSnap.val()).filter(b => b.active !== false).sort((a, b) => (a.order || 0) - (b.order || 0)));
-        }
+        // 1. (운영자 등록 배너 로딩 제거 — MVP 자동 배너만 표시)
 
         // 2. 다음 경기 (오늘 경기 결과가 이미 있으면 다음 날짜로)
         const matchSnap = await get(ref(db, `MatchDates/${clubName}`));
@@ -652,22 +645,18 @@ function HomePage() {
           </CardContent>
         </Card>
 
-        {/* ── 배너 (운영자 등록 + 🆕 MVP 자동 광고) ── */}
+        {/* ── 배너 (🆕 MVP/우승팀 자동 광고만 표시) ── */}
         {(() => {
-          // 🆕 MVP 자동 배너를 첫 번째로 삽입
-          const allBanners = mvpBanner
-            ? [{ __type: 'mvp_system', ...mvpBanner }, ...banners]
-            : banners;
+          // 🆕 운영자 등록 배너 제외 — MVP 시스템 배너만 노출
+          const allBanners = mvpBanner ? [{ __type: 'mvp_system', ...mvpBanner }] : [];
           if (allBanners.length === 0) return null;
           const current = allBanners[bannerIndex % allBanners.length];
           const isMvpBanner = current?.__type === 'mvp_system';
 
           const handleClick = () => {
             if (isMvpBanner) {
-              // MVP 배너 클릭 → 해당 경기 결과 페이지로
+              // MVP 배너 클릭 → 경기결과 페이지로
               navigate(`/results`);
-            } else if (current?.link) {
-              window.open(current.link, '_blank');
             }
           };
 
